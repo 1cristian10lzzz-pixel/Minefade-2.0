@@ -1,0 +1,780 @@
+package com.minefade.nativeengine;
+
+import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Intent;
+import android.net.Uri;
+import android.app.AlertDialog;
+import android.text.InputType;
+import android.widget.EditText;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toast;
+
+/**
+ * Activity lifecycle and native engine host.
+ *
+ * The home screen is shown before loading any native library or creating EGL.
+ * This prevents a missing GL resource/library from presenting as a blank screen.
+ */
+public final class MainActivity extends Activity {
+    private static final long ENGINE_TIMEOUT_MS = 18000L;
+
+    private FrameLayout root;
+    private MinefadeHomeScreen homeScreen;
+    private MinefadeSurfaceView surfaceView;
+    private SoundEffects soundEffects;
+    private LanMultiplayerService lanMultiplayer;
+    private FrameLayout loadingOverlay;
+    private FrameLayout gameContainer;
+    private FrameLayout fallbackOverlay;
+    private WorldManager.WorldInfo requestedWorld;
+    private WorldManager worldManager;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private boolean engineReady;
+    private boolean activityResumed;
+    private boolean requestedMultiplayer;
+    private int requestedPlayerSlot;
+    private final Runnable exitPoll = new Runnable() {
+        @Override public void run() {
+            if (surfaceView == null || isFinishing()) return;
+            try {
+                if (NativeBridge.nativeConsumeExitRequest()) {
+                    finish();
+                    return;
+                }
+            } catch (LinkageError | RuntimeException error) {
+                android.util.Log.e("Minefade", "Exit polling failed", error);
+            }
+            mainHandler.postDelayed(this, 200L);
+        }
+    };
+    private final Runnable engineTimeout = () -> {
+        if (!engineReady && surfaceView != null) {
+            showEngineError("No se pudo completar el arranque del mundo.",
+                    "Android no terminó de crear la superficie gráfica dentro del tiempo esperado. Comprueba que el dispositivo admite OpenGL ES 3.0 y que hay memoria disponible. Puedes reintentar; tus mundos no se eliminan.");
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().setBackgroundDrawable(new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff0b1726, 0xff10283a, 0xff0b1422}));
+        getWindow().setStatusBarColor(0xff0b1726);
+        getWindow().setNavigationBarColor(0xff0b1118);
+        applyImmersiveMode();
+
+        root = new FrameLayout(this);
+        root.setBackgroundColor(0xff0b1726);
+        setContentView(root);
+        soundEffects = new SoundEffects(this);
+        worldManager = new WorldManager(this);
+        lanMultiplayer = new LanMultiplayerService(this);
+
+        // Deliberately do not touch NativeBridge here. The menu must still work
+        // if the native library is missing on a device or an ABI is unsupported.
+        showHome();
+    }
+
+    private void applyImmersiveMode() {
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                View.SYSTEM_UI_FLAG_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+    }
+
+    private void showHome() {
+        mainHandler.removeCallbacks(engineTimeout);
+        mainHandler.removeCallbacks(exitPoll);
+        if (surfaceView != null) {
+            try {
+                surfaceView.pauseNativeEngine();
+                surfaceView.onPause();
+            } catch (RuntimeException error) {
+                android.util.Log.w("Minefade", "Could not pause surface while returning home", error);
+            }
+        }
+        engineReady = false;
+        loadingOverlay = null;
+        surfaceView = null;
+        gameContainer = null;
+        fallbackOverlay = null;
+        root.removeAllViews();
+
+        if (lanMultiplayer != null) {
+            lanMultiplayer.close();
+            lanMultiplayer = new LanMultiplayerService(this);
+        }
+        homeScreen = new MinefadeHomeScreen(this, new MinefadeHomeScreen.Listener() {
+            @Override public void onPlay() {
+                java.util.List<WorldManager.WorldInfo> worlds = worldManager.listWorlds();
+                if (worlds.isEmpty()) {
+                    WorldManager.WorldInfo created = worldManager.createWorld("Mi mundo", System.currentTimeMillis(),
+                            WorldManager.SURVIVAL, false, true);
+                    if (created != null) startWorld(created);
+                } else startWorld(worlds.get(0));
+            }
+            @Override public void onPlayWorld(WorldManager.WorldInfo world) { startWorld(world); }
+            @Override public void onCreateWorld(WorldManager.WorldInfo world) { startWorld(world); }
+            @Override public void onImportMod() { pickModFile(); }
+            @Override public void onImportShader() { pickShaderFile(); }
+            @Override public void onHostMultiplayer() { startLanHost(); }
+            @Override public void onSearchMultiplayer() { searchLanGames(); }
+            @Override public void onJoinMultiplayer(LanMultiplayerService.GameInfo game) { joinLanGame(game); }
+        }, this::playMenuClick);
+        root.addView(homeScreen, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        applyImmersiveMode();
+    }
+
+    private void playMenuClick() {
+        if (soundEffects != null) soundEffects.playMenuClick();
+    }
+
+    private void startGame() {
+        startGame(false, 0);
+    }
+
+    private void startWorld(WorldManager.WorldInfo world) {
+        if (world == null) return;
+        worldManager.markPlayed(world);
+        startGame(false, 0, world);
+    }
+
+    private void startGame(boolean multiplayer, int playerSlot) {
+        startGame(multiplayer, playerSlot, null);
+    }
+
+    private void startGame(boolean multiplayer, int playerSlot, WorldManager.WorldInfo world) {
+        mainHandler.removeCallbacks(engineTimeout);
+        mainHandler.removeCallbacks(exitPoll);
+        if (surfaceView != null) {
+            try {
+                surfaceView.pauseNativeEngine();
+                surfaceView.onPause();
+            } catch (RuntimeException ignored) { }
+        }
+        root.removeAllViews();
+        homeScreen = null;
+        surfaceView = null;
+        loadingOverlay = null;
+        fallbackOverlay = null;
+        engineReady = false;
+
+        showLoading("PREPARANDO MINEFADE", "Comprobando el motor gráfico y los recursos…");
+
+        requestedMultiplayer = multiplayer;
+        requestedPlayerSlot = Math.max(0, Math.min(31, playerSlot));
+        requestedWorld = world;
+
+        // Native setup now happens on the GLSurfaceView thread immediately before
+        // nativeInit. This keeps all Engine/JNI state changes serialised with GL.
+        String worldPath = world == null ? getFilesDir().getAbsolutePath() : world.getPath();
+        long worldSeed = world == null ? 0x4D464445L : world.seed;
+        int gameMode = world == null ? WorldManager.SURVIVAL : world.gameMode;
+        boolean allowCheats = world != null && world.allowCheats;
+        boolean starterChest = world != null && world.starterChest;
+        String modsPath = new java.io.File(getFilesDir(), "mods").getAbsolutePath();
+        surfaceView = new MinefadeSurfaceView(this, soundEffects,
+                getResources().getDisplayMetrics().density,
+                multiplayer, requestedPlayerSlot, worldPath, modsPath, worldSeed,
+                gameMode, allowCheats, starterChest,
+                multiplayer ? lanMultiplayer : null,
+                new MinefadeSurfaceView.InitializationListener() {
+                    @Override public void onEngineReady() {
+                        engineReady = true;
+                        mainHandler.removeCallbacks(engineTimeout);
+                        mainHandler.postDelayed(exitPoll, 200L);
+                        hideLoadingOverlay();
+                        if (surfaceView != null && !surfaceView.isNativeHudAvailable()) {
+                            android.util.Log.e("Minefade", "RmlUi unavailable; installing Android touch fallback: "
+                                    + surfaceView.nativeHudDiagnostic());
+                            showFallbackTouchControls();
+                            Toast.makeText(MainActivity.this,
+                                    "Se activaron los controles de respaldo para poder jugar.",
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    }
+
+                    @Override public void onEngineError(String message) {
+                        engineReady = false;
+                        showEngineError("No se pudo iniciar el mundo.", message);
+                    }
+                });
+        gameContainer = new FrameLayout(this);
+        gameContainer.addView(surfaceView, new FrameLayout.LayoutParams(-1, -1));
+        // Compact icon-only chat entry: keep the real command dialog available
+        // without the oversized text banner covering the world view.
+        TextView commandButton = statusButton("✉", false);
+        commandButton.setTextSize(17);
+        FrameLayout.LayoutParams commandParams = new FrameLayout.LayoutParams(dp(38), dp(38),
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        commandParams.topMargin = dp(8);
+        gameContainer.addView(commandButton, commandParams);
+        commandButton.setContentDescription("Abrir chat y comandos");
+        commandButton.setOnClickListener(v -> showCommandDialog());
+        root.addView(gameContainer, new FrameLayout.LayoutParams(-1, -1));
+        // The GL view is created lazily after Activity.onResume(). Activate it now:
+        // otherwise GLSurfaceView remains paused and onSurfaceCreated() never runs.
+        if (activityResumed) {
+            surfaceView.onResume();
+            android.util.Log.i("Minefade", "Activated newly-created GL surface");
+        }
+        if (loadingOverlay != null) root.bringChildToFront(loadingOverlay);
+        mainHandler.postDelayed(engineTimeout, ENGINE_TIMEOUT_MS);
+        applyImmersiveMode();
+    }
+
+    /**
+     * Emergency Android-native controls used only when the RmlUi HUD could not
+     * initialise. The world stays open and continues to receive touches on the
+     * GL thread; this is a recovery path, not a replacement for the normal HUD.
+     */
+    private void showFallbackTouchControls() {
+        if (gameContainer == null || surfaceView == null || fallbackOverlay != null) return;
+        boolean leftHanded = getSharedPreferences("minefade_ui", MODE_PRIVATE)
+                .getBoolean("left_handed_controls", false);
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setClipChildren(false);
+        overlay.setClipToPadding(false);
+        overlay.setBackgroundColor(Color.TRANSPARENT);
+        // Unhandled touches are forwarded to the native engine so the right half
+        // remains a camera-look surface when the RmlUi HUD is unavailable.
+        overlay.setClickable(true);
+        overlay.setOnTouchListener((view, event) -> dispatchFallbackWorldTouch(event));
+
+        FrameLayout joystick = new FrameLayout(this);
+        GradientDrawable padBackground = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x99516f83, 0x77304a60});
+        padBackground.setShape(GradientDrawable.OVAL);
+        padBackground.setStroke(dp(2), 0x99e1efb8);
+        joystick.setBackground(padBackground);
+        View thumb = new View(this);
+        GradientDrawable thumbBackground = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xffc2d4bf, 0xff7c9c89});
+        thumbBackground.setShape(GradientDrawable.OVAL);
+        thumbBackground.setStroke(dp(1), 0xffe4f0dc);
+        thumb.setBackground(thumbBackground);
+        FrameLayout.LayoutParams thumbParams = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER);
+        joystick.addView(thumb, thumbParams);
+        FrameLayout.LayoutParams joystickParams = new FrameLayout.LayoutParams(dp(112), dp(112),
+                Gravity.BOTTOM | (leftHanded ? Gravity.RIGHT : Gravity.LEFT));
+        if (leftHanded) joystickParams.rightMargin = dp(14);
+        else joystickParams.leftMargin = dp(14);
+        joystickParams.bottomMargin = dp(54);
+        overlay.addView(joystick, joystickParams);
+
+        joystick.setOnTouchListener((view, event) -> {
+            int[] viewLocation = new int[2];
+            int[] surfaceLocation = new int[2];
+            view.getLocationOnScreen(viewLocation);
+            surfaceView.getLocationOnScreen(surfaceLocation);
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_MOVE) {
+                for (int i = 0; i < event.getPointerCount(); i++) {
+                    float x = viewLocation[0] - surfaceLocation[0] + event.getX(i);
+                    float y = viewLocation[1] - surfaceLocation[1] + event.getY(i);
+                    surfaceView.dispatchFallbackTouch(2, event.getPointerId(i), x, y);
+                }
+                return true;
+            }
+            int actionIndex = event.getActionIndex();
+            int mapped;
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_POINTER_DOWN: mapped = 0; break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_POINTER_UP: mapped = 1; break;
+                case MotionEvent.ACTION_CANCEL: mapped = 3; break;
+                default: return true;
+            }
+            float x = viewLocation[0] - surfaceLocation[0] + event.getX(actionIndex);
+            float y = viewLocation[1] - surfaceLocation[1] + event.getY(actionIndex);
+            surfaceView.dispatchFallbackTouch(mapped, event.getPointerId(actionIndex), x, y);
+            return true;
+        });
+
+        TextView jump = statusButton("↑", true);
+        jump.setTextSize(22);
+        jump.setContentDescription("Saltar");
+        FrameLayout.LayoutParams jumpParams = new FrameLayout.LayoutParams(dp(58), dp(58),
+                Gravity.BOTTOM | (leftHanded ? Gravity.LEFT : Gravity.RIGHT));
+        if (leftHanded) jumpParams.leftMargin = dp(20);
+        else jumpParams.rightMargin = dp(20);
+        jumpParams.bottomMargin = dp(58);
+        overlay.addView(jump, jumpParams);
+        jump.setOnTouchListener((view, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) surfaceView.dispatchFallbackAction(0, true);
+            else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                surfaceView.dispatchFallbackAction(0, false);
+            return true;
+        });
+
+        TextView crouch = statusButton("↓", false);
+        crouch.setTextSize(18);
+        crouch.setContentDescription("Agacharse");
+        FrameLayout.LayoutParams crouchParams = new FrameLayout.LayoutParams(dp(46), dp(46),
+                Gravity.BOTTOM | (leftHanded ? Gravity.LEFT : Gravity.RIGHT));
+        if (leftHanded) crouchParams.leftMargin = dp(86);
+        else crouchParams.rightMargin = dp(86);
+        crouchParams.bottomMargin = dp(64);
+        overlay.addView(crouch, crouchParams);
+        crouch.setOnTouchListener((view, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) surfaceView.dispatchFallbackAction(1, true);
+            else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                surfaceView.dispatchFallbackAction(1, false);
+            return true;
+        });
+
+        LinearLayout topButtons = new LinearLayout(this);
+        topButtons.setOrientation(LinearLayout.HORIZONTAL);
+        topButtons.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(-2, dp(42),
+                Gravity.TOP | Gravity.RIGHT);
+        topParams.topMargin = dp(8);
+        topParams.rightMargin = dp(8);
+        overlay.addView(topButtons, topParams);
+
+        TextView perspective = statusButton("◉", false);
+        perspective.setTextSize(17);
+        perspective.setContentDescription("Cambiar perspectiva");
+        topButtons.addView(perspective, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        perspective.setOnClickListener(v -> surfaceView.dispatchFallbackAction(2, true));
+
+        TextView pause = statusButton("Ⅱ", false);
+        pause.setTextSize(17);
+        pause.setContentDescription("Pausar");
+        LinearLayout.LayoutParams pauseParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        pauseParams.leftMargin = dp(6);
+        topButtons.addView(pause, pauseParams);
+        pause.setOnClickListener(v -> showFallbackPauseDialog());
+
+        fallbackOverlay = overlay;
+        gameContainer.addView(overlay, 1, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private boolean dispatchFallbackWorldTouch(MotionEvent event) {
+        if (surfaceView == null || !engineReady) return true;
+        final int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_MOVE) {
+            for (int i = 0; i < event.getPointerCount(); i++) {
+                surfaceView.dispatchFallbackTouch(2, event.getPointerId(i), event.getX(i), event.getY(i));
+            }
+            return true;
+        }
+        final int mapped;
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: mapped = 0; break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP: mapped = 1; break;
+            case MotionEvent.ACTION_CANCEL: mapped = 3; break;
+            default: return true;
+        }
+        final int index = event.getActionIndex();
+        surfaceView.dispatchFallbackTouch(mapped, event.getPointerId(index),
+                event.getX(index), event.getY(index));
+        return true;
+    }
+
+    private void showFallbackPauseDialog() {
+        if (surfaceView == null || !engineReady) return;
+        surfaceView.dispatchFallbackAction(3, true);
+        final boolean[] handled = {false};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Minefade · Pausa")
+                .setItems(new CharSequence[]{"Reanudar", "Guardar y salir"}, (shown, which) -> {
+                    handled[0] = true;
+                    if (which == 0) {
+                        surfaceView.dispatchFallbackAction(4, true);
+                    } else {
+                        surfaceView.dispatchFallbackAction(5, true);
+                    }
+                })
+                .setOnCancelListener(shown -> {
+                    if (!handled[0] && surfaceView != null)
+                        surfaceView.dispatchFallbackAction(4, true);
+                })
+                .create();
+        dialog.show();
+    }
+
+    private void showCommandDialog() {
+        if (surfaceView == null || !engineReady) {
+            Toast.makeText(this, "El mundo todavía se está preparando.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12),dp(10),dp(12),dp(8));
+        panel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff142638,0xff0d1a28}));
+
+        ScrollView historyScroll = new ScrollView(this);
+        historyScroll.setFillViewport(false);
+        historyScroll.setVerticalScrollBarEnabled(true);
+        historyScroll.setClipChildren(true);
+        historyScroll.setClipToPadding(true);
+        TextView history = statusText(
+                "MINEFADE · CHAT DE COMANDOS\nEscribe /ayuda para ver la lista.\n"
+                + "Ejemplos: /oveja 3 · /zombi · /modo creativo · /tiempo noche\n",
+                10,0xffdce8ef,false);
+        history.setGravity(Gravity.TOP | Gravity.LEFT);
+        history.setPadding(dp(8),dp(8),dp(8),dp(8));
+        history.setMinHeight(dp(170));
+        history.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff0b1724,0xff13283a}));
+        historyScroll.addView(history,new ScrollView.LayoutParams(-1,-2));
+        LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(-1,dp(210));
+        panel.addView(historyScroll,historyParams);
+
+        LinearLayout sendRow = new LinearLayout(this);
+        sendRow.setOrientation(LinearLayout.HORIZONTAL);
+        sendRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams sendRowParams = new LinearLayout.LayoutParams(-1,dp(46));
+        sendRowParams.topMargin = dp(8);
+        panel.addView(sendRow,sendRowParams);
+
+        EditText command = new EditText(this);
+        command.setSingleLine(true);
+        command.setText("/");
+        command.setSelection(command.length());
+        command.setTextColor(Color.WHITE);
+        command.setHintTextColor(0xff9fb4c1);
+        command.setHint("/oveja");
+        command.setTextSize(12);
+        command.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        command.setPadding(dp(10),0,dp(10),0);
+        command.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff1b3347,0xff132638}));
+        sendRow.addView(command,new LinearLayout.LayoutParams(0,-1,1f));
+
+        Button send = new Button(this);
+        send.setText("ENVIAR");
+        send.setTextSize(10);
+        send.setTextColor(0xfff1f7fa);
+        send.setAllCaps(false);
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(88),dp(42));
+        sendParams.leftMargin = dp(7);
+        sendRow.addView(send,sendParams);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Chat de Minefade")
+                .setView(panel)
+                .setNegativeButton("Cerrar",null)
+                .create();
+        final Runnable[] execute = new Runnable[1];
+        execute[0] = () -> {
+            String typed = command.getText().toString().trim();
+            if (typed.isEmpty() || "/".equals(typed)) return;
+            if (surfaceView == null || !engineReady) {
+                history.append("\nMotor no disponible.\n");
+                return;
+            }
+            String result = surfaceView.executeCommand(typed);
+            history.append("\n> " + typed + "\n" + result + "\n");
+            historyScroll.post(() -> historyScroll.fullScroll(View.FOCUS_DOWN));
+            command.setText("/");
+            command.setSelection(command.length());
+        };
+        send.setOnClickListener(v -> execute[0].run());
+        command.setOnEditorActionListener((view, actionId, event) -> {
+            execute[0].run();
+            return true;
+        });
+        dialog.show();
+        command.requestFocus();
+    }
+
+    private void pickModFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, 7401);
+    }
+
+    private void pickShaderFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, 7402);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode == 7401) {
+            ModManager manager = new ModManager(this);
+            ModManager.ModInfo imported = manager.importMod(data.getData());
+            if (imported == null) {
+                Toast.makeText(this, "No se pudo importar. Usa un paquete .mfmod válido.", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "Mod importado: " + imported.name, Toast.LENGTH_LONG).show();
+                if (homeScreen != null) homeScreen.refreshMods();
+            }
+        } else if (requestCode == 7402) {
+            ShaderPackManager manager = new ShaderPackManager(this);
+            ShaderPackManager.PackInfo imported = manager.importShader(data.getData());
+            if (imported == null) {
+                Toast.makeText(this, "No se pudo importar. Usa un perfil .mfshader v1 compatible.", Toast.LENGTH_LONG).show();
+            } else {
+                manager.activate(imported, getSharedPreferences("minefade_ui", MODE_PRIVATE));
+                Toast.makeText(this, "Perfil shader activado: " + imported.name, Toast.LENGTH_LONG).show();
+                if (homeScreen != null) homeScreen.refreshShaders();
+            }
+        }
+    }
+
+    private LanMultiplayerService.Listener createLanListener(boolean host) {
+        return new LanMultiplayerService.Listener() {
+            @Override public void onStatus(String status) {
+                if (homeScreen != null) homeScreen.setMultiplayerStatus(status);
+            }
+            @Override public void onGamesChanged(java.util.List<LanMultiplayerService.GameInfo> games) {
+                if (homeScreen != null) homeScreen.setNearbyGames(games);
+            }
+            @Override public void onConnected(int localPlayerId) {
+                if (host || localPlayerId > 0) startGame(true, localPlayerId);
+            }
+            @Override public void onDisconnected(String reason) {
+                if (homeScreen != null) homeScreen.setMultiplayerStatus(reason);
+            }
+        };
+    }
+
+    private void startLanHost() {
+        if (lanMultiplayer == null) return;
+        lanMultiplayer.startHost("Jugador", createLanListener(true));
+        if (homeScreen != null) homeScreen.setMultiplayerStatus("Creando partida y publicándola en la red local…");
+    }
+
+    private void searchLanGames() {
+        if (lanMultiplayer == null) return;
+        lanMultiplayer.discover(createLanListener(false));
+        if (homeScreen != null) homeScreen.setNearbyGames(java.util.Collections.emptyList());
+    }
+
+    private void joinLanGame(LanMultiplayerService.GameInfo game) {
+        if (lanMultiplayer == null) return;
+        lanMultiplayer.join(game, "Jugador", createLanListener(false));
+        if (homeScreen != null) homeScreen.setMultiplayerStatus("Conectando a " + game.name + "…");
+    }
+
+    private void showLoading(String title, String detail) {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xf20b1726, 0xf2122a3b, 0xf20b1726}));
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dp(24), dp(22), dp(24), dp(22));
+        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff1c3548, 0xff13283a});
+        cardBg.setCornerRadius(dp(20));
+        cardBg.setStroke(dp(1), 0x77658da1);
+        card.setBackground(cardBg);
+        card.setElevation(dp(8));
+
+        ProgressBar spinner = new ProgressBar(this);
+        spinner.setIndeterminate(true);
+        LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+        spinnerParams.bottomMargin = dp(12);
+        card.addView(spinner, spinnerParams);
+
+        TextView titleView = statusText(title, 14, 0xffffffff, true);
+        titleView.setGravity(Gravity.CENTER);
+        card.addView(titleView);
+        TextView detailView = statusText(detail, 10, 0xffb5c8d3, false);
+        detailView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(-1, -2);
+        detailParams.topMargin = dp(7);
+        card.addView(detailView, detailParams);
+
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                Math.min(getResources().getDisplayMetrics().widthPixels - dp(40), dp(420)),
+                -2, Gravity.CENTER);
+        overlay.addView(card, cardParams);
+        loadingOverlay = overlay;
+        root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        root.bringChildToFront(overlay);
+    }
+
+    private void showEngineError(String title, String detail) {
+        mainHandler.removeCallbacks(engineTimeout);
+        if (loadingOverlay == null) showLoading(title, detail);
+        loadingOverlay.removeAllViews();
+        loadingOverlay.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xf20b1726, 0xf2122a3b, 0xf20b1726}));
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dp(22), dp(20), dp(22), dp(18));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff23384a, 0xff15283a});
+        bg.setCornerRadius(dp(19));
+        bg.setStroke(dp(1), 0xffa56e65);
+        card.setBackground(bg);
+        card.setElevation(dp(8));
+
+        TextView symbol = statusText("!", 29, 0xffffb19a, true);
+        symbol.setGravity(Gravity.CENTER);
+        card.addView(symbol);
+        TextView heading = statusText(title, 15, Color.WHITE, true);
+        heading.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-1, -2);
+        hp.topMargin = dp(7);
+        card.addView(heading, hp);
+        TextView message = statusText(detail, 10, 0xffc4d1d9, false);
+        message.setGravity(Gravity.CENTER);
+        message.setTextIsSelectable(true);
+        message.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+        ScrollView diagnosticScroll = new ScrollView(this);
+        diagnosticScroll.setFillViewport(false);
+        diagnosticScroll.setVerticalScrollBarEnabled(true);
+        diagnosticScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        diagnosticScroll.addView(message, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, dp(112));
+        mp.topMargin = dp(8);
+        card.addView(diagnosticScroll, mp);
+
+        TextView copyDiagnostics = statusButton("COPIAR DIAGNÓSTICO", false);
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(-1, dp(34));
+        copyParams.topMargin = dp(9);
+        card.addView(copyDiagnostics, copyParams);
+        copyDiagnostics.setOnClickListener(v -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("Minefade - diagnóstico de arranque", detail));
+                Toast.makeText(this, "Diagnóstico copiado", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, dp(42));
+        ap.topMargin = dp(16);
+        card.addView(actions, ap);
+        TextView retry = statusButton("REINTENTAR", true);
+        retry.setOnClickListener(v -> startGame(requestedMultiplayer, requestedPlayerSlot, requestedWorld));
+        actions.addView(retry, new LinearLayout.LayoutParams(0, -1, 1f));
+        TextView back = statusButton("VOLVER", false);
+        back.setOnClickListener(v -> showHome());
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(0, -1, 1f);
+        backParams.leftMargin = dp(8);
+        actions.addView(back, backParams);
+
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                Math.min(getResources().getDisplayMetrics().widthPixels - dp(36), dp(440)),
+                -2, Gravity.CENTER);
+        loadingOverlay.addView(card, cardParams);
+        root.bringChildToFront(loadingOverlay);
+    }
+
+    private TextView statusText(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        view.setTypeface(android.graphics.Typeface.create("sans-serif",
+                bold ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+        view.setIncludeFontPadding(false);
+        return view;
+    }
+
+    private TextView statusButton(String value, boolean primary) {
+        TextView view = statusText(value, 10, primary ? 0xff112219 : 0xffedf4f7, true);
+        view.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                primary ? new int[]{0xffb8f27b, 0xff81d15b}
+                        : new int[]{0xff314b60, 0xff20384a});
+        bg.setCornerRadius(dp(10));
+        bg.setStroke(dp(1), primary ? 0xffd3ffac : 0xff55738a);
+        view.setBackground(bg);
+        return view;
+    }
+
+    private void hideLoadingOverlay() {
+        if (loadingOverlay == null) return;
+        FrameLayout old = loadingOverlay;
+        loadingOverlay = null;
+        old.animate().alpha(0f).setDuration(220L).withEndAction(() -> {
+            if (old.getParent() == root) root.removeView(old);
+        }).start();
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (surfaceView != null) {
+            showHome();
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        activityResumed = false;
+        mainHandler.removeCallbacks(exitPoll);
+        mainHandler.removeCallbacks(engineTimeout);
+        if (surfaceView != null) {
+            surfaceView.pauseNativeEngine();
+            surfaceView.onPause();
+        }
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        activityResumed = true;
+        applyImmersiveMode();
+        if (surfaceView != null) {
+            surfaceView.onResume();
+            surfaceView.resumeNativeEngine();
+            if (engineReady) mainHandler.post(exitPoll);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        mainHandler.removeCallbacks(exitPoll);
+        mainHandler.removeCallbacks(engineTimeout);
+        if (lanMultiplayer != null) lanMultiplayer.close();
+        if (soundEffects != null) soundEffects.release();
+        super.onDestroy();
+    }
+}
