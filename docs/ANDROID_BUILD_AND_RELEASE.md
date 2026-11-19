@@ -5,9 +5,12 @@
 No necesitas computadora ni Android Studio para generar el APK. El repositorio usa GitHub Actions para ejecutar la compilación en servidores de GitHub.
 
 El flujo está en `.github/workflows/android-apk.yml` y se ejecuta:
+- En cada pull request dirigido a `main` (pruebas y APK de validación antes de integrar).
 - Al recibir cambios en `main`.
 - Al crear un tag que empiece por `v`.
 - Cuando se inicia manualmente desde la pestaña Actions.
+
+El job de compilación usa permisos de solo lectura. El job separado que crea borradores de prerelease recibe permiso de escritura únicamente en tags `v*`. Los generadores se ejecutan en modo de verificación: si producen diferencias, CI falla y pide actualizar los recursos en el mismo commit; no modifica `main` con commits bot fuera de la revisión probada.
 
 El runner configura JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1, Rust stable con targets Android y Gradle 9.6.0. Ejecuta primero las pruebas Python y Rust/C++, y después construye un APK debug que incluye `arm64-v8a` y `armeabi-v7a`.
 
@@ -36,7 +39,7 @@ Si la ejecución está fallida, el APK no se publica. Abre los logs de la ejecuc
 
 ## Versionado y firma
 
-El módulo conserva actualmente `applicationId = com.minefade.nativeengine`, `versionCode = 23` y `versionName = 2.0.3`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
+El módulo conserva `applicationId = com.minefade.nativeengine`, `versionCode = 24` y `versionName = 2.1.0`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
 
 El APK de CI es debug y está firmado por la clave debug que genera cada runner. Es instalable como primera instalación, pero **no se garantiza que Android permita instalarlo encima de otra copia de Minefade**: para actualizaciones sucesivas sin desinstalar se necesita una clave de distribución persistente y privada. Nunca guardar un keystore o contraseñas en Git.
 
