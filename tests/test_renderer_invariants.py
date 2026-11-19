@@ -31,7 +31,7 @@ def test_terrain_gpu_resources_are_incremental_per_chunk():
     assert "world_.GetChunkMeshViews(centerX, centerZ, renderDistanceChunks_, worldChunkViews_)" in ENGINE
     assert "world_.BuildMesh(meshBuildScratch_" in ENGINE
     assert "1u, false);" in ENGINE
-    assert "gpu.revision != view.revision" in RENDERER
+    assert "existing->second.revision == view.revision" in RENDERER
     assert "const std::vector<ChunkMeshView>& chunkViews" in RENDERER_H
     assert "const std::vector<WorldVertex>* opaque" in WORLD_H
     assert "GL_STATIC_DRAW" in RENDERER
