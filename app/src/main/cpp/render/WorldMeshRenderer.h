@@ -22,12 +22,16 @@ public:
     WorldMeshRenderer(const WorldMeshRenderer&) = delete;
     WorldMeshRenderer& operator=(const WorldMeshRenderer&) = delete;
 
-    bool Sync(const std::vector<ChunkMeshView>& chunkViews);
+    // Upload a bounded number of dirty chunks per call, nearest first.
+    bool Sync(const std::vector<ChunkMeshView>& chunkViews,
+              const Vec3& cameraPosition, std::size_t maxChunkUploads);
     void Shutdown();
 
     GLsizei OpaqueVertexCount() const noexcept { return opaqueVertexCount_; }
     GLsizei TransparentVertexCount() const noexcept { return transparentVertexCount_; }
     std::size_t ResidentChunkCount() const noexcept { return chunks_.size(); }
+    std::size_t LastUploadCount() const noexcept { return lastUploadCount_; }
+    std::size_t PendingUploadCount() const noexcept { return pendingUploadCount_; }
 
     void DrawOpaque(const CameraFrustum& frustum) const;
     void DrawTransparent(const CameraFrustum& frustum, const Vec3& cameraPosition) const;
@@ -54,6 +58,8 @@ private:
     std::map<std::pair<int, int>, GpuChunk> chunks_;
     GLsizei opaqueVertexCount_{0};
     GLsizei transparentVertexCount_{0};
+    std::size_t lastUploadCount_{0};
+    std::size_t pendingUploadCount_{0};
 };
 
 } // namespace minefade

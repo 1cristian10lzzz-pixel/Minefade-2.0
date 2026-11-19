@@ -27,11 +27,11 @@ def test_terrain_gpu_resources_are_incremental_per_chunk():
     assert "render/WorldMeshRenderer.cpp" in CMAKE
     assert '#include "../render/WorldMeshRenderer.h"' in ENGINE_H
     assert "WorldMeshRenderer worldRenderer_;" in ENGINE_H
-    assert "worldRenderer_.Sync(worldChunkViews_)" in ENGINE
+    assert "worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(), uploadBudget)" in ENGINE
     assert "world_.GetChunkMeshViews(centerX, centerZ, renderDistanceChunks_, worldChunkViews_)" in ENGINE
     assert "world_.BuildMesh(meshBuildScratch_" in ENGINE
     assert "1u, false);" in ENGINE
-    assert "gpu.revision != view.revision" in RENDERER
+    assert "existing->second.revision == view.revision" in RENDERER
     assert "const std::vector<ChunkMeshView>& chunkViews" in RENDERER_H
     assert "const std::vector<WorldVertex>* opaque" in WORLD_H
     assert "GL_STATIC_DRAW" in RENDERER
@@ -79,10 +79,26 @@ def test_both_shaders_sample_raw_opengl_atlas_rows_without_double_flip():
     assert "float hemisphereFill = mix(0.88, 1.08, skyExposure);" in ENGINE
 
 
+def test_gpu_chunk_uploads_are_bounded_and_nearest_first():
+    assert "std::size_t maxChunkUploads" in RENDERER_H
+    assert "PendingUploadCount()" in RENDERER_H
+    assert "LastUploadCount()" in RENDERER_H
+    assert "std::sort(dirty.begin(), dirty.end()" in RENDERER
+    assert "a.distanceSquared < b.distanceSquared" in RENDERER
+    assert "if (attemptedUploads >= maxChunkUploads) break;" in RENDERER
+    render = ENGINE[ENGINE.index("void Engine::Render()"):ENGINE.index("void Engine::Touch")]
+    assert "UploadWorldMesh();" in render
+    assert "glDisable(GL_SCISSOR_TEST);" in render
+    assert "glViewport(0, 0, width_, height_);" in render
+    assert "glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);" in render
+    assert "glDepthMask(GL_TRUE);" in render
+
+
 if __name__ == "__main__":
     test_chunk_cache_is_revision_driven_not_outer_border_driven()
     test_terrain_gpu_resources_are_incremental_per_chunk()
     test_frustum_uses_real_mesh_height_bounds()
     test_chunk_mesh_work_is_budgeted_and_nearby_first()
     test_both_shaders_sample_raw_opengl_atlas_rows_without_double_flip()
+    test_gpu_chunk_uploads_are_bounded_and_nearest_first()
     print("Minefade renderer invariants passed.")

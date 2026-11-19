@@ -817,8 +817,10 @@ void Engine::UploadWorldMesh() {
     const int centerX = static_cast<int>(std::floor(player_.position.x));
     const int centerZ = static_cast<int>(std::floor(player_.position.z));
     world_.GetChunkMeshViews(centerX, centerZ, renderDistanceChunks_, worldChunkViews_);
-    if (!worldRenderer_.Sync(worldChunkViews_)) {
-        ENGINE_LOGE("One or more chunk GPU buffers could not be synchronized; affected chunks will retry on the next mesh update");
+    const std::size_t uploadBudget = graphicsQuality_ <= 0 ? 1u
+        : (graphicsQuality_ >= 2 ? 3u : 2u);
+    if (!worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(), uploadBudget)) {
+        ENGINE_LOGE("One or more chunk GPU buffers could not be synchronized; affected chunks will retry on the next upload pass");
     }
 }
 
@@ -1139,14 +1141,25 @@ void Engine::Render() {
         chunkMeshAccumulator_ = std::min(chunkMeshAccumulator_ + safeDelta, kChunkMeshInterval);
         const int meshCenterX = static_cast<int>(std::floor(player_.position.x));
         const int meshCenterZ = static_cast<int>(std::floor(player_.position.z));
-        if (chunkMeshAccumulator_ >= kChunkMeshInterval &&
-            world_.HasPendingMeshBuild(meshCenterX, meshCenterZ, renderDistanceChunks_)) {
-            RebuildWorldMesh();
+        if (chunkMeshAccumulator_ >= kChunkMeshInterval) {
+            if (world_.HasPendingMeshBuild(meshCenterX, meshCenterZ, renderDistanceChunks_)) {
+                RebuildWorldMesh();
+            }
+            // Drain deferred GPU work even when the CPU mesh queue is already clean.
             UploadWorldMesh();
             UploadTransparentWorldMesh();
             chunkMeshAccumulator_ = 0.0f;
         }
     }
+    // OpenGL ES state is global. Restore full-surface state before clearing.
+    glViewport(0, 0, width_, height_);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_DEPTH_TEST);
+    glClearDepthf(1.0f);
+
     const auto sky = environment_.SkyColor();
     glClearColor(sky[0], sky[1], sky[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1225,8 +1238,11 @@ void Engine::Render() {
         framesSinceStats_ = 0;
         lastStats_ = now;
         char status[128]{};
-        std::snprintf(status, sizeof(status), "FPS %.0f · Chunks %zu · Día %.0f%%",
-                      fps_, world_.ChunkCount(), environment_.Daylight() * 100.0f);
+        std::snprintf(status, sizeof(status),
+                      "FPS %.0f · C %zu +%zu · GPU %zu +%zu · Día %.0f%%",
+                      fps_, world_.ChunkCount(), world_.PendingChunkCount(),
+                      worldRenderer_.ResidentChunkCount(), worldRenderer_.PendingUploadCount(),
+                      environment_.Daylight() * 100.0f);
         ui_.SetStatus(status);
     }
 

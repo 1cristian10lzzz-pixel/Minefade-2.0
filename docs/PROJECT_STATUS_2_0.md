@@ -61,6 +61,18 @@ El código incluye pantallas Android, controles táctiles, editor de avatar, HUD
 7. El prototipo LAN necesita pruebas con dos dispositivos Android y validación de sincronización/estados desconectados.
 8. No hay medidas de FPS, latencia de chunks o consumo térmico válidas en dispositivos reales asociadas a esta revisión.
 
+## Cambios implementados en la actualización 2.1
+
+- `WorldMeshRenderer::Sync` recibe la posición de cámara y un máximo de chunks por pasada; ordena los meshes sucios por distancia y transfiere primero los cercanos.
+- Presupuesto por calidad: 1 chunk en calidad baja, 2 en media y 3 en alta. El renderer conserva contadores de subidas realizadas y pendientes.
+- El motor sincroniza GPU cada intervalo de meshing incluso cuando la cola CPU ya está limpia; así drena el trabajo aplazado por el presupuesto anterior.
+- Se valida que el tamaño del buffer cabe en `GLsizeiptr` antes de llamar a `glBufferData`, incluido ARMv7.
+- Cada frame restaura viewport, scissor, máscara de color, máscara de profundidad y depth function antes del clear.
+- El HUD incluye chunks pendientes, chunks GPU residentes y subidas pendientes.
+- CI valida pull requests y no publica commits automáticos de recursos desde el job de compilación. El permiso de prerelease se encuentra en un job separado.
+
+Esta etapa **no** implementa todavía snapshots inmutables, una cola persistente de meshing ni límites de bytes/milisegundos dentro de la transferencia de un único chunk. El upload continúa ocurriendo en el hilo EGL; hay que medirlo en Android real antes de ajustar los presupuestos.
+
 ## Validación pendiente de esta importación
 
 - Compilar con SDK/NDK/CMake/JDK/Rust indicados en `docs/ANDROID_BUILD_AND_RELEASE.md`.

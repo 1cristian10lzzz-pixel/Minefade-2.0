@@ -28,8 +28,11 @@ bool WorldMeshRenderer::UploadPass(GLuint& vao, GLuint& vbo, GLsizei& drawCount,
         ReleasePass(vao, vbo, drawCount);
         return true;
     }
+    const std::size_t maxBufferBytes =
+        static_cast<std::size_t>(std::numeric_limits<GLsizeiptr>::max());
     if (first > source.size() || count > source.size() - first ||
-        count > static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())) {
+        count > static_cast<std::size_t>(std::numeric_limits<GLsizei>::max()) ||
+        count > maxBufferBytes / sizeof(WorldVertex)) {
         ReleasePass(vao, vbo, drawCount);
         return false;
     }
@@ -71,37 +74,69 @@ bool WorldMeshRenderer::UploadPass(GLuint& vao, GLuint& vbo, GLsizei& drawCount,
     return true;
 }
 
-bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews) {
+bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews,
+                             const Vec3& cameraPosition,
+                             std::size_t maxChunkUploads) {
+    struct DirtyChunk {
+        const ChunkMeshView* view{nullptr};
+        float distanceSquared{0.0f};
+    };
+
     std::set<std::pair<int, int>> active;
-    std::size_t opaqueTotal = 0;
-    std::size_t transparentTotal = 0;
+    std::vector<DirtyChunk> dirty;
+    dirty.reserve(chunkViews.size());
+    lastUploadCount_ = 0;
+    pendingUploadCount_ = 0;
     bool success = true;
 
     for (const ChunkMeshView& view : chunkViews) {
         if (view.opaque == nullptr || view.transparent == nullptr) continue;
         const auto key = std::make_pair(view.chunkX, view.chunkZ);
         active.insert(key);
+        const auto existing = chunks_.find(key);
+        if (existing != chunks_.end() && existing->second.revision == view.revision) continue;
+
+        const float centerX = static_cast<float>(view.chunkX * VoxelWorld::kChunkSize)
+            + static_cast<float>(VoxelWorld::kChunkSize) * 0.5f;
+        const float centerZ = static_cast<float>(view.chunkZ * VoxelWorld::kChunkSize)
+            + static_cast<float>(VoxelWorld::kChunkSize) * 0.5f;
+        const float dx = centerX - cameraPosition.x;
+        const float dy = (view.minY + view.maxY) * 0.5f - cameraPosition.y;
+        const float dz = centerZ - cameraPosition.z;
+        dirty.push_back({&view, dx * dx + dy * dy + dz * dz});
+    }
+
+    // Upload nearest dirty chunks first so the budget protects nearby terrain.
+    std::sort(dirty.begin(), dirty.end(), [](const DirtyChunk& a, const DirtyChunk& b) {
+        if (a.distanceSquared != b.distanceSquared) return a.distanceSquared < b.distanceSquared;
+        if (a.view->chunkX != b.view->chunkX) return a.view->chunkX < b.view->chunkX;
+        return a.view->chunkZ < b.view->chunkZ;
+    });
+
+    std::size_t attemptedUploads = 0;
+    for (const DirtyChunk& candidate : dirty) {
+        if (attemptedUploads >= maxChunkUploads) break;
+        ++attemptedUploads;
+        const ChunkMeshView& view = *candidate.view;
+        const auto key = std::make_pair(view.chunkX, view.chunkZ);
         GpuChunk& gpu = chunks_[key];
 
-        if (gpu.revision != view.revision) {
-            const bool opaqueOk = UploadPass(gpu.opaqueVao, gpu.opaqueVbo, gpu.opaqueCount,
-                *view.opaque, 0u, view.opaque->size());
-            const bool transparentOk = UploadPass(gpu.transparentVao, gpu.transparentVbo,
-                gpu.transparentCount, *view.transparent, 0u, view.transparent->size());
-            if (!opaqueOk || !transparentOk) {
-                gpu.revision = 0;
-                gpu.opaqueCount = 0;
-                gpu.transparentCount = 0;
-                success = false;
-                continue;
-            }
-            gpu.revision = view.revision;
-            gpu.minY = view.minY;
-            gpu.maxY = view.maxY;
+        const bool opaqueOk = UploadPass(gpu.opaqueVao, gpu.opaqueVbo, gpu.opaqueCount,
+            *view.opaque, 0u, view.opaque->size());
+        const bool transparentOk = UploadPass(gpu.transparentVao, gpu.transparentVbo,
+            gpu.transparentCount, *view.transparent, 0u, view.transparent->size());
+        if (!opaqueOk || !transparentOk) {
+            gpu.revision = 0;
+            gpu.opaqueCount = 0;
+            gpu.transparentCount = 0;
+            success = false;
+            continue;
         }
 
-        opaqueTotal += static_cast<std::size_t>(gpu.opaqueCount);
-        transparentTotal += static_cast<std::size_t>(gpu.transparentCount);
+        gpu.revision = view.revision;
+        gpu.minY = view.minY;
+        gpu.maxY = view.maxY;
+        ++lastUploadCount_;
     }
 
     for (auto it = chunks_.begin(); it != chunks_.end();) {
@@ -115,13 +150,19 @@ bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews) {
         }
     }
 
+    std::size_t opaqueTotal = 0;
+    std::size_t transparentTotal = 0;
+    for (const auto& entry : chunks_) {
+        opaqueTotal += static_cast<std::size_t>(entry.second.opaqueCount);
+        transparentTotal += static_cast<std::size_t>(entry.second.transparentCount);
+    }
     opaqueVertexCount_ = static_cast<GLsizei>(std::min(
         opaqueTotal, static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())));
     transparentVertexCount_ = static_cast<GLsizei>(std::min(
         transparentTotal, static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())));
+    pendingUploadCount_ = dirty.size() - std::min(dirty.size(), lastUploadCount_);
     return success;
 }
-
 bool WorldMeshRenderer::IsVisible(const ChunkMeshRange& range,
                                   const CameraFrustum& frustum) noexcept {
     const float minX = static_cast<float>(range.chunkX * VoxelWorld::kChunkSize);
@@ -198,6 +239,8 @@ void WorldMeshRenderer::Shutdown() {
     chunks_.clear();
     opaqueVertexCount_ = 0;
     transparentVertexCount_ = 0;
+    lastUploadCount_ = 0;
+    pendingUploadCount_ = 0;
 }
 
 } // namespace minefade
