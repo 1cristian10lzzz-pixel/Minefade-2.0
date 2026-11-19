@@ -2,7 +2,7 @@
 
 Juego voxel nativo para Android. Este repositorio es la base principal de desarrollo de Minefade 2.0.
 
-> **Estado:** código fuente importado y documentado. Todavía no hay un APK nuevo verificado ni un Release 2.0 publicado desde este repositorio.
+> **Estado:** código fuente y recursos principales importados y documentados. Todavía no hay un APK nuevo verificado ni un Release 2.0 publicado desde este repositorio.
 
 ## Base de código
 
@@ -17,13 +17,13 @@ El módulo Android está en la raíz (`app/`).
 - **Rust:** núcleo determinista de simulación y animación mediante ABI C.
 - **Interfaz:** RmlUi 6.3 con backend OpenGL ES y FreeType 2.13.3.
 - **Renderizado:** mallas por chunk, greedy meshing para cubos opacos, descarte por frustum, pases opaco/transparente y LOD de distancia inicial.
-- **Contenido:** catálogo modular, definiciones JSON, sonidos y vista previa PNG del atlas.
+- **Contenido:** catálogo modular, definiciones JSON, atlas RGBA original de 576×486 píxeles, vista previa PNG y efectos de sonido.
 
 ## Sistemas presentes
 
 Menú Android, HUD táctil, personalización del avatar, inventario/barra rápida, mundos separados, supervivencia/creativo/aventura, comandos, cofre inicial, fauna y animaciones básicas, mods de datos, paquetes de shaders y prototipo de multijugador LAN NSD/TCP.
 
-La copia inicial no incluye el binario RGBA del atlas: el código Android dispone de un atlas de emergencia generado en tiempo de inicio cuando el recurso no está disponible. Se conserva la vista previa PNG para referencia. Hay que restaurar/generar el atlas real antes de considerar completa la revisión visual.
+La app incluye también una rutina de atlas de emergencia para recuperarse si el atlas principal está ausente o dañado; el recurso principal ya se ha restaurado en este repositorio.
 
 La presencia de código no equivale a validación en un teléfono. LAN, controles, renderizado y guardados requieren pruebas físicas.
 
