@@ -72,6 +72,35 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest
 
+      - name: Regenerate deterministic audio, block catalog and atlas
+        run: |
+          python3 tools/generate_audio.py
+          python3 tools/generate_block_catalog.py
+
+      - name: Commit generated source assets when main changed
+        shell: bash
+        run: |
+          git add \
+            app/src/main/assets/audio \
+            app/src/main/assets/data/minefade_block_catalog.json \
+            app/src/main/assets/textures/block_atlas.rgba \
+            app/src/main/cpp/blocks/BlockRegistry.h \
+            app/src/main/cpp/blocks/BlockRegistry.cpp \
+            docs/block_atlas_preview.png \
+            docs/BLOCK_CATALOG_1_8.md
+          if git diff --cached --quiet; then
+            echo "Generated assets are already up to date."
+          else
+            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+              echo "Generated assets are stale on this tag. Run the build on main first, then create a new version tag." >&2
+              exit 1
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Regenerate deterministic Minefade assets"
+            git push origin HEAD:main
+          fi
+
       - name: Run Python regression tests
         run: python3 -m pytest -q tests
 
