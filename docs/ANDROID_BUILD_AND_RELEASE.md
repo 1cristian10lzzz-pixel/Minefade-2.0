@@ -1,61 +1,65 @@
 # Compilación Android y política de lanzamientos
 
-## Requisitos declarados por el proyecto
+## Compilación remota automática
 
-La configuración actual de Gradle/CMake declara:
+No necesitas computadora ni Android Studio para generar el APK. El repositorio usa GitHub Actions para ejecutar la compilación en servidores de GitHub.
+
+El flujo está en `.github/workflows/android-apk.yml` y se ejecuta:
+- Al recibir cambios en `main`.
+- Al crear un tag que empiece por `v`.
+- Cuando se inicia manualmente desde la pestaña Actions.
+
+El runner configura JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1, Rust stable con targets Android y Gradle 9.6.0. Ejecuta primero las pruebas Python y Rust/C++, y después construye un APK debug que incluye `arm64-v8a` y `armeabi-v7a`.
+
+Cada compilación correcta publica un artefacto APK descargable en el resumen de ejecución de Actions, con un SHA-256. El artefacto se conserva 90 días.
+
+## Cómo descargarlo desde Android
+
+1. Abre el repositorio Minefade 2.0 en GitHub.
+2. Entra en la pestaña **Actions**.
+3. Abre la ejecución más reciente llamada **Minefade Android APK**.
+4. Baja hasta **Artifacts**.
+5. Descarga `Minefade-2.0-APK-...` y abre el APK desde el gestor de descargas.
+
+Si la ejecución está fallida, el APK no se publica. Abre los logs de la ejecución para ver el primer error real.
+
+## Requisitos declarados por el proyecto
 
 - JDK 17.
 - Android SDK Platform 36 y Android Build Tools 36.0.0.
 - Android NDK `28.2.13676358`.
 - CMake 3.22.1.
-- Gradle Wrapper 9.6.0.
+- Gradle 9.6.0.
 - Rust stable + Cargo.
 - Targets Rust Android `aarch64-linux-android` y `armv7-linux-androideabi`.
 - Conexión a GitHub durante CMake para descargar FreeType 2.13.3 y RmlUi 6.3 (FetchContent).
 
-Comprobar las versiones instaladas con el equipo de build antes de compilar. El proyecto no incluye el SDK ni el NDK.
-
-## Comando de compilación
-
-Desde la raíz del repositorio:
-
-```bash
-chmod +x gradlew
-./gradlew --no-daemon :app:assembleDebug
-```
-
-Salida esperada:
-
-```
-app/build/outputs/apk/debug/app-debug.apk
-```
-
-Este path es la salida esperada de Gradle; no significa que ya exista un APK en este repositorio.
-
-## Validaciones previas a una Release
-
-1. Ejecutar los tests nativos de mundo (`tests/run-world-tests.sh`) y todas las pruebas Python de `tests/`.
-2. Compilar las ABI declaradas y revisar logs de Gradle/CMake/Rust.
-3. Instalar el APK desde cero y actualizar desde la versión previa cuando la firma lo permita.
-4. Abrir un mundo existente, construir/romper bloques, guardar, cerrar y volver a abrir.
-5. Comprobar avatar, inventario, HUD, controles táctiles y tercera persona.
-6. Comprobar agua/transparencia, shaders, carga de chunks y frustum.
-7. Pausar/reanudar, bloquear/desbloquear pantalla y forzar recreación de Surface/EGL.
-8. Probar LAN en dos Android reales y revisar desconexión/reconexión.
-9. Medir rendimiento/temperatura en teléfonos representativos; registrar dispositivos y GPU.
-10. Revisar permisos, assets y avisos de licencias de dependencias.
-
 ## Versionado y firma
 
-El módulo conserva actualmente `applicationId = com.minefade.nativeengine`, `versionCode = 23` y `versionName = 2.0.3`. No cambiar el identificador ni reducir el versionCode de una actualización sin una decisión explícita sobre instalación y migración. Una firma de debug no garantiza que un APK sea instalable como actualización de otro firmado con una clave distinta.
+El módulo conserva actualmente `applicationId = com.minefade.nativeengine`, `versionCode = 23` y `versionName = 2.0.3`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
 
-No se ha encontrado en esta copia una clave de firma de producción. No incluir claves privadas, contraseñas ni keystores en Git.
+El APK de CI es debug y está firmado por la clave debug que genera cada runner. Es instalable como primera instalación, pero **no se garantiza que Android permita instalarlo encima de otra copia de Minefade**: para actualizaciones sucesivas sin desinstalar se necesita una clave de distribución persistente y privada. Nunca guardar un keystore o contraseñas en Git.
 
-## Política de GitHub Releases
+Los tags `v*` crean un borrador de prerelease. No se publica automáticamente como versión estable: primero debe probarse en Android físico, confirmar que abre los mundos y validar la actualización. La firma estable debe configurarse mediante GitHub Actions Secrets antes de producir paquetes de distribución.
 
-- No crear una Release para una compilación no probada.
-- Subir solo APK generado a partir del commit que acompaña la Release.
-- Añadir en la descripción: cambios, fallos corregidos, pruebas realizadas, ABI, versionCode/versionName y limitaciones conocidas.
-- Mantener `CHANGELOG.md` actualizado.
-- No usar GitHub Actions. La compilación y publicación deben hacerse manualmente.
-- No borrar versiones ya publicadas ni mundos de usuarios.
+## Criterios antes de una Release estable
+
+1. Las pruebas Python, Rust y C++ deben pasar.
+2. El APK debe compilar para las ABI publicadas y verificarse con `apksigner`.
+3. Debe instalarse y abrirse en Android real.
+4. Debe probarse la apertura, guardado y reapertura de un mundo existente.
+5. Deben comprobarse avatar, inventario, HUD, controles táctiles y tercera persona.
+6. Deben probarse agua/transparencia, shaders, carga de chunks, pausa y recreación de Surface/EGL.
+7. El multijugador LAN debe probarse entre dos dispositivos.
+8. Registrar dispositivos, GPU, logs y métricas; no inventar cifras de rendimiento.
+9. La descripción del Release debe incluir cambios, fallos corregidos, pruebas, ABI, versionCode/versionName y limitaciones.
+
+## Construcción manual
+
+Si alguien dispone de Android SDK/NDK, JDK, Rust y Gradle 9.6.0, puede ejecutar desde la raíz:
+
+```bash
+gradle --no-daemon :app:assembleDebug
+```
+
+Salida esperada: `app/build/outputs/apk/debug/app-debug.apk`.

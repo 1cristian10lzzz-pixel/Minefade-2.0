@@ -1,58 +1,49 @@
 # Minefade 2.0
 
-Juego voxel nativo para Android. Este repositorio es la base principal de desarrollo de Minefade 2.0.
+Juego voxel nativo para Android. Este es el repositorio principal de desarrollo.
 
-> **Estado:** código fuente y recursos principales importados y documentados. Todavía no hay un APK nuevo verificado ni un Release 2.0 publicado desde este repositorio.
+> **Estado:** fuente y recursos importados; el APK se compila ahora en GitHub Actions. Ninguna compilación se considera Release estable hasta superar las pruebas en Android real.
 
-## Base de código
+## Descargar el APK
 
-Importada desde el commit `562761841115903523126e5f8bd4db001f2fc061` de la rama `minefade-2.3-bedrock-controls-gameplay` del repositorio anterior. Se eligió por contener el conjunto más completo de código nativo, juego, Android, recursos y pruebas. El repositorio anterior permanece intacto.
+Cada cambio enviado a `main` inicia una compilación remota. Para descargarla desde el teléfono:
 
-El módulo Android está en la raíz (`app/`).
+1. Abre [Actions](https://github.com/1cristian10lzzz-pixel/Minefade-2.0/actions).
+2. Selecciona la ejecución más reciente **Minefade Android APK**.
+3. Descarga el artefacto `Minefade-2.0-APK-...` al final de la página.
+
+Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publica como estable solo después de probar instalación, mundos y controles en un teléfono.
 
 ## Arquitectura
 
-- **Android / Java:** actividad, pantalla principal, controles táctiles, gestión de mundos, audio, mods/shaders y descubrimiento LAN mediante NSD.
-- **C++20:** motor, mundo voxel, jugador, catálogo de bloques, construcción de mallas y backend OpenGL ES 3.
-- **Rust:** núcleo determinista de simulación y animación mediante ABI C.
-- **Interfaz:** RmlUi 6.3 con backend OpenGL ES y FreeType 2.13.3.
-- **Renderizado:** mallas por chunk, greedy meshing para cubos opacos, descarte por frustum, pases opaco/transparente y LOD de distancia inicial.
-- **Contenido:** catálogo modular, definiciones JSON, atlas RGBA original de 576×486 píxeles, vista previa PNG y efectos de sonido.
+- Android / Java: actividad, UI, controles, mundos, audio, mods/shaders y descubrimiento LAN NSD.
+- C++20: motor voxel, jugador, meshing y backend OpenGL ES 3.
+- Rust: núcleo de simulación mediante ABI C.
+- RmlUi 6.3 y FreeType 2.13.3.
+- Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
 
 ## Sistemas presentes
 
-Menú Android, HUD táctil, personalización del avatar, inventario/barra rápida, mundos separados, supervivencia/creativo/aventura, comandos, cofre inicial, fauna y animaciones básicas, mods de datos, paquetes de shaders y prototipo de multijugador LAN NSD/TCP.
-
-La app incluye también una rutina de atlas de emergencia para recuperarse si el atlas principal está ausente o dañado; el recurso principal ya se ha restaurado en este repositorio.
-
-La presencia de código no equivale a validación en un teléfono. LAN, controles, renderizado y guardados requieren pruebas físicas.
-
-## Compilar Android
-
-Consulta [docs/ANDROID_BUILD_AND_RELEASE.md](docs/ANDROID_BUILD_AND_RELEASE.md). El proyecto requiere Android SDK/NDK, CMake, JDK, Gradle Wrapper y Rust/Cargo.
-
-```bash
-./gradlew --no-daemon :app:assembleDebug
-```
-
-Salida prevista: `app/build/outputs/apk/debug/app-debug.apk`. No se ha ejecutado una compilación desde este repositorio.
+Menú Android, HUD táctil, personalización del avatar, inventario, mundos separados, modos supervivencia/creativo/aventura, comandos, fauna, mods de datos, shaders y prototipo LAN NSD/TCP.
 
 ## Compatibilidad de mundos
 
-El cargador reconoce `MFVOX001`, `MFVOX002` y `MFVOX003`; la escritura actual produce `MFVOX003`. Cualquier cambio de esquema debe incluir migración versionada y pruebas. No borrar datos al actualizar.
+El cargador reconoce `MFVOX001`, `MFVOX002` y `MFVOX003`; la escritura actual produce `MFVOX003`. No cambiar formatos ni IDs de bloque sin migración versionada y pruebas.
 
-## Renderer: trabajo pendiente
+## Estado del renderer
 
-La caché por chunk y la conservación de buffers GPU ya existen. Faltan snapshots inmutables, una cola de meshing persistente, priorización/cancelación por revisión y un presupuesto adaptativo de uploads GPU. El LOD lejano actual es una aproximación por altura, no el renderer completo de Distant Horizons. Véase [docs/RENDERER_UPGRADE_PLAN_2_0.md](docs/RENDERER_UPGRADE_PLAN_2_0.md).
+La caché por chunk y buffers GPU incrementales ya existen. Faltan snapshots inmutables, cola de meshing persistente, cancelación por revisión y presupuesto adaptativo de uploads. El LOD lejano actual es una aproximación por altura, no el renderer completo de Distant Horizons. Véase [el plan técnico](docs/RENDERER_UPGRADE_PLAN_2_0.md).
 
-## Versionado y Releases
+## Organización
 
-- El desarrollo vive en `main`.
-- Registrar cambios reales y pruebas en `CHANGELOG.md`.
-- Crear GitHub Release solo con APK real, instalación comprobada, apertura/guardado de mundos y pruebas Android de las funciones modificadas.
-- Cada Release debe indicar cambios, pruebas, ABI, versionCode/versionName y limitaciones.
-- No usar GitHub Actions ni automatizaciones de compilación.
+- `app/` — app Android, C++, recursos.
+- `rust-core/` — núcleo Rust.
+- `tests/` — pruebas.
+- `tools/` — herramientas de catálogo/mods/shaders.
+- `docs/` — arquitectura y validación.
 
-## Carpetas
+## Historial y seguridad
 
-`app/` Android/C++/assets · `rust-core/` Rust · `tests/` pruebas · `tools/` herramientas · `docs/` documentación.
+- La base se importó desde el commit `562761841115903523126e5f8bd4db001f2fc061` del repositorio anterior.
+- El repositorio anterior permanece intacto.
+- No se almacenan contraseñas ni claves privadas de firma en Git.

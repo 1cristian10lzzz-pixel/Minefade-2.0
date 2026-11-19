@@ -1,26 +1,18 @@
 # Registro de cambios — Minefade 2.0
 
-Este archivo registra cambios realmente incorporados al repositorio. No representa por sí solo un Release binario.
+## Base inicial e importación
+- Se importó la base de código nativa más completa, con app Android, C++20, Rust, OpenGL ES, RmlUi, catálogo, atlas, sonidos, pruebas y herramientas.
+- Se restauró el atlas RGBA original (576×486; SHA de Git coincidente con el archivo fuente).
+- Se añadieron documentos de arquitectura, compatibilidad de guardados y renovación del renderer.
 
-## Base inicial e importación del proyecto
+## Compilación Android remota
+- Se añadió GitHub Actions para probar y compilar APK debug con arm64-v8a y armeabi-v7a en cada actualización de `main`.
+- Cada compilación correcta publica un artefacto de 90 días con suma SHA-256.
+- Los tags `v*` preparan borradores de prerelease con APK adjunto.
+- No se declara una Release estable sin pruebas Android físicas y firma persistente.
 
-- Se importó la base de código seleccionada de la rama `minefade-2.3-bedrock-controls-gameplay`, commit `562761841115903523126e5f8bd4db001f2fc061`.
-- Se conservaron la aplicación Android, motor C++20, núcleo Rust, backend OpenGL ES, UI RmlUi, catálogo de bloques, recursos de audio, gestión de mundos, avatar, controles, mods, shaders y prototipo LAN.
-- Se conservaron pruebas nativas y scripts de validación/generación.
-- Se dejaron fuera ramas/paquetes temporales, parches históricos y workflows de GitHub Actions.
-- Se añadió documentación de arquitectura, compilación, estado, referencias de licencias y plan de renovación del renderer.
-
-## Restauración del atlas de bloques
-
-- Se recuperó el atlas RGBA original a partir de la vista previa PNG incluida en el repositorio.
-- Dimensiones reconstruidas: 576×486; 1,119,744 bytes.
-- SHA-1 de Git coincide con el blob original: `ba3e6c50403290f10a2bf06bc443fd73c55a5a43`. La reconstrucción es idéntica, no una aproximación.
-
-### Validación pendiente
-- Compilar APK Android desde este repositorio.
-- Ejecutar tests nativos y Python en el entorno de build.
-- Probar instalación, arranque, apertura y guardado de mundos existentes en Android físico.
-- Comprobar renderer, pérdida/recreación de EGL, agua/transparencia, HUD y controles.
-- Probar descubrimiento y sesión LAN entre dos dispositivos.
-
-**No hay APK ni Release publicado como resultado de estas tareas.**
+## Validación pendiente
+- Primera ejecución correcta del pipeline Android.
+- Instalación y prueba de mundos en Android.
+- Firma de distribución persistente para actualizaciones in-place.
+- Renovación del pipeline de meshing/LOD y medición real en dispositivos.
