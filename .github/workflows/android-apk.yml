@@ -6,10 +6,13 @@ on:
       - main
     tags:
       - "v*"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: minefade-android-${{ github.ref }}
@@ -20,10 +23,14 @@ jobs:
     name: Tests and Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -72,15 +79,12 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest
 
-      - name: Regenerate deterministic audio, block catalog and atlas
+      - name: Verify deterministic audio, catalog and atlas
+        shell: bash
         run: |
           python3 tools/generate_audio.py
           python3 tools/generate_block_catalog.py
-
-      - name: Commit generated source assets when main changed
-        shell: bash
-        run: |
-          git add \
+          git add -- \
             app/src/main/assets/audio \
             app/src/main/assets/data/minefade_block_catalog.json \
             app/src/main/assets/textures/block_atlas.rgba \
@@ -88,17 +92,10 @@ jobs:
             app/src/main/cpp/blocks/BlockRegistry.cpp \
             docs/block_atlas_preview.png \
             docs/BLOCK_CATALOG_1_8.md
-          if git diff --cached --quiet; then
-            echo "Generated assets are already up to date."
-          else
-            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-              echo "Generated assets are stale on this tag. Run the build on main first, then create a new version tag." >&2
-              exit 1
-            fi
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "Regenerate deterministic Minefade assets"
-            git push origin HEAD:main
+          if ! git diff --cached --quiet; then
+            echo "Generated Minefade assets are stale. Run the generators locally and commit their output before opening a PR." >&2
+            git diff --cached --stat
+            exit 1
           fi
 
       - name: Run Python regression tests
@@ -132,8 +129,21 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create draft prerelease for version tags
-        if: startsWith(github.ref, 'refs/tags/v')
+  draft-prerelease:
+    name: Draft Android prerelease
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated APK artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: Minefade-2.0-APK-${{ github.run_number }}
+          path: dist
+
+      - name: Create draft prerelease
         uses: softprops/action-gh-release@v3
         with:
           name: Minefade ${{ github.ref_name }}
@@ -148,6 +158,6 @@ jobs:
 
             **Tipo de paquete:** debug firmado por Android Gradle Plugin.
             **ABI incluidas:** arm64-v8a y armeabi-v7a.
-            **Versionado Android:** versionCode 23 / versionName 2.0.3 (conservados de la base importada).
+            **Versionado Android:** versionCode 24 / versionName 2.1.0.
 
             Esta es una compilación de validación. La firma debug generada por un runner no garantiza que pueda instalarse como actualización sobre otro APK firmado con una clave diferente. Antes de declarar una versión estable, configura una clave de distribución persistente y prueba la actualización y los mundos guardados en dispositivos Android reales.
