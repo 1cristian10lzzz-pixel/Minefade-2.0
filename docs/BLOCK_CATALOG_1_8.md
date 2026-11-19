@@ -1,6 +1,6 @@
-# Minefade — catálogo base 1.8 + extensiones modernas
+# Minefade — catálogo de bloques base 1.8 y extensiones modernas
 
-**Entradas registradas: 306.** Se mantienen los 284 IDs originales y se añaden 22 definiciones minerales modernas al final del registro. Cada ID tiene nombre en español, clase geométrica, propiedades físicas, resistencia, herramienta preferida, sonido de material, alias de textura y tres celdas propias de atlas (superior/lateral/inferior).
+**Entradas registradas: 414.** Cada ID tiene nombre en español, clase geométrica, propiedades físicas, resistencia, herramienta preferida, sonido de material, alias de textura y tres celdas propias de atlas (superior/lateral/inferior).
 
 Las definiciones de nombres y alias proceden del `blocks.json` del APK aportado. Las texturas del atlas son pixel-art procedimental original generado por Minefade; no se redistribuyen los PNG de Minecraft.
 
@@ -290,7 +290,6 @@ Las definiciones de nombres y alias proceden del `blocks.json` del APK aportado.
 | 281 | Bambú | `bamboo` | Thin | 0.5 | None |
 | 282 | Brote de bambú | `bamboo_sapling` | CrossPlant | 0.0 | None |
 | 283 | Andamio | `scaffolding` | Scaffolding | 0.5 | None |
-
 | 284 | Mena de cobre | `copper_ore` | Cube | 3.0 | Pickaxe |
 | 285 | Pizarra profunda | `deepslate` | Cube | 3.0 | Pickaxe |
 | 286 | Mena de carbón de pizarra profunda | `deepslate_coal_ore` | Cube | 3.0 | Pickaxe |
@@ -313,3 +312,111 @@ Las definiciones de nombres y alias proceden del `blocks.json` del APK aportado.
 | 303 | Bloque de cobre en bruto | `raw_copper_block` | Cube | 5.0 | Pickaxe |
 | 304 | Bloque de cobre | `copper_block` | Cube | 5.0 | Pickaxe |
 | 305 | Cúmulo de amatista | `amethyst_cluster` | Thin | 1.5 | Pickaxe |
+| 306 | Tronco de cerezo | `cherry_log` | Cube | 2.0 | Axe |
+| 307 | Tronco de cerezo descortezado | `stripped_cherry_log` | Cube | 2.0 | Axe |
+| 308 | Tablones de cerezo | `cherry_planks` | Cube | 2.0 | Axe |
+| 309 | Hojas de cerezo | `cherry_leaves` | Cube | 1.5 | Pickaxe |
+| 310 | Brote de cerezo | `cherry_sapling` | CrossPlant | 0.0 | None |
+| 311 | Escaleras de cerezo | `cherry_stairs` | Stairs | 2.0 | Axe |
+| 312 | Losa de cerezo | `cherry_slab` | Slab | 1.5 | Pickaxe |
+| 313 | Pétalos rosas | `pink_petals` | CrossPlant | 0.0 | None |
+| 314 | Tronco de mangle | `mangrove_log` | Cube | 2.0 | Axe |
+| 315 | Tronco de mangle descortezado | `stripped_mangrove_log` | Cube | 2.0 | Axe |
+| 316 | Tablones de mangle | `mangrove_planks` | Cube | 2.0 | Axe |
+| 317 | Hojas de mangle | `mangrove_leaves` | Cube | 1.5 | Pickaxe |
+| 318 | Propágulo de mangle | `mangrove_propagule` | CrossPlant | 0.0 | None |
+| 319 | Raíces de mangle | `mangrove_roots` | Cube | 2.0 | Axe |
+| 320 | Raíces de mangle embarradas | `muddy_mangrove_roots` | Cube | 0.6 | Shovel |
+| 321 | Barro | `mud` | Cube | 0.5 | Shovel |
+| 322 | Barro compacto | `packed_mud` | Cube | 1.5 | Pickaxe |
+| 323 | Ladrillos de barro | `mud_bricks` | Cube | 1.5 | Pickaxe |
+| 324 | Escaleras de ladrillos de barro | `mud_brick_stairs` | Stairs | 1.5 | Pickaxe |
+| 325 | Losa de ladrillos de barro | `mud_brick_slab` | Slab | 1.5 | Pickaxe |
+| 326 | Sculk | `sculk` | Cube | 1.5 | Pickaxe |
+| 327 | Catalizador de sculk | `sculk_catalyst` | Cube | 3.0 | Pickaxe |
+| 328 | Sensor de sculk | `sculk_sensor` | Cube | 3.0 | Pickaxe |
+| 329 | Chillador de sculk | `sculk_shrieker` | Cube | 3.0 | Pickaxe |
+| 330 | Pizarra profunda reforzada | `reinforced_deepslate` | Cube | 55.0 | Pickaxe |
+| 331 | Piedra negra | `blackstone` | Cube | 1.5 | Pickaxe |
+| 332 | Piedra negra pulida | `polished_blackstone` | Cube | 1.5 | Pickaxe |
+| 333 | Piedra negra dorada | `gilded_blackstone` | Cube | 1.5 | Pickaxe |
+| 334 | Obsidiana llorosa | `crying_obsidian` | Cube | 50.0 | Pickaxe |
+| 335 | Tablones carmesí | `crimson_planks` | Cube | 2.0 | Axe |
+| 336 | Tablones distorsionados | `warped_planks` | Cube | 2.0 | Axe |
+| 337 | Escaleras carmesí | `crimson_stairs` | Stairs | 2.0 | Axe |
+| 338 | Escaleras distorsionadas | `warped_stairs` | Stairs | 2.0 | Axe |
+| 339 | Luz de rana ocre | `ochre_froglight` | Cube | 0.3 | Pickaxe |
+| 340 | Luz de rana verdosa | `verdant_froglight` | Cube | 0.3 | Pickaxe |
+| 341 | Luz de rana nacarada | `pearlescent_froglight` | Cube | 0.3 | Pickaxe |
+| 342 | Palo | `minefade_stick` | None | -1.0 | None |
+| 343 | Pico de madera | `minefade_wooden_pickaxe` | None | -1.0 | None |
+| 344 | Hacha de madera | `minefade_wooden_axe` | None | -1.0 | None |
+| 345 | Pala de madera | `minefade_wooden_shovel` | None | -1.0 | None |
+| 346 | Espada de madera | `minefade_wooden_sword` | None | -1.0 | None |
+| 347 | Azada de madera | `minefade_wooden_hoe` | None | -1.0 | None |
+| 348 | Casco de madera | `minefade_wooden_helmet` | None | -1.0 | None |
+| 349 | Pechera de madera | `minefade_wooden_chestplate` | None | -1.0 | None |
+| 350 | Grebas de madera | `minefade_wooden_leggings` | None | -1.0 | None |
+| 351 | Botas de madera | `minefade_wooden_boots` | None | -1.0 | None |
+| 352 | Pico de piedra | `minefade_stone_pickaxe` | None | -1.0 | None |
+| 353 | Hacha de piedra | `minefade_stone_axe` | None | -1.0 | None |
+| 354 | Pala de piedra | `minefade_stone_shovel` | None | -1.0 | None |
+| 355 | Espada de piedra | `minefade_stone_sword` | None | -1.0 | None |
+| 356 | Azada de piedra | `minefade_stone_hoe` | None | -1.0 | None |
+| 357 | Casco de piedra | `minefade_stone_helmet` | None | -1.0 | None |
+| 358 | Pechera de piedra | `minefade_stone_chestplate` | None | -1.0 | None |
+| 359 | Grebas de piedra | `minefade_stone_leggings` | None | -1.0 | None |
+| 360 | Botas de piedra | `minefade_stone_boots` | None | -1.0 | None |
+| 361 | Pico de cobre | `minefade_copper_pickaxe` | None | -1.0 | None |
+| 362 | Hacha de cobre | `minefade_copper_axe` | None | -1.0 | None |
+| 363 | Pala de cobre | `minefade_copper_shovel` | None | -1.0 | None |
+| 364 | Espada de cobre | `minefade_copper_sword` | None | -1.0 | None |
+| 365 | Azada de cobre | `minefade_copper_hoe` | None | -1.0 | None |
+| 366 | Casco de cobre | `minefade_copper_helmet` | None | -1.0 | None |
+| 367 | Pechera de cobre | `minefade_copper_chestplate` | None | -1.0 | None |
+| 368 | Grebas de cobre | `minefade_copper_leggings` | None | -1.0 | None |
+| 369 | Botas de cobre | `minefade_copper_boots` | None | -1.0 | None |
+| 370 | Pico de hierro | `minefade_iron_pickaxe` | None | -1.0 | None |
+| 371 | Hacha de hierro | `minefade_iron_axe` | None | -1.0 | None |
+| 372 | Pala de hierro | `minefade_iron_shovel` | None | -1.0 | None |
+| 373 | Espada de hierro | `minefade_iron_sword` | None | -1.0 | None |
+| 374 | Azada de hierro | `minefade_iron_hoe` | None | -1.0 | None |
+| 375 | Casco de hierro | `minefade_iron_helmet` | None | -1.0 | None |
+| 376 | Pechera de hierro | `minefade_iron_chestplate` | None | -1.0 | None |
+| 377 | Grebas de hierro | `minefade_iron_leggings` | None | -1.0 | None |
+| 378 | Botas de hierro | `minefade_iron_boots` | None | -1.0 | None |
+| 379 | Pico de oro | `minefade_gold_pickaxe` | None | -1.0 | None |
+| 380 | Hacha de oro | `minefade_gold_axe` | None | -1.0 | None |
+| 381 | Pala de oro | `minefade_gold_shovel` | None | -1.0 | None |
+| 382 | Espada de oro | `minefade_gold_sword` | None | -1.0 | None |
+| 383 | Azada de oro | `minefade_gold_hoe` | None | -1.0 | None |
+| 384 | Casco de oro | `minefade_gold_helmet` | None | -1.0 | None |
+| 385 | Pechera de oro | `minefade_gold_chestplate` | None | -1.0 | None |
+| 386 | Grebas de oro | `minefade_gold_leggings` | None | -1.0 | None |
+| 387 | Botas de oro | `minefade_gold_boots` | None | -1.0 | None |
+| 388 | Pico de diamante | `minefade_diamond_pickaxe` | None | -1.0 | None |
+| 389 | Hacha de diamante | `minefade_diamond_axe` | None | -1.0 | None |
+| 390 | Pala de diamante | `minefade_diamond_shovel` | None | -1.0 | None |
+| 391 | Espada de diamante | `minefade_diamond_sword` | None | -1.0 | None |
+| 392 | Azada de diamante | `minefade_diamond_hoe` | None | -1.0 | None |
+| 393 | Casco de diamante | `minefade_diamond_helmet` | None | -1.0 | None |
+| 394 | Pechera de diamante | `minefade_diamond_chestplate` | None | -1.0 | None |
+| 395 | Grebas de diamante | `minefade_diamond_leggings` | None | -1.0 | None |
+| 396 | Botas de diamante | `minefade_diamond_boots` | None | -1.0 | None |
+| 397 | Pico de esmeralda | `minefade_emerald_pickaxe` | None | -1.0 | None |
+| 398 | Hacha de esmeralda | `minefade_emerald_axe` | None | -1.0 | None |
+| 399 | Pala de esmeralda | `minefade_emerald_shovel` | None | -1.0 | None |
+| 400 | Espada de esmeralda | `minefade_emerald_sword` | None | -1.0 | None |
+| 401 | Azada de esmeralda | `minefade_emerald_hoe` | None | -1.0 | None |
+| 402 | Casco de esmeralda | `minefade_emerald_helmet` | None | -1.0 | None |
+| 403 | Pechera de esmeralda | `minefade_emerald_chestplate` | None | -1.0 | None |
+| 404 | Grebas de esmeralda | `minefade_emerald_leggings` | None | -1.0 | None |
+| 405 | Botas de esmeralda | `minefade_emerald_boots` | None | -1.0 | None |
+| 406 | Lingote de cobre | `minefade_copper_ingot` | None | -1.0 | None |
+| 407 | Lingote de hierro | `minefade_iron_ingot` | None | -1.0 | None |
+| 408 | Lingote de oro | `minefade_gold_ingot` | None | -1.0 | None |
+| 409 | Cobre en bruto | `minefade_raw_copper` | None | -1.0 | None |
+| 410 | Hierro en bruto | `minefade_raw_iron` | None | -1.0 | None |
+| 411 | Oro en bruto | `minefade_raw_gold` | None | -1.0 | None |
+| 412 | Esmeralda | `minefade_emerald` | None | -1.0 | None |
+| 413 | Diamante | `minefade_diamond` | None | -1.0 | None |
