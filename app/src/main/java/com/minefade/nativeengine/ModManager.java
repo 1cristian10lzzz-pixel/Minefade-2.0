@@ -212,6 +212,9 @@ public final class ModManager {
             case "entity.spawn_radius":
             case "world.day_speed":
             case "world.entity_cap":
+            case "world.spawn_interval":
+            case "world.spawn_distance":
+            case "world.passive_cap":
             case "drops.pickup_radius":
             case "drops.lifetime":
             case "drops.quantity":
@@ -259,6 +262,9 @@ public final class ModManager {
         if (!isFiniteInRange(values.get("drops.lifetime"), 30.0f, 900.0f)) return false;
         if (!isFiniteInRange(values.get("mining.speed"), 0.5f, 3.0f)) return false;
         if (!isIntegerInRange(values.get("world.entity_cap"), 8, 128)) return false;
+        if (!isFiniteInRange(values.get("world.spawn_interval"), 30.0f, 900.0f)) return false;
+        if (!isFiniteInRange(values.get("world.spawn_distance"), 8.0f, 48.0f)) return false;
+        if (!isIntegerInRange(values.get("world.passive_cap"), 1, 64)) return false;
         if (!isIntegerInRange(values.get("drops.quantity"), 1, 4)) return false;
         return true;
     }
