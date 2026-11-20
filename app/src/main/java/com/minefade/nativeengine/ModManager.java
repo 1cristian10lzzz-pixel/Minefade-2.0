@@ -203,8 +203,19 @@ public final class ModManager {
             case "spawn.skeleton":
             case "player.speed":
             case "player.jump":
+            case "player.crouch_speed":
             case "entity.speed":
+            case "entity.passive_speed":
+            case "entity.hostile_speed":
+            case "entity.flee_radius":
+            case "entity.alert_radius":
+            case "entity.spawn_radius":
             case "world.day_speed":
+            case "world.entity_cap":
+            case "drops.pickup_radius":
+            case "drops.lifetime":
+            case "drops.quantity":
+            case "mining.speed":
                 return true;
             default:
                 return false;
@@ -236,9 +247,30 @@ public final class ModManager {
         }
         if (!isFiniteInRange(values.get("player.speed"), 0.5f, 2.0f)) return false;
         if (!isFiniteInRange(values.get("player.jump"), 0.75f, 1.5f)) return false;
+        if (!isFiniteInRange(values.get("player.crouch_speed"), 0.25f, 1.0f)) return false;
         if (!isFiniteInRange(values.get("entity.speed"), 0.5f, 2.0f)) return false;
+        if (!isFiniteInRange(values.get("entity.passive_speed"), 0.5f, 2.0f)) return false;
+        if (!isFiniteInRange(values.get("entity.hostile_speed"), 0.5f, 2.0f)) return false;
+        if (!isFiniteInRange(values.get("entity.flee_radius"), 2.0f, 16.0f)) return false;
+        if (!isFiniteInRange(values.get("entity.alert_radius"), 4.0f, 32.0f)) return false;
+        if (!isFiniteInRange(values.get("entity.spawn_radius"), 1.0f, 8.0f)) return false;
         if (!isFiniteInRange(values.get("world.day_speed"), 0.25f, 4.0f)) return false;
+        if (!isFiniteInRange(values.get("drops.pickup_radius"), 0.8f, 4.0f)) return false;
+        if (!isFiniteInRange(values.get("drops.lifetime"), 30.0f, 900.0f)) return false;
+        if (!isFiniteInRange(values.get("mining.speed"), 0.5f, 3.0f)) return false;
+        if (!isIntegerInRange(values.get("world.entity_cap"), 8, 128)) return false;
+        if (!isIntegerInRange(values.get("drops.quantity"), 1, 4)) return false;
         return true;
+    }
+
+    private static boolean isIntegerInRange(String value, int minimum, int maximum) {
+        if (value == null) return true;
+        try {
+            int number = Integer.parseInt(value);
+            return number >= minimum && number <= maximum;
+        } catch (NumberFormatException invalid) {
+            return false;
+        }
     }
 
     private static boolean isFiniteInRange(String value, float minimum, float maximum) {
