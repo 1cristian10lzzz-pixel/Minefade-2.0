@@ -715,7 +715,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     player_.crouchSpeedMultiplier = modCrouchSpeed_;
     entities_.SetSpeedMultiplier(modEntitySpeed_);
     entities_.SetModOptions(modPassiveEntitySpeed_, modHostileEntitySpeed_,
-                            modFleeRadius_, modAlertRadius_, modSpawnRadius_, modEntityCap_);
+                            modFleeRadius_, modAlertRadius_, modSpawnRadius_, modEntityCap_,
+                            modSpawnInterval_, modSpawnDistance_, modPassiveEntityCap_);
     droppedItems_.SetModOptions(modPickupRadius_, modDropLifetime_);
     entities_.SpawnInitial(world_);
     const Vec3 modSpawn = player_.position;
@@ -2174,6 +2175,9 @@ void Engine::LoadEnabledMods() {
     modMiningSpeed_ = 1.0f;
     modDropQuantity_ = 1;
     modEntityCap_ = 128;
+    modSpawnInterval_ = 0.0f;
+    modSpawnDistance_ = 18.0f;
+    modPassiveEntityCap_ = 24;
     if (modsDirectory_.empty()) return;
 
     std::error_code error;
@@ -2195,7 +2199,8 @@ void Engine::LoadEnabledMods() {
             "player.speed", "player.jump", "player.crouch_speed",
             "entity.speed", "entity.passive_speed", "entity.hostile_speed",
             "entity.flee_radius", "entity.alert_radius", "entity.spawn_radius",
-            "world.day_speed", "world.entity_cap",
+            "world.day_speed", "world.entity_cap", "world.spawn_interval",
+            "world.spawn_distance", "world.passive_cap",
             "drops.pickup_radius", "drops.lifetime", "drops.quantity",
             "mining.speed"
         };
@@ -2326,11 +2331,12 @@ void Engine::LoadEnabledMods() {
 
         int sheep = 0, cows = 0, birds = 0, pigs = 0;
         int rabbits = 0, zombies = 0, skeletons = 0;
-        int dropQuantity = 1, entityCap = 128;
+        int dropQuantity = 1, entityCap = 128, passiveEntityCap = 24;
         float playerSpeed = 1.0f, playerJump = 1.0f, daySpeed = 1.0f, entitySpeed = 1.0f;
         float crouchSpeed = 0.46f, passiveSpeed = 1.0f, hostileSpeed = 1.0f;
         float fleeRadius = 6.0f, alertRadius = 15.0f, spawnRadius = 1.8f;
         float pickupRadius = 1.65f, dropLifetime = 300.0f, miningSpeed = 1.0f;
+        float spawnInterval = 0.0f, spawnDistance = 18.0f;
         if (!readSpawn("spawn.sheep", sheep) || !readSpawn("spawn.cow", cows) ||
             !readSpawn("spawn.bird", birds) || !readSpawn("spawn.pig", pigs) ||
             !readSpawn("spawn.rabbit", rabbits) || !readSpawn("spawn.zombie", zombies) ||
@@ -2346,6 +2352,9 @@ void Engine::LoadEnabledMods() {
             !readRange("entity.spawn_radius", 1.8f, 1.0f, 8.0f, spawnRadius) ||
             !readRange("world.day_speed", 1.0f, 0.25f, 4.0f, daySpeed) ||
             !readIntRange("world.entity_cap", 128, 8, 128, entityCap) ||
+            !readRange("world.spawn_interval", 0.0f, 30.0f, 900.0f, spawnInterval) ||
+            !readRange("world.spawn_distance", 18.0f, 8.0f, 48.0f, spawnDistance) ||
+            !readIntRange("world.passive_cap", 24, 1, 64, passiveEntityCap) ||
             !readRange("drops.pickup_radius", 1.65f, 0.8f, 4.0f, pickupRadius) ||
             !readRange("drops.lifetime", 300.0f, 30.0f, 900.0f, dropLifetime) ||
             !readIntRange("drops.quantity", 1, 1, 4, dropQuantity) ||
@@ -2373,6 +2382,11 @@ void Engine::LoadEnabledMods() {
         modDropQuantity_ = std::clamp(modDropQuantity_ * dropQuantity, 1, 4);
         modMiningSpeed_ = std::clamp(modMiningSpeed_ * miningSpeed, 0.5f, 3.0f);
         modEntityCap_ = std::min(modEntityCap_, entityCap);
+        if (spawnInterval > 0.0f)
+            modSpawnInterval_ = modSpawnInterval_ <= 0.0f ? spawnInterval
+                : std::min(modSpawnInterval_, spawnInterval);
+        modSpawnDistance_ = std::min(modSpawnDistance_, spawnDistance);
+        modPassiveEntityCap_ = std::min(modPassiveEntityCap_, passiveEntityCap);
     }
 }
 
