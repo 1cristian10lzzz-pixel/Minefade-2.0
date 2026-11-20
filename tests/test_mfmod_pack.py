@@ -70,6 +70,12 @@ class ModPackTests(unittest.TestCase):
         )
 
 
+    def test_adventure_plus_example_file_is_valid(self):
+        values = parse_mod(ROOT / "examples" / "Minefade_Aventura_Plus_Fase_1_2_3.mfmod")
+        self.assertEqual(values["enabled"], "false")
+        self.assertEqual(values["world.spawn_interval"], "90")
+        self.assertEqual(values["mining.speed"], "1.25")
+
     def test_phase_2_3_gameplay_settings_are_supported(self):
         content = (
             "id=expanded_mod\nname=Expanded\nversion=1.0\nenabled=true\n"
