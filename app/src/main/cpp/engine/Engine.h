@@ -180,6 +180,17 @@ private:
     float modDaySpeed_{1.0f};
     float modEntitySpeed_{1.0f};
     float modPlayerJump_{1.0f};
+    float modCrouchSpeed_{0.46f};
+    float modPassiveEntitySpeed_{1.0f};
+    float modHostileEntitySpeed_{1.0f};
+    float modFleeRadius_{6.0f};
+    float modAlertRadius_{15.0f};
+    float modSpawnRadius_{1.8f};
+    float modPickupRadius_{1.65f};
+    float modDropLifetime_{300.0f};
+    float modMiningSpeed_{1.0f};
+    int modDropQuantity_{1};
+    int modEntityCap_{128};
     std::array<std::uint32_t, 9> starterChestContents_{{
         1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u
     }};
