@@ -1,35 +1,52 @@
-# Minefade Data Mod — formato .mfmod v1
+# Minefade Data Mod — formato MFMod v1 ampliado
 
-Archivo de texto UTF-8, una propiedad `clave=valor` por línea. Las líneas que empiezan con `#` son comentarios. No es ZIP y no ejecuta código.
+Un archivo .mfmod es texto UTF-8 con una propiedad clave=valor por línea. Las líneas que empiezan por # son comentarios. No es ZIP y no ejecuta código: el motor solo acepta claves de su lista permitida.
 
-**Metadatos:** `id`, `name`, `version` (formato `1` o `1.0`), `enabled` (`true`/`false`), `description` opcional.
+## Metadatos
 
-**Ajustes que el motor reconoce actualmente:**
+| Clave | Valores |
+|---|---|
+| id | Identificador único: minúsculas, números, _, . o - |
+| name | Nombre visible (1–96 caracteres) |
+| version | Versión del formato: 1 o 1.0 |
+| enabled | true o false |
+| description | Texto opcional, hasta 512 caracteres |
 
-| Clave | Tipo | Límite |
-|---|---|---:|
-| `spawn.sheep`, `spawn.cow`, `spawn.bird`, `spawn.pig` | entero | 0–24 |
-| `spawn.rabbit` | entero | 0–24 (máximo combinado 16) |
-| `spawn.zombie`, `spawn.skeleton` | entero | 0–24 (máximo combinado 8 por tipo) |
-| `player.speed` | decimal | 0.5–2.0 |
-| `player.jump` | decimal | 0.75–1.5 |
-| `entity.speed` | decimal | 0.5–2.0 |
-| `world.day_speed` | decimal | 0.25–4.0 |
+## Ajustes admitidos
 
-**Restricciones:** 32 KB, 128 líneas, claves únicas, solo propiedades conocidas; los valores deben estar dentro de rango. El paquete importado queda apagado hasta que el usuario lo active en MODS. Los paquetes siguen siendo datos seguros: no ejecutan scripts, bibliotecas ni código nativo. `player.speed` ajusta el desplazamiento, `player.jump` la fuerza de salto, `entity.speed` la velocidad de las criaturas y `world.day_speed` el ciclo diurno. Los valores de distintos paquetes habilitados se combinan multiplicativamente y el motor limita el resultado para evitar cifras extremas. El registro de bloques, las texturas, las recetas, los biomas y las estructuras aún no forman parte de esta API.
+Los paquetes antiguos que solo usan los campos originales siguen siendo compatibles. Las nuevas claves extienden el formato de datos v1 sin cambiar la importación.
 
-```ini
-# Minefade data mod v1
-id=minefade_ultimate_core
-name=Minefade Ultimate Core
-version=1.0
-description=Mejora ligera del movimiento y del ritmo diurno.
-enabled=false
-spawn.rabbit=1
-spawn.zombie=0
-spawn.skeleton=0
-player.speed=1.08
-player.jump=1.08
-entity.speed=1.12
-world.day_speed=1.05
-```
+| Clave | Tipo | Rango | Efecto |
+|---|---:|---:|---|
+| spawn.sheep, spawn.cow, spawn.bird, spawn.pig | entero | 0–24 | Criaturas adicionales al iniciar el mundo; máximo combinado de 24 por tipo |
+| spawn.rabbit | entero | 0–24 | Conejos adicionales; máximo combinado de 16 |
+| spawn.zombie, spawn.skeleton | entero | 0–24 | Enemigos adicionales; máximo combinado de 8 por tipo |
+| player.speed | decimal | 0.5–2.0 | Velocidad general del jugador |
+| player.jump | decimal | 0.75–1.5 | Fuerza del salto |
+| player.crouch_speed | decimal | 0.25–1.0 | Velocidad relativa al caminar agachado |
+| entity.speed | decimal | 0.5–2.0 | Multiplicador general de criaturas |
+| entity.passive_speed | decimal | 0.5–2.0 | Velocidad adicional de criaturas pasivas |
+| entity.hostile_speed | decimal | 0.5–2.0 | Velocidad adicional de enemigos |
+| entity.flee_radius | decimal | 2–16 | Distancia a la que las criaturas pasivas huyen |
+| entity.alert_radius | decimal | 4–32 | Distancia a la que los enemigos detectan y persiguen |
+| entity.spawn_radius | decimal | 1–8 | Separación radial de criaturas añadidas al aparecer |
+| world.day_speed | decimal | 0.25–4.0 | Ritmo del ciclo día/noche |
+| world.entity_cap | entero | 8–128 | Límite de entidades en el sistema |
+| drops.pickup_radius | decimal | 0.8–4.0 | Radio de recogida de objetos del suelo |
+| drops.lifetime | decimal (segundos) | 30–900 | Tiempo antes de eliminar un objeto abandonado |
+| drops.quantity | entero | 1–4 | Cantidad que suelta un bloque al romperlo |
+| mining.speed | decimal | 0.5–3.0 | Multiplicador de velocidad de minería en supervivencia |
+
+## Reglas y seguridad
+
+- Máximo 32 KB y 128 líneas.
+- Claves únicas; no se aceptan claves desconocidas.
+- Los números deben ser finitos y estar dentro de sus rangos.
+- Los campos obligatorios son id, name, version y enabled.
+- El importador guarda el paquete en el espacio privado de Minefade y lo deja desactivado hasta que el jugador lo active.
+- Los multiplicadores se combinan multiplicativamente y quedan limitados; los conteos se agregan con topes. Para world.entity_cap se aplica el límite más restrictivo.
+- El motor Android, el lector nativo C++ y tools/validate_mfmod.py deben mantener la misma lista de claves y límites.
+
+## Límites actuales
+
+Esta API controla sistemas ya existentes: jugador, criaturas, IA de huida/persecución, minería y objetos soltados. No añade por sí sola modelos o especies nuevas, bloques nuevos, texturas personalizadas, recetas, biomas, estructuras, lluvia, salud/combate ni monturas. Tampoco ejecuta Lua, JavaScript, Java, JNI, C++ ni bibliotecas externas. Esas funciones requieren sistemas de motor adicionales; no deben anunciarse como compatibles con un .mfmod de esta versión.
