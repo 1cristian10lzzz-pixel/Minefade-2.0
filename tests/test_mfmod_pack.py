@@ -76,8 +76,10 @@ class ModPackTests(unittest.TestCase):
             "player.crouch_speed=0.52\nentity.passive_speed=1.1\n"
             "entity.hostile_speed=1.2\nentity.flee_radius=7\n"
             "entity.alert_radius=16\nentity.spawn_radius=3.6\n"
-            "world.entity_cap=96\ndrops.pickup_radius=1.85\n"
-            "drops.lifetime=360\ndrops.quantity=2\nmining.speed=1.25\n"
+            "world.entity_cap=96\nworld.spawn_interval=90\n"
+            "world.spawn_distance=20\nworld.passive_cap=36\n"
+            "drops.pickup_radius=1.85\ndrops.lifetime=360\n"
+            "drops.quantity=2\nmining.speed=1.25\n"
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "expanded.mfmod"
@@ -95,6 +97,9 @@ class ModPackTests(unittest.TestCase):
             ("drops.lifetime=10", "fuera de rango"),
             ("mining.speed=4", "fuera de rango"),
             ("world.entity_cap=129", "fuera de rango"),
+            ("world.spawn_interval=10", "fuera de rango"),
+            ("world.spawn_distance=50", "fuera de rango"),
+            ("world.passive_cap=65", "fuera de rango"),
             ("drops.quantity=1.5", "entero"),
         ]
         for setting, expected in cases:
