@@ -191,6 +191,9 @@ private:
     float modMiningSpeed_{1.0f};
     int modDropQuantity_{1};
     int modEntityCap_{128};
+    float modSpawnInterval_{0.0f};
+    float modSpawnDistance_{18.0f};
+    int modPassiveEntityCap_{24};
     std::array<std::uint32_t, 9> starterChestContents_{{
         1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u
     }};
