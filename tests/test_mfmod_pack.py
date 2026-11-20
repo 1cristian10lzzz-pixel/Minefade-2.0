@@ -69,6 +69,41 @@ class ModPackTests(unittest.TestCase):
             "fuera de rango",
         )
 
+
+    def test_phase_2_3_gameplay_settings_are_supported(self):
+        content = (
+            "id=expanded_mod\nname=Expanded\nversion=1.0\nenabled=true\n"
+            "player.crouch_speed=0.52\nentity.passive_speed=1.1\n"
+            "entity.hostile_speed=1.2\nentity.flee_radius=7\n"
+            "entity.alert_radius=16\nentity.spawn_radius=3.6\n"
+            "world.entity_cap=96\ndrops.pickup_radius=1.85\n"
+            "drops.lifetime=360\ndrops.quantity=2\nmining.speed=1.25\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "expanded.mfmod"
+            path.write_text(content, encoding="utf-8")
+            values = parse_mod(path)
+            self.assertEqual(values["entity.alert_radius"], "16")
+            self.assertEqual(values["world.entity_cap"], "96")
+            self.assertEqual(values["mining.speed"], "1.25")
+
+    def test_phase_2_3_settings_reject_out_of_range_values(self):
+        cases = [
+            ("player.crouch_speed=1.5", "fuera de rango"),
+            ("entity.flee_radius=1", "fuera de rango"),
+            ("entity.alert_radius=40", "fuera de rango"),
+            ("drops.lifetime=10", "fuera de rango"),
+            ("mining.speed=4", "fuera de rango"),
+            ("world.entity_cap=129", "fuera de rango"),
+            ("drops.quantity=1.5", "entero"),
+        ]
+        for setting, expected in cases:
+            self.assert_invalid(
+                "id=bad_mod\nname=Bad\nversion=1.0\nenabled=true\n"
+                + setting + "\n",
+                expected,
+            )
+
     def assert_invalid(self, content, message):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "invalid.mfmod"
