@@ -563,13 +563,20 @@ void EntitySystem::SetSpeedMultiplier(float multiplier) {
 }
 
 void EntitySystem::SetModOptions(float passiveSpeed, float hostileSpeed, float fleeRadius,
-                                  float alertRadius, float spawnRadius, int maxEntities) {
+                                  float alertRadius, float spawnRadius, int maxEntities,
+                                  float ambientSpawnInterval, float ambientSpawnDistance,
+                                  int passiveEntityCap) {
     passiveSpeedMultiplier_ = std::clamp(passiveSpeed, 0.5f, 2.0f);
     hostileSpeedMultiplier_ = std::clamp(hostileSpeed, 0.5f, 2.0f);
     fleeRadius_ = std::clamp(fleeRadius, 2.0f, 16.0f);
     alertRadius_ = std::clamp(alertRadius, 4.0f, 32.0f);
     spawnRadius_ = std::clamp(spawnRadius, 1.0f, 8.0f);
     maxEntities_ = static_cast<std::size_t>(std::clamp(maxEntities, 8, 128));
+    ambientSpawnInterval_ = ambientSpawnInterval <= 0.0f ? 0.0f
+        : std::clamp(ambientSpawnInterval, 30.0f, 900.0f);
+    ambientSpawnDistance_ = std::clamp(ambientSpawnDistance, 8.0f, 48.0f);
+    passiveEntityCap_ = std::clamp(passiveEntityCap, 1, 64);
+    ambientSpawnElapsed_ = 0.0f;
     if (entities_.size() > maxEntities_) entities_.resize(maxEntities_);
 }
 
@@ -662,6 +669,28 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
                                    const_cast<VoxelWorld*>(&world));
             entity.position = {state.x, state.y, state.z};
             entity.phase = state.phase;
+        }
+    }
+    if (ambientSpawnInterval_ > 0.0f && entities_.size() < maxEntities_) {
+        ambientSpawnElapsed_ += dt;
+        if (ambientSpawnElapsed_ >= ambientSpawnInterval_) {
+            ambientSpawnElapsed_ = std::fmod(ambientSpawnElapsed_, ambientSpawnInterval_);
+            const std::size_t passiveCount = static_cast<std::size_t>(std::count_if(
+                entities_.begin(), entities_.end(), [](const Entity& entity) {
+                    return entity.kind != 4 && entity.kind != 5;
+                }));
+            if (passiveCount < static_cast<std::size_t>(passiveEntityCap_)) {
+                static constexpr std::array<int, 5> passiveKinds{{0, 1, 2, 3, 6}};
+                const std::uint32_t sequence = ambientSpawnSequence_++;
+                const float angle = static_cast<float>(sequence) * 2.39996323f;
+                const Vec3 spawnAnchor{
+                    player.position.x + std::cos(angle) * ambientSpawnDistance_,
+                    player.position.y,
+                    player.position.z + std::sin(angle) * ambientSpawnDistance_
+                };
+                const int kind = passiveKinds[static_cast<std::size_t>(sequence % passiveKinds.size())];
+                SpawnEntity(spawnAnchor, kind, world);
+            }
         }
     }
 }
