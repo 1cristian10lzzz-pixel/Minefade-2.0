@@ -20,6 +20,7 @@ public:
     bool crouching{false};
     float speedMultiplier{1.0f};
     float jumpMultiplier{1.0f};
+    float crouchSpeedMultiplier{0.46f};
     float walkPhase{0.0f};
     float animationTime{0.0f};
     std::uint8_t animationQuality{2};
@@ -83,6 +84,7 @@ struct DroppedItem {
 class DroppedItemSystem {
 public:
     void Spawn(const Vec3& position, std::uint16_t itemId, std::uint16_t amount = 1);
+    void SetModOptions(float pickupRadius, float lifetimeSeconds);
     // Returns the number of items picked up and writes the last picked item ID.
     std::size_t Update(const VoxelWorld& world, const Player& player, Inventory& inventory,
                        float deltaSeconds, std::uint16_t* lastPickedItemId = nullptr);
@@ -91,6 +93,8 @@ public:
 private:
     std::vector<DroppedItem> drops_;
     std::uint32_t spawnSequence_{0};
+    float pickupRadius_{1.65f};
+    float lifetimeSeconds_{300.0f};
 };
 
 class EntitySystem {
@@ -100,6 +104,8 @@ public:
     void AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum = nullptr) const;
     void SetContactShadows(bool enabled) { contactShadows_ = enabled; }
     void SetSpeedMultiplier(float multiplier);
+    void SetModOptions(float passiveSpeed, float hostileSpeed, float fleeRadius,
+                       float alertRadius, float spawnRadius, int maxEntities);
     void SetAnimationOptions(std::uint8_t quality, bool enabled) { animationQuality_ = quality > 2 ? 2 : quality; animationsEnabled_ = enabled; }
     std::size_t Count() const { return entities_.size(); }
     bool SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world);
@@ -110,6 +116,12 @@ private:
     std::uint8_t animationQuality_{2};
     bool animationsEnabled_{true};
     float speedMultiplier_{1.0f};
+    float passiveSpeedMultiplier_{1.0f};
+    float hostileSpeedMultiplier_{1.0f};
+    float fleeRadius_{6.0f};
+    float alertRadius_{15.0f};
+    float spawnRadius_{1.8f};
+    std::size_t maxEntities_{128u};
     float animationTime_{0.0f};
 };
 
