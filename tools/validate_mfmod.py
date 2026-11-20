@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Minefade's current, data-only .mfmod v1 format."""
+"""Validate Minefade's data-only .mfmod v1 format and gameplay extensions."""
 from __future__ import annotations
 import argparse
 import math
@@ -11,10 +11,36 @@ ALLOWED = {
     "id", "name", "version", "description", "enabled",
     "spawn.sheep", "spawn.cow", "spawn.bird", "spawn.pig",
     "spawn.rabbit", "spawn.zombie", "spawn.skeleton",
-    "player.speed", "player.jump", "entity.speed", "world.day_speed",
+    "player.speed", "player.jump", "player.crouch_speed",
+    "entity.speed", "entity.passive_speed", "entity.hostile_speed",
+    "entity.flee_radius", "entity.alert_radius", "entity.spawn_radius",
+    "world.day_speed", "world.entity_cap",
+    "drops.pickup_radius", "drops.lifetime", "drops.quantity",
+    "mining.speed",
 }
-SPAWN = {"spawn.sheep", "spawn.cow", "spawn.bird", "spawn.pig",
-         "spawn.rabbit", "spawn.zombie", "spawn.skeleton"}
+SPAWN = {
+    "spawn.sheep", "spawn.cow", "spawn.bird", "spawn.pig",
+    "spawn.rabbit", "spawn.zombie", "spawn.skeleton",
+}
+INTEGER_RANGES = {
+    "world.entity_cap": (8, 128),
+    "drops.quantity": (1, 4),
+}
+FLOAT_RANGES = {
+    "player.speed": (0.5, 2.0),
+    "player.jump": (0.75, 1.5),
+    "player.crouch_speed": (0.25, 1.0),
+    "entity.speed": (0.5, 2.0),
+    "entity.passive_speed": (0.5, 2.0),
+    "entity.hostile_speed": (0.5, 2.0),
+    "entity.flee_radius": (2.0, 16.0),
+    "entity.alert_radius": (4.0, 32.0),
+    "entity.spawn_radius": (1.0, 8.0),
+    "world.day_speed": (0.25, 4.0),
+    "drops.pickup_radius": (0.8, 4.0),
+    "drops.lifetime": (30.0, 900.0),
+    "mining.speed": (0.5, 3.0),
+}
 
 
 def parse_mod(path: Path) -> dict[str, str]:
@@ -65,15 +91,26 @@ def parse_mod(path: Path) -> dict[str, str]:
             raise ValueError(f"{key} debe ser entero") from exc
         if not 0 <= count <= 24:
             raise ValueError(f"{key} fuera de rango 0..24")
-    for key, low, high in (("player.speed", 0.5, 2.0), ("player.jump", 0.75, 1.5),
-                            ("entity.speed", 0.5, 2.0), ("world.day_speed", 0.25, 4.0)):
-        if key in values:
-            try:
-                number = float(values[key])
-            except ValueError as exc:
-                raise ValueError(f"{key} debe ser numérico") from exc
-            if not math.isfinite(number) or not low <= number <= high:
-                raise ValueError(f"{key} fuera de rango {low}..{high}")
+
+    for key, (minimum, maximum) in INTEGER_RANGES.items():
+        if key not in values:
+            continue
+        try:
+            number = int(values[key], 10)
+        except ValueError as exc:
+            raise ValueError(f"{key} debe ser entero") from exc
+        if not minimum <= number <= maximum:
+            raise ValueError(f"{key} fuera de rango {minimum}..{maximum}")
+
+    for key, (minimum, maximum) in FLOAT_RANGES.items():
+        if key not in values:
+            continue
+        try:
+            number = float(values[key])
+        except ValueError as exc:
+            raise ValueError(f"{key} debe ser numérico") from exc
+        if not math.isfinite(number) or not minimum <= number <= maximum:
+            raise ValueError(f"{key} fuera de rango {minimum}..{maximum}")
     return values
 
 
