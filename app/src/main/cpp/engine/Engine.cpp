@@ -2266,11 +2266,7 @@ void Engine::LoadEnabledMods() {
             }
             const std::string key = line.substr(first, keyEnd - first + 1u);
             const std::size_t valueStart = line.find_first_not_of(" \t", split + 1u);
-            if (valueStart == std::string::npos) {
-                valid = false;
-                break;
-            }
-            std::string value = line.substr(valueStart);
+            std::string value = valueStart == std::string::npos ? std::string{} : line.substr(valueStart);
             const std::size_t valueEnd = value.find_last_not_of(" \t\r");
             if (valueEnd != std::string::npos) value.resize(valueEnd + 1u);
             if (key.empty() || key.size() > 64u || value.size() > 512u ||
@@ -2295,14 +2291,18 @@ void Engine::LoadEnabledMods() {
         if (description != values.end() && description->second.size() > 512u) continue;
         if (enabled->second != "true") continue;
 
-        const auto readSpawn = [&values, &parseFiniteNumber](const char* key, int& output) {
+        const auto readSpawn = [&values](const char* key, int& output) {
             const auto found = values.find(key);
             if (found == values.end()) { output = 0; return true; }
-            float number = 0.0f;
-            if (!parseFiniteNumber(found->second, number) || std::floor(number) != number ||
-                number < 0.0f || number > 24.0f) return false;
-            output = static_cast<int>(number);
-            return true;
+            try {
+                std::size_t consumed = 0;
+                const int number = std::stoi(found->second, &consumed);
+                if (consumed != found->second.size() || number < 0 || number > 24) return false;
+                output = number;
+                return true;
+            } catch (...) {
+                return false;
+            }
         };
         const auto readRange = [&values, &parseFiniteNumber](const char* key, float fallback,
                                                               float minimum, float maximum,
