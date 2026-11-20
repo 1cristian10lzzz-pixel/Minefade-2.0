@@ -105,7 +105,8 @@ public:
     void SetContactShadows(bool enabled) { contactShadows_ = enabled; }
     void SetSpeedMultiplier(float multiplier);
     void SetModOptions(float passiveSpeed, float hostileSpeed, float fleeRadius,
-                       float alertRadius, float spawnRadius, int maxEntities);
+                       float alertRadius, float spawnRadius, int maxEntities,
+                       float ambientSpawnInterval, float ambientSpawnDistance, int passiveEntityCap);
     void SetAnimationOptions(std::uint8_t quality, bool enabled) { animationQuality_ = quality > 2 ? 2 : quality; animationsEnabled_ = enabled; }
     std::size_t Count() const { return entities_.size(); }
     bool SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world);
@@ -122,6 +123,11 @@ private:
     float alertRadius_{15.0f};
     float spawnRadius_{1.8f};
     std::size_t maxEntities_{128u};
+    float ambientSpawnInterval_{0.0f};
+    float ambientSpawnDistance_{18.0f};
+    int passiveEntityCap_{24};
+    float ambientSpawnElapsed_{0.0f};
+    std::uint32_t ambientSpawnSequence_{0u};
     float animationTime_{0.0f};
 };
 
