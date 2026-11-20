@@ -2250,26 +2250,26 @@ void Engine::LoadEnabledMods() {
                 valid = false;
                 break;
             }
-            const std::size_t first = line.find_first_not_of(" \\t\\r");
+            const std::size_t first = line.find_first_not_of(" \t\r");
             if (first == std::string::npos || line[first] == '#') continue;
             const std::size_t split = line.find('=', first);
-            if (split == std::string::npos) {
+            if (split == std::string::npos || split == first) {
                 valid = false;
                 break;
             }
-            const std::size_t keyEnd = line.find_last_not_of(" \\t", split - 1u);
+            const std::size_t keyEnd = line.find_last_not_of(" \t", split - 1u);
             if (keyEnd == std::string::npos || keyEnd < first) {
                 valid = false;
                 break;
             }
             const std::string key = line.substr(first, keyEnd - first + 1u);
-            const std::size_t valueStart = line.find_first_not_of(" \\t", split + 1u);
+            const std::size_t valueStart = line.find_first_not_of(" \t", split + 1u);
             if (valueStart == std::string::npos) {
                 valid = false;
                 break;
             }
             std::string value = line.substr(valueStart);
-            const std::size_t valueEnd = value.find_last_not_of(" \\t\\r");
+            const std::size_t valueEnd = value.find_last_not_of(" \t\r");
             if (valueEnd != std::string::npos) value.resize(valueEnd + 1u);
             if (key.empty() || key.size() > 64u || value.size() > 512u ||
                 !isAllowedKey(key) || values.find(key) != values.end()) {
