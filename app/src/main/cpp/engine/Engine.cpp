@@ -2190,6 +2190,8 @@ void Engine::LoadEnabledMods() {
         if (entry.path().extension() == ".mfmod") packs.push_back(entry.path());
     }
     std::sort(packs.begin(), packs.end());
+    bool hasExplicitSpawnDistance = false;
+    bool hasExplicitPassiveCap = false;
 
     const auto isAllowedKey = [](const std::string& key) {
         static const std::unordered_set<std::string> allowed{
@@ -2385,8 +2387,16 @@ void Engine::LoadEnabledMods() {
         if (spawnInterval > 0.0f)
             modSpawnInterval_ = modSpawnInterval_ <= 0.0f ? spawnInterval
                 : std::min(modSpawnInterval_, spawnInterval);
-        modSpawnDistance_ = std::min(modSpawnDistance_, spawnDistance);
-        modPassiveEntityCap_ = std::min(modPassiveEntityCap_, passiveEntityCap);
+        if (values.find("world.spawn_distance") != values.end()) {
+            modSpawnDistance_ = hasExplicitSpawnDistance
+                ? std::min(modSpawnDistance_, spawnDistance) : spawnDistance;
+            hasExplicitSpawnDistance = true;
+        }
+        if (values.find("world.passive_cap") != values.end()) {
+            modPassiveEntityCap_ = hasExplicitPassiveCap
+                ? std::min(modPassiveEntityCap_, passiveEntityCap) : passiveEntityCap;
+            hasExplicitPassiveCap = true;
+        }
     }
 }
 
