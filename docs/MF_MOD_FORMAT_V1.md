@@ -32,6 +32,9 @@ Los paquetes antiguos que solo usan los campos originales siguen siendo compatib
 | entity.spawn_radius | decimal | 1–8 | Separación radial de criaturas añadidas al aparecer |
 | world.day_speed | decimal | 0.25–4.0 | Ritmo del ciclo día/noche |
 | world.entity_cap | entero | 8–128 | Límite de entidades en el sistema |
+| world.spawn_interval | decimal (segundos) | 30–900 | Intervalo de aparición de fauna pasiva; desactivado si se omite |
+| world.spawn_distance | decimal | 8–48 | Distancia desde el jugador a la que aparece fauna nueva |
+| world.passive_cap | entero | 1–64 | Límite de criaturas pasivas para la aparición ambiental |
 | drops.pickup_radius | decimal | 0.8–4.0 | Radio de recogida de objetos del suelo |
 | drops.lifetime | decimal (segundos) | 30–900 | Tiempo antes de eliminar un objeto abandonado |
 | drops.quantity | entero | 1–4 | Cantidad que suelta un bloque al romperlo |
@@ -49,4 +52,4 @@ Los paquetes antiguos que solo usan los campos originales siguen siendo compatib
 
 ## Límites actuales
 
-Esta API controla sistemas ya existentes: jugador, criaturas, IA de huida/persecución, minería y objetos soltados. No añade por sí sola modelos o especies nuevas, bloques nuevos, texturas personalizadas, recetas, biomas, estructuras, lluvia, salud/combate ni monturas. Tampoco ejecuta Lua, JavaScript, Java, JNI, C++ ni bibliotecas externas. Esas funciones requieren sistemas de motor adicionales; no deben anunciarse como compatibles con un .mfmod de esta versión.
+Esta API controla sistemas ya existentes: jugador, criaturas, IA de huida/persecución y aparición periódica limitada de fauna, minería y objetos soltados. No añade por sí sola modelos o especies nuevas, bloques nuevos, texturas personalizadas, recetas, biomas, estructuras, lluvia, salud/combate ni monturas. Tampoco ejecuta Lua, JavaScript, Java, JNI, C++ ni bibliotecas externas. Esas funciones requieren sistemas de motor adicionales; no deben anunciarse como compatibles con un .mfmod de esta versión.
