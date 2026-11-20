@@ -14,7 +14,8 @@ ALLOWED = {
     "player.speed", "player.jump", "player.crouch_speed",
     "entity.speed", "entity.passive_speed", "entity.hostile_speed",
     "entity.flee_radius", "entity.alert_radius", "entity.spawn_radius",
-    "world.day_speed", "world.entity_cap",
+    "world.day_speed", "world.entity_cap", "world.spawn_interval",
+    "world.spawn_distance", "world.passive_cap",
     "drops.pickup_radius", "drops.lifetime", "drops.quantity",
     "mining.speed",
 }
@@ -24,6 +25,7 @@ SPAWN = {
 }
 INTEGER_RANGES = {
     "world.entity_cap": (8, 128),
+    "world.passive_cap": (1, 64),
     "drops.quantity": (1, 4),
 }
 FLOAT_RANGES = {
@@ -37,6 +39,8 @@ FLOAT_RANGES = {
     "entity.alert_radius": (4.0, 32.0),
     "entity.spawn_radius": (1.0, 8.0),
     "world.day_speed": (0.25, 4.0),
+    "world.spawn_interval": (30.0, 900.0),
+    "world.spawn_distance": (8.0, 48.0),
     "drops.pickup_radius": (0.8, 4.0),
     "drops.lifetime": (30.0, 900.0),
     "mining.speed": (0.5, 3.0),
