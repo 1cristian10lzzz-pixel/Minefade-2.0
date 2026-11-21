@@ -1,13 +1,14 @@
 # Auditoría de Minefade 2.0: mods, contenido y brechas pendientes
 
-**Fecha:** 20 de noviembre de 2026  
-**Base inspeccionada:** `main`, commit `255355ee587b373ba3c096f3db18ad6eed4b425c`  
-**Versión Android declarada en la base:** `2.1.0`, `versionCode 24`  
+**Fecha de revisión:** 20–21 de noviembre de 2026  
+**Base inspeccionada:** `main`, commit `5c82fbb430fcffb99572803a9f3e7dba15ea4116`  
+**Versión Android integrada:** `2.2.0`, `versionCode 25`  
+**Siguiente cambio en revisión:** PR #4, `2.2.1`, `versionCode 26`  
 **Estado:** auditoría estática del código y documentación; no sustituye una prueba física del APK.
 
 ## 1. Resumen ejecutivo
 
-Minefade 2.0 ya tiene un gestor de mods de datos, un cargador nativo en C++, validación Android/Python y perfiles de shader. Sin embargo, el sistema actual **no es todavía una API general de mods**: es una lista cerrada de ajustes de jugabilidad. El formato `.mfmod` v1 no admite scripts, bloques, objetos, recetas, entidades, biomas, estructuras ni recursos personalizados.
+Minefade 2.0 ya tiene un gestor de mods de datos, un cargador nativo en C++, validación Android/Python y perfiles de shader. La versión 2.2 integrada amplía los controles de jugabilidad, pero el sistema **sigue sin ser una API general de mods**: es una lista cerrada de propiedades. El formato `.mfmod` v1 no admite scripts, bloques, objetos, recetas, entidades, biomas, estructuras ni recursos personalizados. El PR #4 (2.2.1) recupera la creación de paquetes e iconos en el gestor, pero tampoco convierte MFMod v1 en un registro de contenido.
 
 La principal oportunidad no es añadir indefinidamente más claves a una lista fija. Es separar el sistema en tres capas compatibles:
 
@@ -15,31 +16,31 @@ La principal oportunidad no es añadir indefinidamente más claves a una lista f
 2. **Eventos y comportamiento**: una API estable para reaccionar a acciones del juego.
 3. **Scripts seguros y limitados**: una capa opcional sobre la API, nunca carga de bibliotecas nativas descargadas.
 
-El PR #2, «Minefade 2.2: ampliar el sistema MFMod de jugabilidad», ya cubre una tanda adicional de ajustes. No debe confundirse con una API de contenido: amplía la misma lista de parámetros predefinidos.
+El PR #2, «Minefade 2.2: ampliar el sistema MFMod de jugabilidad», ya fue fusionado y cubre una tanda adicional de ajustes. No debe confundirse con una API de contenido: amplía la misma lista de parámetros predefinidos.
 
 ## 2. Versión más reciente comprobada
 
-- La rama `main` inspeccionada declara Android `2.1.0`, `versionCode 24`.
-- En la consulta de esta auditoría no había ninguna GitHub Release publicada en el repositorio 2.0.
-- Existe el PR [#2 — Minefade 2.2: ampliar el sistema MFMod de jugabilidad](https://github.com/1cristian10lzzz-pixel/Minefade-2.0/pull/2). Está en estado **draft / abierto**, con rama `feature/mfmod-phase-2-3`, `versionName 2.2.0` y `versionCode 25`.
-- En la última consulta, las pruebas Python y Rust/C++ del PR habían terminado correctamente; la tarea de compilar el APK Android seguía en ejecución. Por tanto, 2.2.0 no se considera integrada ni publicación estable.
+- La rama `main` ya integra Android `2.2.0`, `versionCode 25`, en el commit `5c82fbb430fcffb99572803a9f3e7dba15ea4116`.
+- El PR #2, «Minefade 2.2: ampliar el sistema MFMod de jugabilidad», fue fusionado. Su workflow de GitHub Actions terminó correctamente: pruebas Python, regresiones Rust/C++ y APK debug para `arm64-v8a` y `armeabi-v7a`. Se generó el artefacto `Minefade-2.0-APK-10`; el éxito de CI no reemplaza las pruebas físicas.
+- El PR #4, «Minefade 2.2.1: restore in-app mod authoring tools», propone restaurar el creador de mods desde MODS, con nombre, descripción, icono/categoría y una plantilla opcional. Actualiza a `versionCode 26`; todavía debe pasar el workflow de CI antes de integrarse.
+- No se debe llamar estable a una versión solo porque se compile: faltan pruebas en dispositivos Android y validación de mundos reales.
 
 ## 3. Qué permite realmente el sistema de mods en main
 
 ### 3.1 Formato `.mfmod` v1
 
-El archivo es texto UTF-8, no un ZIP. Contiene una propiedad `clave=valor` por línea. Exige `id`, `name`, `version` y `enabled`; admite `description` opcional.
+El archivo es texto UTF-8, no un ZIP. Contiene una propiedad `clave=valor` por línea. Exige `id`, `name`, `version` y `enabled`; admite `description` e `icon` opcionales. `icon` solo es metadato visual del gestor.
 
-Las claves reconocidas en main son:
+Las claves reconocidas en la versión 2.2 integrada son:
 
 | Área | Claves disponibles |
 |---|---|
 | Aparición | `spawn.sheep`, `spawn.cow`, `spawn.bird`, `spawn.pig`, `spawn.rabbit`, `spawn.zombie`, `spawn.skeleton` |
-| Jugador | `player.speed`, `player.jump` |
-| Entidades | `entity.speed` |
-| Mundo | `world.day_speed` |
+| Jugador | `player.speed`, `player.jump`, `player.crouch_speed` |
+| Entidades | `entity.speed`, `entity.passive_speed`, `entity.hostile_speed`, `entity.flee_radius`, `entity.alert_radius`, `entity.spawn_radius` |
+| Mundo | `world.day_speed`, `world.entity_cap`, `world.spawn_interval`, `world.spawn_distance`, `world.passive_cap` |
 
-Límites observados: 32 KiB, 128 líneas, claves únicas, propiedades incluidas en una lista permitida y rangos numéricos acotados. Los paquetes se importan desactivados y se activan desde MODS. Los valores de varios paquetes se combinan con acumulación o multiplicación y límites máximos.
+Límites observados: 32 KiB, 128 líneas, claves únicas, propiedades incluidas en una lista permitida y rangos numéricos acotados. La 2.2 añade parámetros para movimiento, IA de fauna, límites de población, drops y minería; el campo visual `icon` se valida en el cambio 2.2.1 propuesto. Los paquetes se importan desactivados y se activan desde MODS. Los valores de varios paquetes se combinan con acumulación o multiplicación y límites máximos.
 
 ### 3.2 Flujo actual
 
@@ -61,13 +62,32 @@ Límites observados: 32 KiB, 128 líneas, claves únicas, propiedades incluidas 
 - **No hay manifiesto por mundo** que fije la lista y las versiones/hash de los mods requeridos por una partida.
 - **No hay protocolo de compatibilidad de mods para LAN** que verifique que todos los participantes usan el mismo conjunto de contenido.
 
+### 3.5 Investigación del sistema de interfaz
+
+**Decisión recomendada: conservar RmlUi 6.3 y extender su integración, no sustituirlo.**
+
+- El repositorio 2.0 fija RmlUi 6.3 y FreeType 2.13.3, con un renderer OpenGL ES propio. La página oficial de releases de RmlUi sigue marcando 6.3 como *Latest* al 21-11-2026. 6.3 aporta propiedades/variables RCSS reutilizables, media queries y mejoras de navegación, tipografía y correcciones; es una base vigente y compatible con la arquitectura actual.
+- La integración de Minefade carga el HUD desde memoria mediante `LoadDocumentFromMemory` y usa un `MemoryOnlyFileInterface` que no lee archivos externos. Por eso el formato de mod no puede instalar hoy documentos RML/RCSS ni recursos UI de forma aislada. No es un problema que se arregle reemplazando el motor de interfaz: falta un cargador controlado de recursos y pantallas.
+- Minecraft Bedrock aporta referencias útiles: sus definiciones `minecraft:ui_screen` organizan pantallas por namespace, elementos reutilizables y variables heredables. Su documentación oficial también separa contenido en resource/behavior packs y ofrece referencias JSON de bloques, ítems, recetas y entidades.
+- No se recomienda copiar Ore UI como sistema de mods. La documentación comunitaria de Bedrock indica que la transición a Ore UI deja JSON UI obsoleto y que Ore UI es hardcoded y no puede modificarse mediante resource packs. Eso es contrario al objetivo de que cada mod pueda aportar o sobrescribir pantallas.
+
+**Trabajo concreto pendiente en Minefade:**
+
+1. Implementar un `RmlFileInterface` con raíces de lectura restringidas a cada paquete instalado; rechazar `..`, rutas absolutas, symlinks y archivos fuera del mod.
+2. Cargar `ui/screens/*.rml`, `ui/styles/*.rcss`, fuentes e imágenes solo después de validar el manifiesto, tamaño, dimensiones y hash.
+3. Dar namespace por mod y resolución explícita de conflictos/prioridad, sin permitir que un mod sobrescriba silenciosamente las pantallas del sistema.
+4. Exponer solo acciones declaradas en una lista permitida; no permitir que RML ejecute código nativo, JNI ni llamadas arbitrarias del motor.
+5. Mantener una pantalla segura de fallback si un documento de mod falla; las pantallas base del juego deben seguir cargando.
+
+**Conclusión:** RmlUi 6.3 ya es moderno para el backend Android GLES que usa Minefade. La mejora de mayor valor es activar carga modular, sandbox y registro de pantallas/acciones. No se justifica migrar a una biblioteca más grande o a una UI interna de Bedrock que no se puede extender por paquetes.
+
 ### 3.4 Perfiles de shader
 
 `.mfshader` es otro formato de datos, no un cargador de shaders arbitrarios. En v1 solo configura ondas de agua, animación de lava, viento de hojas y fuerza del viento. No reemplaza programas GLSL ni admite materiales/texturas propios.
 
-## 4. Trabajo ya abierto para 2.2
+## 4. Trabajo integrado en 2.2
 
-El PR #2 añade ajustes para:
+La versión 2.2 integrada añade ajustes para:
 
 - Velocidad al agacharse y velocidades de criaturas pasivas/hostiles.
 - Radios de huida, alerta y aparición.
@@ -77,7 +97,7 @@ El PR #2 añade ajustes para:
 
 Actualiza la validación Java, C++ y Python, agrega pruebas y un ejemplo desactivado por defecto. Es un avance útil de jugabilidad, pero mantiene el diseño de lista cerrada de propiedades. No incorpora bloques, texturas, recetas, nuevas entidades/modelos, biomas, estructuras, lluvia, monturas ni misiones; el propio PR los declara fuera de alcance.
 
-**Recomendación:** dejar que el PR #2 termine su compilación y revisión como una mejora de jugabilidad aislada. No mezclar en ese PR una reescritura del formato ni un nuevo runtime de scripts.
+**Recomendación:** mantener la ampliación 2.2 como mejora de jugabilidad aislada. No mezclar en ella una reescritura del formato ni un nuevo runtime de scripts. La recuperación del creador se sigue por separado en el PR #4.
 
 ## 5. Comparación con el repositorio antiguo
 
@@ -90,7 +110,7 @@ Al comparar las ramas antiguas, `minefade-1.1-integral-upgrade` estaba divergida
 - Generar un paquete de ejemplo.
 - Instalar un paquete base incluido en la aplicación.
 
-En la versión actual el panel MODS permite buscar, importar y activar/desactivar; no muestra una herramienta para crear un mod. La eliminación de paquetes demo automáticos puede ser intencional y conviene conservarla: los mods del usuario deben ser explícitos, no instalarse silenciosamente.
+En la base 2.2.0 el panel MODS permite buscar, importar y activar/desactivar; no muestra una herramienta para crear un mod. El PR #4 propone recuperar la creación y la plantilla opcional desde la interfaz. La eliminación de paquetes demo automáticos puede ser intencional y conviene conservarla: los mods del usuario deben ser explícitos, no instalarse silenciosamente.
 
 Estas funciones antiguas son una **pérdida de comodidad del gestor**, no una API de contenido más potente. Su recuperación es de prioridad media y no debe confundirse con añadir soporte para nuevas mecánicas o assets.
 
@@ -207,7 +227,7 @@ Guardar junto a cada mundo un manifiesto de mods activos con ID, versión y hash
 
 Recuperar el creador de mods desde el gestor y ampliarlo:
 - Crear/editar manifiestos y paquetes de datos.
-- Icono, nombre, descripción y versión.
+- Icono, nombre, descripción y versión. El PR #4 restaura solo el formulario básico del paquete v1; un editor completo de contenido sigue pendiente.
 - Previsualizar recursos y validar errores antes de importar.
 - Duplicar, exportar, actualizar y desinstalar sin borrar partidas.
 - Mostrar dependencias, conflictos y permisos.
@@ -217,10 +237,10 @@ Recuperar el creador de mods desde el gestor y ampliarlo:
 
 | Prioridad | Trabajo | Motivo |
 |---|---|---|
-| P0 | Terminar y validar PR #2 (2.2) | Amplía el control de jugabilidad existente sin reescribir el motor. |
+| P0 | Mantener 2.2 (parámetros MFMod) validada | Amplía el control de jugabilidad existente sin reescribir el motor; CI pasó, faltan pruebas físicas. |
 | P1 | Unificar el esquema/validador y versionar el manifiesto | Evita que Java, C++, Python y las herramientas acepten formatos distintos. |
-| P1 | Creador de mods y paquetes por mundo | Mejora el flujo de creadores y evita que cada mundo dependa de la carpeta global. |
-| P2 | Registros dinámicos de bloques/objetos/recetas | Es la primera ampliación real de contenido jugable. |
+| P1 | Integrar PR #4 y añadir paquetes por mundo | Restaura el formulario de creación, y evita que cada mundo dependa de la carpeta global. |
+| P1 | Diseñar MFMod v2, namespace y permisos | Define identidad estable, dependencias, recursos, orden de carga y capacidades. |\n| P2 | Registros dinámicos de bloques/objetos/recetas | Es la primera ampliación real de contenido jugable. |
 | P2 | Texturas, modelos y sonidos externos | Hace visibles los nuevos contenidos y permite resource packs. |
 | P3 | Entidades, biomas, estructuras y loot | Añade nuevos sistemas y variedad de mundo. |
 | P3 | Bus de eventos estable | Permite cambiar reglas sin añadir una clave por cada caso. |
@@ -256,11 +276,11 @@ Recuperar el creador de mods desde el gestor y ampliarlo:
 - `tools/validate_mfmod.py`
 - `tests/test_mfmod_pack.py`
 
-## Fuentes externas de diseño y seguridad
+## Fuentes externas de diseño, interfaz y seguridad
 
 - Manual oficial de Lua 5.4: https://www.lua.org/manual/5.4/manual.html
 - Historial oficial de Lua y versiones publicadas: https://www.lua.org/versions.html
-- Eventos como puntos de extensión compatibles (referencia de Fabric): https://docs.fabricmc.net/develop/events/
+- Registros dinámicos con JSON y separación contenido/lógica (referencia de Fabric): https://docs.fabricmc.net/develop/registries/dynamic-registry\n- Versiones y notas oficiales de RmlUi: https://github.com/mikke89/RmlUi/releases\n- Minecraft Bedrock UI Screen (namespaces, herencia y variables): https://learn.microsoft.com/en-us/minecraft/creator/reference/content/jsonuireference/examples/jsonuicomponents/ui_screen?view=minecraft-bedrock-stable\n- Minecraft Bedrock Creator Docs (bloques, entidades, comandos y referencias de packs): https://learn.microsoft.com/en-us/minecraft/creator/?view=minecraft-bedrock-stable\n- Referencia comunitaria de la migración JSON UI → Ore UI: https://wiki.bedrock.dev/json-ui/json-ui-intro.html\n- Eventos como puntos de extensión compatibles (referencia de Fabric): https://docs.fabricmc.net/develop/events/
 - Seguridad Android sobre carga dinámica de código: https://developer.android.com/privacy-and-security/risks/dynamic-code-loading
 - Lista de seguridad Android: https://developer.android.com/privacy-and-security/security-tips
 
