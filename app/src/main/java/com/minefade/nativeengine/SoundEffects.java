@@ -130,13 +130,16 @@ public final class SoundEffects {
             File manifestJson = new File(pack, "manifest.json");
             if (!manifestIni.isFile() || !manifestJson.isFile()) continue;
             boolean enabled = false;
+            String expectedHash = "";
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     new FileInputStream(manifestIni), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null)
-                    if ("enabled=true".equals(line.trim())) enabled = true;
+                    String trimmed = line.trim();
+                    if ("enabled=true".equals(trimmed)) enabled = true;
+                    else if (trimmed.startsWith("hash=")) expectedHash = trimmed.substring(5);
             } catch (Exception ignored) { continue; }
-            if (!enabled) continue;
+            if (!enabled || !ModManager.verifyContentHash(pack, expectedHash)) continue;
             try {
                 byte[] bytes = readBounded(manifestJson, 1024 * 1024);
                 JSONObject manifest = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
