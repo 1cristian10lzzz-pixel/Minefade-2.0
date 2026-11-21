@@ -27,6 +27,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Se amplía el formato de mods de datos para controlar movimiento agachado, velocidad y radios de IA de criaturas, aparición periódica limitada de fauna, límites de población, minería y objetos soltados.
 - El importador Android, el motor C++ y el validador Python comparten claves y límites; los paquetes antiguos siguen siendo válidos.
 - Se incorpora el ejemplo Minefade Aventura Plus en examples/; no se instala ni se activa automáticamente.
+- Perfil mejorado: `examples/Minefade_Aventura_Plus_Extendido_2_0.mfmod`, con más fauna y aparición ambiental limitada, ajustes de IA, movimiento, minería y objetos. El perfil se importa manualmente y comienza desactivado.
 - Las nuevas opciones necesitan el APK 2.2.0; un APK 2.1.0 no las reconoce.
 
 ## Actualización técnica 2.1
