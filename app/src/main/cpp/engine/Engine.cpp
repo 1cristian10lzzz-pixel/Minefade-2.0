@@ -2264,6 +2264,8 @@ void Engine::LoadEnabledMods() {
     modRecipes_.clear();
     modBiomes_.clear();
     modStructures_.clear();
+    modEntities_.clear();
+    entities_.SetModEntities({});
     activeContentMods_.clear();
     modCompatibilityError_ = false;
     modSheepSpawns_ = modCowSpawns_ = modBirdSpawns_ = modPigSpawns_ = 0;
@@ -2712,12 +2714,69 @@ void Engine::LoadEnabledMods() {
             if (valid && !structure.blocks.empty())
                 modStructures_.push_back(std::move(structure));
         }
+
+        std::ifstream entitiesFile(directory / "entities.mfdata", std::ios::binary);
+        std::string entityLine;
+        std::size_t entityLines = 0u;
+        while (entitiesFile && std::getline(entitiesFile, entityLine) &&
+               ++entityLines <= 16u && modEntities_.size() < 32u) {
+            if (entityLine.empty() || entityLine.size() > 8192u) continue;
+            const auto fields = splitFields(entityLine, '|');
+            if (fields.size() != 6u || fields[0].empty() ||
+                (fields[1] != "true" && fields[1] != "false")) continue;
+            ModEntityDefinition definition;
+            definition.key = fields[0];
+            definition.hostile = fields[1] == "true";
+            if (!parseFiniteNumber(fields[2], definition.speed) ||
+                !parseFiniteNumber(fields[3], definition.spawnChance) ||
+                definition.speed < 0.05f || definition.speed > 2.0f ||
+                definition.spawnChance < 0.0f || definition.spawnChance > 1.0f)
+                continue;
+            if (fields[4] == "wander") definition.behavior = 0;
+            else if (fields[4] == "flee") definition.behavior = 1;
+            else if (fields[4] == "graze") definition.behavior = 2;
+            else if (fields[4] == "pursue") definition.behavior = 3;
+            else continue;
+            if ((definition.hostile && definition.behavior == 2) ||
+                (!definition.hostile && definition.behavior == 3)) continue;
+            const auto parts = splitFields(fields[5], ';');
+            if (parts.empty() || parts.size() > 24u) continue;
+            bool valid = true;
+            for (const std::string& partText : parts) {
+                const auto part = splitFields(partText, ',');
+                if (part.size() != 7u || part[6].size() != 7u || part[6][0] != '#') {
+                    valid = false;
+                    break;
+                }
+                ModEntityModelPart modelPart;
+                float* values[] = {
+                    &modelPart.center.x, &modelPart.center.y, &modelPart.center.z,
+                    &modelPart.halfExtents.x, &modelPart.halfExtents.y, &modelPart.halfExtents.z
+                };
+                for (std::size_t k = 0u; k < 6u; ++k)
+                    if (!parseFiniteNumber(part[k], *values[k])) valid = false;
+                if (!valid) break;
+                try {
+                    std::size_t consumed = 0u;
+                    const unsigned long rgb = std::stoul(part[6].substr(1u), &consumed, 16);
+                    if (consumed != 6u || rgb > 0xFFFFFFu) { valid = false; break; }
+                    modelPart.color = {
+                        static_cast<float>((rgb >> 16u) & 0xffu) / 255.0f,
+                        static_cast<float>((rgb >> 8u) & 0xffu) / 255.0f,
+                        static_cast<float>(rgb & 0xffu) / 255.0f
+                    };
+                } catch (...) { valid = false; break; }
+                definition.model.push_back(modelPart);
+            }
+            if (valid && !definition.model.empty())
+                modEntities_.push_back(std::move(definition));
+        }
     }
 
     std::sort(activeContentMods_.begin(), activeContentMods_.end());
     world_.SetModBiomes(modBiomes_);
-        world_.SetModStructures(modStructures_);
     world_.SetModStructures(modStructures_);
+    entities_.SetModEntities(modEntities_);
 
     // Resolve recipes only after every enabled pack has registered its items and blocks.
     for (const std::string& line : pendingRecipeLines) {
