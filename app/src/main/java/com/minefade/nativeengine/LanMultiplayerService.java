@@ -227,23 +227,30 @@ public final class LanMultiplayerService implements Closeable {
         stopSession();
         listener = callback;
         playerName = safeField(nickname, "Jugador");
-        sessionModsFingerprint = currentModsFingerprint();
-        if (!isValidModsFingerprint(sessionModsFingerprint)) {
-            hosting = false;
-            postStatus("No se pudieron verificar los mods instalados. No se publicó la partida.");
-            postDisconnected("No se pudo calcular la huella de los mods.");
-            return;
-        }
-        hosting = true;
+        hosting = false;
         connected = false;
-        localPlayerId = 0;
+        localPlayerId = -1;
         playerNames.clear();
-        playerNames.put(0, playerName);
         remotePlayers.clear();
         inboundBlockEdits.clear();
-        postStatus("Preparando partida local…");
+        postStatus("Verificando los mods instalados…");
 
         io.execute(() -> {
+            sessionModsFingerprint = currentModsFingerprint();
+            if (!isValidModsFingerprint(sessionModsFingerprint)) {
+                hosting = false;
+                postStatus("No se pudieron verificar los mods instalados. No se publicó la partida.");
+                postDisconnected("No se pudo calcular la huella de los mods.");
+                return;
+            }
+            hosting = true;
+            connected = false;
+            localPlayerId = 0;
+            playerNames.clear();
+            playerNames.put(0, playerName);
+            remotePlayers.clear();
+            inboundBlockEdits.clear();
+            postStatus("Preparando partida local…");
             try {
                 ServerSocket server = new ServerSocket();
                 server.setReuseAddress(true);
@@ -293,13 +300,21 @@ public final class LanMultiplayerService implements Closeable {
     public void discover(Listener callback) {
         stopDiscovery();
         listener = callback;
-        sessionModsFingerprint = currentModsFingerprint();
-        if (!isValidModsFingerprint(sessionModsFingerprint)) {
-            postStatus("No se pudieron verificar los mods instalados. No se inició la búsqueda LAN.");
-            return;
-        }
         discoveredGames.clear();
         notifyGames();
+        postStatus("Verificando los mods instalados…");
+        io.execute(() -> {
+            sessionModsFingerprint = currentModsFingerprint();
+            if (!isValidModsFingerprint(sessionModsFingerprint)) {
+                postStatus("No se pudieron verificar los mods instalados. No se inició la búsqueda LAN.");
+                return;
+            }
+            startDiscoveryWithFingerprint(callback);
+        });
+    }
+
+    private void startDiscoveryWithFingerprint(Listener callback) {
+        if (closed || listener != callback) return;
         acquireMulticastLock();
         if (nsdManager == null) {
             postStatus("Este dispositivo no ofrece descubrimiento de servicios de red.");
@@ -369,6 +384,7 @@ public final class LanMultiplayerService implements Closeable {
             Log.e(TAG, "NSD discovery failed", error);
             postStatus("No se pudo iniciar la búsqueda de partidas.");
         }
+
     }
 
     public void join(GameInfo game, String nickname, Listener callback) {
@@ -376,20 +392,21 @@ public final class LanMultiplayerService implements Closeable {
             postStatus("Selecciona una partida de la lista.");
             return;
         }
-        String localFingerprint = currentModsFingerprint();
-        if (!isValidModsFingerprint(localFingerprint) ||
-                !localFingerprint.equals(game.modsFingerprint)) {
-            postStatus("No puedes entrar: la partida usa un conjunto de mods diferente.");
-            postDisconnected("Los mods instalados no coinciden con los del anfitrión.");
-            return;
-        }
         stopDiscovery();
         stopSession();
         listener = callback;
-        sessionModsFingerprint = localFingerprint;
         playerName = safeField(nickname, "Jugador");
-        postStatus("Conectando con " + game.name + "…");
+        postStatus("Verificando los mods instalados…");
         io.execute(() -> {
+            String localFingerprint = currentModsFingerprint();
+            if (!isValidModsFingerprint(localFingerprint) ||
+                    !localFingerprint.equals(game.modsFingerprint)) {
+                postStatus("No puedes entrar: la partida usa un conjunto de mods diferente.");
+                postDisconnected("Los mods instalados no coinciden con los del anfitrión.");
+                return;
+            }
+            sessionModsFingerprint = localFingerprint;
+            postStatus("Conectando con " + game.name + "…");
             Socket socket = new Socket();
             try {
                 socket.connect(new InetSocketAddress(game.host, game.port), 5000);
