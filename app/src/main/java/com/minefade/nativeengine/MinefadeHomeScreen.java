@@ -580,6 +580,15 @@ public final class MinefadeHomeScreen extends FrameLayout {
         search.setBackground(shape(new int[]{0xaa132b3e, 0xaa0d1c2c}, 9, 0x665d7a90));
         pageHeader.addView(search, new LinearLayout.LayoutParams(0, dp(32), 1f));
 
+        TextView createButton = text("+", 20, 0xffe5f4cf, true);
+        createButton.setGravity(Gravity.CENTER);
+        createButton.setContentDescription("Crear mod");
+        createButton.setBackground(shape(new int[]{0xff385b49, 0xff1d3c33}, 9, 0x887cc78d));
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(dp(34), dp(32));
+        createParams.leftMargin = dp(5);
+        pageHeader.addView(createButton, createParams);
+        createButton.setOnClickListener(v -> showCreateModDialog());
+
         TextView importButton = actionButton("IMPORTAR", () -> {
             if (listener != null) listener.onImportMod();
         });
@@ -621,7 +630,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
                     || mod.description.toLowerCase(java.util.Locale.ROOT).contains(needle)) filtered.add(mod);
         }
         if (filtered.isEmpty()) {
-            TextView empty = text(mods.isEmpty() ? "No hay mods instalados. Importa un paquete .mfmod." : "No hay resultados para esa búsqueda.",
+            TextView empty = text(mods.isEmpty() ? "No hay mods instalados. Puedes crear o importar un paquete .mfmod." : "No hay resultados para esa búsqueda.",
                     10, muted, false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(22), dp(16), dp(22));
@@ -651,10 +660,9 @@ public final class MinefadeHomeScreen extends FrameLayout {
         card.addView(top, new LinearLayout.LayoutParams(-1, 0, 1f));
         FrameLayout thumb = new FrameLayout(getContext());
         thumb.setBackground(shape(new int[]{0xff3b6b58, 0xff1b3548}, 9, 0x6696c99b));
-        TextView initials = text(mod.name.length() > 1 ? mod.name.substring(0, 2).toUpperCase(java.util.Locale.ROOT) : "MF",
-                15, 0xffe5f4cf, true);
-        initials.setGravity(Gravity.CENTER);
-        thumb.addView(initials, new FrameLayout.LayoutParams(-1, -1));
+        TextView icon = text(modIconSymbol(mod.icon), 23, 0xffe5f4cf, true);
+        icon.setGravity(Gravity.CENTER);
+        thumb.addView(icon, new FrameLayout.LayoutParams(-1, -1));
         top.addView(thumb, new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout labels = column();
         labels.setPadding(dp(7), 0, 0, 0);
@@ -662,7 +670,9 @@ public final class MinefadeHomeScreen extends FrameLayout {
         TextView name = text(mod.name, 9, white, true);
         name.setMaxLines(2);
         labels.addView(name);
-        labels.addView(text("v" + mod.version, 8, muted, false));
+        TextView detail = text("v" + mod.version + " · " + mod.description, 7, muted, false);
+        detail.setMaxLines(2);
+        labels.addView(detail);
         top.addView(labels, new LinearLayout.LayoutParams(0, -1, 1f));
         LinearLayout bottom = row();
         card.addView(bottom, new LinearLayout.LayoutParams(-1, dp(25)));
@@ -678,6 +688,71 @@ public final class MinefadeHomeScreen extends FrameLayout {
             showModsPage();
         });
         bottom.addView(enabled);
+    }
+
+    private String modIconSymbol(String icon) {
+        switch (icon == null ? "cube" : icon) {
+            case "tool": return "⚒";
+            case "creature": return "♟";
+            case "world": return "◈";
+            case "magic": return "✧";
+            case "decor": return "❖";
+            default: return "⬡";
+        }
+    }
+
+    private void showCreateModDialog() {
+        LinearLayout form = column();
+        form.setPadding(dp(12), dp(6), dp(12), dp(2));
+
+        EditText name = new EditText(getContext());
+        name.setSingleLine(true);
+        name.setHint("Nombre del mod");
+        name.setTextSize(12);
+        name.setTextColor(white);
+        name.setHintTextColor(muted);
+        form.addView(name, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        EditText description = new EditText(getContext());
+        description.setSingleLine(true);
+        description.setHint("Descripción");
+        description.setTextSize(11);
+        description.setTextColor(white);
+        description.setHintTextColor(muted);
+        form.addView(description, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        Spinner icon = new Spinner(getContext());
+        String[] labels = {"Bloques", "Herramientas", "Criaturas", "Mundo", "Magia", "Decoración"};
+        String[] icons = {"cube", "tool", "creature", "world", "magic", "decor"};
+        icon.setAdapter(new ArrayAdapter<>(getContext(),
+                android.R.layout.simple_spinner_dropdown_item, labels));
+        form.addView(icon, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        new AlertDialog.Builder(getContext())
+                .setTitle("Crear paquete de datos")
+                .setView(form)
+                .setNegativeButton("Cancelar", null)
+                .setNeutralButton("Crear ejemplo", (dialog, which) -> {
+                    File example = modManager.createExamplePack();
+                    if (example == null) {
+                        new AlertDialog.Builder(getContext()).setMessage(
+                                "La plantilla ya existe o no se pudo crear.")
+                                .setPositiveButton("Aceptar", null).show();
+                    }
+                    showModsPage();
+                })
+                .setPositiveButton("Crear", (dialog, which) -> {
+                    ModManager.ModInfo created = modManager.createMod(
+                            name.getText().toString(), description.getText().toString(),
+                            icons[Math.max(0, Math.min(icons.length - 1, icon.getSelectedItemPosition()))]);
+                    if (created == null) {
+                        new AlertDialog.Builder(getContext()).setMessage(
+                                "No se pudo crear el mod. Comprueba el nombre y el espacio disponible.")
+                                .setPositiveButton("Aceptar", null).show();
+                    } else {
+                        showModsPage();
+                    }
+                }).show();
     }
 
     public void refreshMods() { showModsPage(); }
