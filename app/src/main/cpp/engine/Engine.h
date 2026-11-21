@@ -181,6 +181,7 @@ private:
     std::uint32_t requestedWorldSeed_{0x4D464445u};
     std::string modsDirectory_;
     std::vector<ModRecipe> modRecipes_;
+    std::vector<ModBiomeDefinition> modBiomes_;
     std::vector<std::string> activeContentMods_;
     bool modCompatibilityError_{false};
     int modSheepSpawns_{0};
