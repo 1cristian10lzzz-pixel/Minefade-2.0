@@ -89,6 +89,7 @@ private:
     void HandleUiAction(const std::string& action);
     void SaveWorld();
     void LoadEnabledMods();
+    void ValidateLoadedWorldMods();
     void OpenStarterChest();
     void TakeStarterChestContents();
     void RefreshInventoryUi();
@@ -180,6 +181,8 @@ private:
     std::uint32_t requestedWorldSeed_{0x4D464445u};
     std::string modsDirectory_;
     std::vector<ModRecipe> modRecipes_;
+    std::vector<std::string> activeContentMods_;
+    bool modCompatibilityError_{false};
     int modSheepSpawns_{0};
     int modCowSpawns_{0};
     int modBirdSpawns_{0};
