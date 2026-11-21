@@ -2158,6 +2158,8 @@ void Engine::SetModsDirectory(std::string path) {
 }
 
 void Engine::LoadEnabledMods() {
+    ClearModBlockDefinitions();
+    modRecipes_.clear();
     modSheepSpawns_ = modCowSpawns_ = modBirdSpawns_ = modPigSpawns_ = 0;
     modRabbitSpawns_ = modZombieSpawns_ = modSkeletonSpawns_ = 0;
     modPlayerSpeed_ = 1.0f;
@@ -2398,6 +2400,146 @@ void Engine::LoadEnabledMods() {
             hasExplicitPassiveCap = true;
         }
     }
+    // Content packs are directories imported from a validated .mfmod ZIP (format v2).
+    // Keep them sorted so the generated atlas tile order matches the numeric registry order.
+    std::vector<std::filesystem::path> contentPacks;
+    error.clear();
+    for (const auto& entry : std::filesystem::directory_iterator(modsDirectory_, error)) {
+        if (error) break;
+        if (entry.is_directory()) contentPacks.push_back(entry.path());
+    }
+    std::sort(contentPacks.begin(), contentPacks.end());
+    std::vector<std::string> pendingRecipeLines;
+
+    const auto splitFields = [](const std::string& line, char delimiter) {
+        std::vector<std::string> fields;
+        std::istringstream input(line);
+        std::string field;
+        while (std::getline(input, field, delimiter)) fields.push_back(field);
+        return fields;
+    };
+    const auto parseUnsigned = [](const std::string& text, unsigned long maximum,
+                                  unsigned long& output) {
+        try {
+            std::size_t consumed = 0u;
+            const unsigned long value = std::stoul(text, &consumed, 10);
+            if (consumed != text.size() || value > maximum) return false;
+            output = value;
+            return true;
+        } catch (...) { return false; }
+    };
+
+    for (const auto& directory : contentPacks) {
+        const auto manifestPath = directory / "manifest.ini";
+        std::ifstream manifest(manifestPath, std::ios::binary);
+        if (!manifest) continue;
+        bool enabled = false;
+        std::string metaLine;
+        std::size_t metaLines = 0u;
+        while (std::getline(manifest, metaLine) && ++metaLines <= 16u) {
+            const std::size_t equals = metaLine.find('=');
+            if (equals == std::string::npos) continue;
+            const std::string key = metaLine.substr(0u, equals);
+            const std::string value = metaLine.substr(equals + 1u);
+            if (key == "enabled" && value == "true") enabled = true;
+        }
+        if (!enabled) continue;
+
+        std::ifstream blocksFile(directory / "blocks.mfdata", std::ios::binary);
+        std::string blockLine;
+        std::size_t blockLines = 0u;
+        while (blocksFile && std::getline(blocksFile, blockLine) && ++blockLines <= 256u) {
+            if (blockLine.empty() || blockLine.size() > 768u) continue;
+            const auto fields = splitFields(blockLine, '|');
+            if (fields.size() != 12u) continue;
+            unsigned long top = 0u, side = 0u, bottom = 0u, stack = 0u, light = 0u, flags = 0u;
+            float hardness = 0.0f;
+            try {
+                std::size_t consumed = 0u;
+                hardness = std::stof(fields[2], &consumed);
+                if (consumed != fields[2].size() || !std::isfinite(hardness) ||
+                    !parseUnsigned(fields[3], 65535u, top) ||
+                    !parseUnsigned(fields[4], 65535u, side) ||
+                    !parseUnsigned(fields[5], 65535u, bottom) ||
+                    !parseUnsigned(fields[7], 64u, stack) ||
+                    !parseUnsigned(fields[8], 15u, light) ||
+                    !parseUnsigned(fields[9], 65535u, flags)) continue;
+            } catch (...) { continue; }
+
+            BlockShape shape = BlockShape::Cube;
+            if (fields[10] == "none") shape = BlockShape::None;
+            else if (fields[10] == "slab") shape = BlockShape::Slab;
+            else if (fields[10] == "stairs") shape = BlockShape::Stairs;
+            else if (fields[10] == "cross_plant") shape = BlockShape::CrossPlant;
+            else if (fields[10] == "thin") shape = BlockShape::Thin;
+            else if (fields[10] == "pane") shape = BlockShape::Pane;
+            else if (fields[10] == "fence") shape = BlockShape::Fence;
+            else if (fields[10] == "door") shape = BlockShape::Door;
+            else if (fields[10] == "trapdoor") shape = BlockShape::Trapdoor;
+            else if (fields[10] == "fluid") shape = BlockShape::Fluid;
+            else if (fields[10] == "scaffolding") shape = BlockShape::Scaffolding;
+            else if (fields[10] != "cube") continue;
+
+            BlockTool tool = BlockTool::None;
+            if (fields[11] == "pickaxe") tool = BlockTool::Pickaxe;
+            else if (fields[11] == "axe") tool = BlockTool::Axe;
+            else if (fields[11] == "shovel") tool = BlockTool::Shovel;
+            else if (fields[11] == "shears") tool = BlockTool::Shears;
+            else if (fields[11] != "none") continue;
+
+            RegisterModBlockDefinition(fields[0], fields[1], fields[6],
+                static_cast<std::uint16_t>(top), static_cast<std::uint16_t>(side),
+                static_cast<std::uint16_t>(bottom), hardness,
+                static_cast<std::uint8_t>(stack), static_cast<std::uint8_t>(light),
+                static_cast<std::uint16_t>(flags), shape, tool);
+        }
+
+        std::ifstream recipesFile(directory / "recipes.mfdata", std::ios::binary);
+        std::string recipeLine;
+        std::size_t recipeLines = 0u;
+        while (recipesFile && std::getline(recipesFile, recipeLine) && ++recipeLines <= 256u) {
+            if (!recipeLine.empty() && recipeLine.size() <= 1024u)
+                pendingRecipeLines.push_back(recipeLine);
+        }
+    }
+
+    // Resolve recipes only after every enabled pack has registered its items and blocks.
+    for (const std::string& line : pendingRecipeLines) {
+        const auto fields = splitFields(line, '|');
+        if (fields.size() < 7u || fields.size() > 15u || fields[0].rfind("mod:", 0u) != 0u)
+            continue;
+        const BlockDefinition* output = FindBlockDefinition(fields[2]);
+        if (output == nullptr) continue;
+        unsigned long amount = 0u;
+        if (!parseUnsigned(fields[3], 64u, amount) || amount == 0u) continue;
+        ModRecipe recipe;
+        recipe.id = fields[0].substr(4u);
+        recipe.label = fields[1];
+        recipe.outputId = static_cast<std::uint16_t>(output->id);
+        recipe.outputAmount = static_cast<std::uint16_t>(amount);
+        recipe.needsTable = fields[4] == "true";
+        bool valid = (fields[4] == "true" || fields[4] == "false") &&
+                     !recipe.id.empty() && recipe.id.size() <= 128u &&
+                     !recipe.label.empty() && recipe.label.size() <= 96u;
+        for (std::size_t i = 5u; valid && i + 1u < fields.size(); i += 2u) {
+            const BlockDefinition* ingredient = FindBlockDefinition(fields[i]);
+            unsigned long ingredientAmount = 0u;
+            if (ingredient == nullptr || !parseUnsigned(fields[i + 1u], 64u, ingredientAmount) ||
+                ingredientAmount == 0u || recipe.ingredientCount >= recipe.ingredients.size()) {
+                valid = false;
+                break;
+            }
+            recipe.ingredients[recipe.ingredientCount++] = {
+                static_cast<std::uint16_t>(ingredient->id),
+                static_cast<std::uint16_t>(ingredientAmount)
+            };
+        }
+        if (valid && recipe.ingredientCount > 0u &&
+            std::none_of(modRecipes_.begin(), modRecipes_.end(),
+                [&recipe](const ModRecipe& existing) { return existing.id == recipe.id; }))
+            modRecipes_.push_back(std::move(recipe));
+    }
+
 }
 
 bool Engine::ConsumeExitRequest() {
