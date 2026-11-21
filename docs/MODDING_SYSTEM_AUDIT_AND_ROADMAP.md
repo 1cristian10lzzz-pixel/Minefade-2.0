@@ -115,6 +115,14 @@ En la base 2.2.0 el panel MODS permite buscar, importar y activar/desactivar; no
 
 Estas funciones antiguas son una **pérdida de comodidad del gestor**, no una API de contenido más potente. Su recuperación es de prioridad media y no debe confundirse con añadir soporte para nuevas mecánicas o assets.
 
+La comparación de datos confirma que no se perdió el catálogo modular de bloques:
+- La rama antigua 1.1 contiene 284 entradas en `minefade_block_catalog.json`; 2.0 contiene 414.
+- Los siete archivos `block_modules/*.json` y su manifiesto siguen presentes en ambas ramas.
+- El paquete actual trae 20 muestras de audio base frente a 6 en la rama histórica examinada.
+
+Por tanto, no conviene reimportar esos recursos antiguos como si hubieran desaparecido. La carencia es de **extensibilidad en tiempo de carga**: el motor consume su catálogo/atlas estático y el formato MFMod no ofrece a terceros una API para agregar o reemplazar entradas y recursos.
+
+
 ## 6. Funciones del juego que sí están presentes
 
 Para evitar duplicar trabajo o declarar pérdidas falsas, esta revisión confirmó que la base 2.0 contiene:
