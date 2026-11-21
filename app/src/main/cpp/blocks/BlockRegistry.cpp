@@ -451,7 +451,6 @@ bool RegisterModBlockDefinition(std::string_view key, std::string_view nameEs,
         if (FindBlockDefinition(key) != nullptr) return false;
         const std::size_t nextId = kBlocks.size() + gModBlocks.size();
         if (nextId >= static_cast<std::size_t>(UINT16_MAX)) return false;
-
         const std::uint16_t id = static_cast<std::uint16_t>(nextId);
         const char* stableKey = StoreModString(key);
         const char* stableName = StoreModString(nameEs);
