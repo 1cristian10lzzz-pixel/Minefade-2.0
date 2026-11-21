@@ -95,6 +95,7 @@ jobs:
           if ! git diff --cached --quiet; then
             echo "Generated Minefade assets are stale. Run the generators locally and commit their output before opening a PR." >&2
             git diff --cached --stat
+            git diff --cached -- app/src/main/cpp/blocks/BlockRegistry.cpp
             exit 1
           fi
 
