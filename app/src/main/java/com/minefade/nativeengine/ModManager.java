@@ -742,7 +742,7 @@ public final class ModManager {
                     dependency.optBoolean("optional", false));
         }
         Collections.sort(encoded);
-        return String.join(";", encoded);
+        return joinValues(encoded, ";");
     }
 
     private static String encodeConflicts(JSONArray conflicts) throws Exception {
@@ -750,7 +750,16 @@ public final class ModManager {
         ArrayList<String> encoded = new ArrayList<>();
         for (int i = 0; i < conflicts.length(); i++) encoded.add(conflicts.getString(i));
         Collections.sort(encoded);
-        return String.join(",", encoded);
+        return joinValues(encoded, ",");
+    }
+
+    private static String joinValues(List<String> values, String separator) {
+        StringBuilder result = new StringBuilder();
+        for (String value : values) {
+            if (result.length() > 0) result.append(separator);
+            result.append(value);
+        }
+        return result.toString();
     }
 
     private static boolean isValidVersionRequirement(String requirement) {
