@@ -2121,6 +2121,27 @@ void Engine::SaveWorld() {
             ENGINE_LOGE("Failed to save world to %s", storagePath_.c_str());
         } else {
             ENGINE_LOGI("World saved to private app storage");
+            if (!multiplayerMode_) {
+                const std::string modPath = storagePath_ + ".mfmods";
+                const std::string modTemp = modPath + ".tmp";
+                std::ofstream modFile(modTemp, std::ios::binary | std::ios::trunc);
+                if (modFile) {
+                    for (const std::string& mod : activeContentMods_) modFile << mod << '\n';
+                    modFile.flush();
+                    modFile.close();
+                    std::error_code modError;
+                    std::filesystem::rename(modTemp, modPath, modError);
+                    if (modError) {
+                        std::filesystem::remove(modPath, modError);
+                        modError.clear();
+                        std::filesystem::rename(modTemp, modPath, modError);
+                    }
+                    if (modError) {
+                        std::filesystem::remove(modTemp);
+                        ENGINE_LOGE("Failed to save content-mod manifest: %s", modError.message().c_str());
+                    }
+                }
+            }
             {
                 const std::string gearPath = storagePath_ + ".armor";
                 const std::string gearTemp = gearPath + ".tmp";
