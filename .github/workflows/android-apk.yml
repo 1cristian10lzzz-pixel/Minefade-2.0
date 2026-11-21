@@ -159,6 +159,6 @@ jobs:
 
             **Tipo de paquete:** debug firmado por Android Gradle Plugin.
             **ABI incluidas:** arm64-v8a y armeabi-v7a.
-            **Versionado Android:** versionCode 25 / versionName 2.2.0.
+            **Versionado Android:** versionCode 26 / versionName 2.3.0.
 
             Esta es una compilación de validación. La firma debug generada por un runner no garantiza que pueda instalarse como actualización sobre otro APK firmado con una clave diferente. Antes de declarar una versión estable, configura una clave de distribución persistente y prueba la actualización y los mundos guardados en dispositivos Android reales.
