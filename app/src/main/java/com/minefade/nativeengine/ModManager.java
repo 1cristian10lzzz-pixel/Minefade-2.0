@@ -745,7 +745,7 @@ public final class ModManager {
     }
     private static String normalizeReference(String reference, String ownId) {
         if (reference.startsWith("minecraft:")) return reference.substring("minecraft:".length());
-        return reference.indexOf(':') >= 0 ? reference : reference;
+        return reference.indexOf(':') >= 0 ? reference : ownId + ":" + reference;
     }
     private static String joinLines(List<String> lines) {
         StringBuilder result = new StringBuilder();
