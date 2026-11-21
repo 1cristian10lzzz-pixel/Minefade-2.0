@@ -13,6 +13,17 @@
 #include <vector>
 
 namespace minefade {
+struct ModBiomeDefinition {
+    std::string key;
+    float minTemperature{-1.0f}, maxTemperature{1.0f};
+    float minHumidity{-1.0f}, maxHumidity{1.0f};
+    float minContinental{-1.0f}, maxContinental{1.0f};
+    BlockId surfaceBlock{BlockId::Grass};
+    BlockId fillerBlock{BlockId::Dirt};
+    int priority{0};
+    int surfaceOffset{0};
+};
+
 
 struct Vec3 {
     float x{0.0f};
@@ -118,6 +129,7 @@ public:
     std::uint32_t Seed() const { return seed_; }
     std::size_t ChunkCount() const { return chunks_.size(); }
     std::size_t CountNonAirBlocks() const;
+    void SetModBiomes(std::vector<ModBiomeDefinition> biomes);
 
 private:
     struct Chunk {
@@ -139,7 +151,7 @@ private:
     enum class Biome : std::uint8_t {
         Plains, Forest, Desert, Snow, Ocean, Mountains, Swamp, Savanna, River,
         Beach, Taiga, BirchForest, DarkForest, Jungle, CherryGrove, Badlands,
-        MushroomFields, IceSpikes, MangroveSwamp, StonyPeaks
+        MushroomFields, IceSpikes, MangroveSwamp, StonyPeaks, Modded
     };
 
     static int FloorDiv(int value, int divisor);
@@ -148,6 +160,7 @@ private:
     float Noise2D(float x, float z) const;
     float FractalNoise2D(float x, float z, int octaves, float persistence, float lacunarity) const;
     Biome GetBiome(int x, int z) const;
+    const ModBiomeDefinition* FindModBiome(int x, int z) const;
     int TerrainHeight(int x, int z) const;
     Chunk MakeChunk(int chunkX, int chunkZ) const;
     void StartNextChunkJob();
@@ -157,6 +170,7 @@ private:
     void InvalidateChunkAndNeighbors(int chunkX, int chunkZ);
 
     std::uint32_t seed_;
+    std::vector<ModBiomeDefinition> modBiomes_;
     std::map<std::pair<int, int>, Chunk> chunks_;
     mutable std::map<std::pair<int, int>, ChunkMeshCache> chunkMeshCache_;
     mutable std::set<std::pair<int, int>> dirtyChunkMeshes_;
