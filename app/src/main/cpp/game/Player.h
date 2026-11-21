@@ -115,6 +115,7 @@ private:
 
 class EntitySystem {
 public:
+    void Reset();
     void SpawnInitial(const VoxelWorld& world);
     void SetModEntities(std::vector<ModEntityDefinition> definitions);
     void Update(const VoxelWorld& world, const Player& player, float deltaSeconds);
