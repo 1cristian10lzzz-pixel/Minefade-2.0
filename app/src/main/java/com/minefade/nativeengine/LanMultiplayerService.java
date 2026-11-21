@@ -431,6 +431,11 @@ public final class LanMultiplayerService implements Closeable {
                                     if (current != null) current.onConnected(assigned);
                                 });
                             }
+                        } else {
+                            connected = false;
+                            postStatus("La respuesta del anfitrión no confirma el mismo conjunto de mods.");
+                            postDisconnected("Negociación de compatibilidad LAN fallida.");
+                            break;
                         }
                     } else if (welcomed) {
                         handleClientMessage(line);
