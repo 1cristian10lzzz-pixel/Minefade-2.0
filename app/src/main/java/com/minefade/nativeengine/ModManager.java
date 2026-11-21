@@ -290,10 +290,12 @@ public final class ModManager {
         JSONArray blocks = manifest.optJSONArray("blocks");
         JSONArray items = manifest.optJSONArray("items");
         JSONArray recipes = manifest.optJSONArray("recipes");
+        JSONArray biomes = manifest.optJSONArray("biomes");
         int blockCount = blocks == null ? 0 : blocks.length();
         int itemCount = items == null ? 0 : items.length();
         int recipeCount = recipes == null ? 0 : recipes.length();
-        if (blockCount + itemCount > 128 || recipeCount > 128)
+        int biomeCount = biomes == null ? 0 : biomes.length();
+        if (blockCount + itemCount > 128 || recipeCount > 128 || biomeCount > 32)
             throw new IOException("El mod supera el número permitido de bloques, objetos o recetas.");
 
         Set<String> ids = new HashSet<>();
@@ -330,6 +332,20 @@ public final class ModManager {
                 validateTexture(root, textures.getString("bottom"));
             }
             integerRange(item.optInt("stack", 64), 1, 64);
+        }
+        if (biomes != null) for (int i = 0; i < biomes.length(); i++) {
+            JSONObject biome = biomes.getJSONObject(i);
+            String localId = requireLocalId(biome.optString("id", ""));
+            if (id.length() + 1 + localId.length() > 129) throw new IOException("ID de bioma demasiado largo.");
+            if (!ids.add("biome:" + localId)) throw new IOException("ID de bioma duplicado.");
+            validateLabel(biome.optString("name", ""));
+            validateRangeObject(biome.getJSONObject("temperature"), -1.0, 1.0);
+            validateRangeObject(biome.getJSONObject("humidity"), -1.0, 1.0);
+            validateRangeObject(biome.getJSONObject("continental"), -1.0, 1.0);
+            validateReference(biome.optString("topBlock", ""), id);
+            validateReference(biome.optString("fillerBlock", ""), id);
+            integerRange(biome.optInt("priority", 0), -100, 100);
+            integerRange(biome.optInt("surfaceOffset", 0), -16, 16);
         }
         if (recipes != null) for (int i = 0; i < recipes.length(); i++) {
             JSONObject recipe = recipes.getJSONObject(i);
@@ -410,6 +426,12 @@ public final class ModManager {
         if (!oneOf(value, "none", "pickaxe", "axe", "shovel", "shears"))
             throw new IOException("Herramienta no permitida.");
     }
+    private static void validateRangeObject(JSONObject range, double minimum, double maximum) throws IOException {
+        finiteRange(range.getDouble("min"), minimum, maximum);
+        finiteRange(range.getDouble("max"), minimum, maximum);
+        if (range.getDouble("min") > range.getDouble("max"))
+            throw new IOException("Rango de clima invertido.");
+    }
     private static void finiteRange(double value, double minimum, double maximum) throws IOException {
         if (Double.isNaN(value) || Double.isInfinite(value) || value < minimum || value > maximum)
             throw new IOException("Valor fuera de rango.");
@@ -451,6 +473,7 @@ public final class ModManager {
         ArrayList<AtlasEntry> entries = new ArrayList<>();
         Map<File, ArrayList<String>> blockLines = new HashMap<>();
         Map<File, ArrayList<String>> recipeLines = new HashMap<>();
+        Map<File, ArrayList<String>> biomeLines = new HashMap<>();
         ArrayList<Bitmap> ownedBitmaps = new ArrayList<>();
         try {
             List<ModInfo> mods = listMods();
@@ -523,6 +546,25 @@ public final class ModManager {
                     recipes.add(line.toString());
                 }
                 recipeLines.put(root, recipes);
+
+                ArrayList<String> biomeRecords = new ArrayList<>();
+                JSONArray biomeArray = manifest.optJSONArray("biomes");
+                if (biomeArray != null) for (int i = 0; i < biomeArray.length(); i++) {
+                    JSONObject biome = biomeArray.getJSONObject(i);
+                    JSONObject temperature = biome.getJSONObject("temperature");
+                    JSONObject humidity = biome.getJSONObject("humidity");
+                    JSONObject continental = biome.getJSONObject("continental");
+                    String key = mod.id + ":" + biome.getString("id");
+                    String record = key + "|" + temperature.getDouble("min") + "|" +
+                            temperature.getDouble("max") + "|" + humidity.getDouble("min") + "|" +
+                            humidity.getDouble("max") + "|" + continental.getDouble("min") + "|" +
+                            continental.getDouble("max") + "|" +
+                            normalizeReference(biome.getString("topBlock"), mod.id) + "|" +
+                            normalizeReference(biome.getString("fillerBlock"), mod.id) + "|" +
+                            biome.optInt("priority", 0) + "|" + biome.optInt("surfaceOffset", 0);
+                    biomeRecords.add(record);
+                }
+                biomeLines.put(root, biomeRecords);
             }
 
             if (entries.size() > MAX_CONTENT_DEFINITIONS)
@@ -532,6 +574,9 @@ public final class ModManager {
                         joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
             for (Map.Entry<File, ArrayList<String>> entry : recipeLines.entrySet())
                 writeAtomically(new File(entry.getKey(), "recipes.mfdata"),
+                        joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
+            for (Map.Entry<File, ArrayList<String>> entry : biomeLines.entrySet())
+                writeAtomically(new File(entry.getKey(), "biomes.mfdata"),
                         joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
 
             int totalTiles = ATLAS_TILE_COUNT + entries.size() * 3;
@@ -552,6 +597,7 @@ public final class ModManager {
                 File root = mod.file.getParentFile();
                 writeAtomically(new File(root, "blocks.mfdata"), new byte[0]);
                 writeAtomically(new File(root, "recipes.mfdata"), new byte[0]);
+                writeAtomically(new File(root, "biomes.mfdata"), new byte[0]);
             }
             return new AtlasData(baseAtlas, width, height);
         } finally {
