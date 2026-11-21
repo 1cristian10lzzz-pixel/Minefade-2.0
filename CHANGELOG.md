@@ -1,5 +1,14 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.2 — sistema de mods de datos ampliado
+- Se incorporan propiedades compatibles para velocidad agachada, velocidad pasiva/hostil, radios de huida y alerta, radio de aparición y límite de entidades.
+- Se añade aparición periódica y limitada de fauna pasiva a una distancia configurable del jugador; permanece desactivada en mods antiguos que no indiquen intervalo.
+- Se ajustan radio/vida de objetos soltados, cantidad de drops y velocidad de minería en supervivencia.
+- Se sincronizan las validaciones Java, C++ y Python y se prueban rangos y valores inválidos.
+- Se añade el mod de ejemplo Minefade Aventura Plus en examples/; empieza desactivado y no se instala desde assets.
+- Se conserva la compatibilidad de mods de datos antiguos. Estas opciones requieren actualizar el APK a 2.2.0.
+- Android versionCode 25 / versionName 2.2.0; la compilación sigue pendiente de CI y pruebas físicas.
+
 ## Actualización 2.1 — estabilidad del renderer y del repositorio
 - Se limita la cantidad de chunks cuyo mesh se transfiere a GPU por pasada (1/2/3 según calidad), priorizando los más cercanos.
 - Se conserva el trabajo de upload pendiente entre frames aunque no haya nuevos meshes CPU que reconstruir.

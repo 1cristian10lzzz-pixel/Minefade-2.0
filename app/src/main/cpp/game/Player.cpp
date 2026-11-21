@@ -360,8 +360,9 @@ void Player::Update(const VoxelWorld& world, float deltaSeconds) {
     const float inputX = state.movement_x;
     const float inputY = state.movement_y;
     if (crouching) {
-        state.movement_x *= 0.46f;
-        state.movement_y *= 0.46f;
+        const float crouchMultiplier = std::clamp(crouchSpeedMultiplier, 0.25f, 1.0f);
+        state.movement_x *= crouchMultiplier;
+        state.movement_y *= crouchMultiplier;
     }
     state.movement_x *= std::clamp(speedMultiplier, 0.25f, 3.0f);
     state.movement_y *= std::clamp(speedMultiplier, 0.25f, 3.0f);
@@ -454,6 +455,11 @@ bool Inventory::ConsumeItem(std::uint16_t itemId, std::uint16_t amount) {
     return remaining == 0u;
 }
 
+void DroppedItemSystem::SetModOptions(float pickupRadius, float lifetimeSeconds) {
+    pickupRadius_ = std::clamp(pickupRadius, 0.8f, 4.0f);
+    lifetimeSeconds_ = std::clamp(lifetimeSeconds, 30.0f, 900.0f);
+}
+
 void DroppedItemSystem::Spawn(const Vec3& position, std::uint16_t itemId, std::uint16_t amount) {
     if (itemId == 0u || amount == 0u || GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr) return;
     const float angle = static_cast<float>(++spawnSequence_) * 2.39996323f;
@@ -481,7 +487,7 @@ std::size_t DroppedItemSystem::Update(const VoxelWorld& world, const Player& pla
         item.position = {state.x, state.y, state.z};
         item.velocity = {state.velocity_x, state.velocity_y, state.velocity_z};
         item.age = state.age;
-        if (item.age >= 300.0f || item.position.y < -2.0f) {
+        if (item.age >= lifetimeSeconds_ || item.position.y < -2.0f) {
             it = drops_.erase(it);
             continue;
         }
@@ -490,7 +496,7 @@ std::size_t DroppedItemSystem::Update(const VoxelWorld& world, const Player& pla
             const float dx = item.position.x - player.position.x;
             const float dy = item.position.y - (player.position.y + 0.85f);
             const float dz = item.position.z - player.position.z;
-            if (dx * dx + dy * dy + dz * dz <= 1.65f * 1.65f &&
+            if (dx * dx + dy * dy + dz * dz <= pickupRadius_ * pickupRadius_ &&
                 inventory.Add(item.itemId, item.amount)) {
                 pickedUp += item.amount;
                 if (lastPickedItemId != nullptr) *lastPickedItemId = item.itemId;
@@ -535,10 +541,10 @@ void EntitySystem::SpawnInitial(const VoxelWorld& world) {
 }
 
 bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world) {
-    if (entities_.size() >= 128u || kind < 0 || kind > 6) return false;
+    if (entities_.size() >= maxEntities_ || kind < 0 || kind > 6) return false;
     const float index = static_cast<float>(entities_.size());
     const float angle = index * 2.39996323f;
-    const float radius = 1.8f + std::fmod(index, 3.0f) * 0.35f;
+    const float radius = spawnRadius_ + std::fmod(index, 3.0f) * 0.35f;
     Entity entity;
     entity.position.x = nearPosition.x + std::cos(angle) * radius;
     entity.position.z = nearPosition.z + std::sin(angle) * radius;
@@ -556,6 +562,24 @@ void EntitySystem::SetSpeedMultiplier(float multiplier) {
     speedMultiplier_ = std::clamp(multiplier, 0.5f, 2.0f);
 }
 
+void EntitySystem::SetModOptions(float passiveSpeed, float hostileSpeed, float fleeRadius,
+                                  float alertRadius, float spawnRadius, int maxEntities,
+                                  float ambientSpawnInterval, float ambientSpawnDistance,
+                                  int passiveEntityCap) {
+    passiveSpeedMultiplier_ = std::clamp(passiveSpeed, 0.5f, 2.0f);
+    hostileSpeedMultiplier_ = std::clamp(hostileSpeed, 0.5f, 2.0f);
+    fleeRadius_ = std::clamp(fleeRadius, 2.0f, 16.0f);
+    alertRadius_ = std::clamp(alertRadius, 4.0f, 32.0f);
+    spawnRadius_ = std::clamp(spawnRadius, 1.0f, 8.0f);
+    maxEntities_ = static_cast<std::size_t>(std::clamp(maxEntities, 8, 128));
+    ambientSpawnInterval_ = ambientSpawnInterval <= 0.0f ? 0.0f
+        : std::clamp(ambientSpawnInterval, 30.0f, 900.0f);
+    ambientSpawnDistance_ = std::clamp(ambientSpawnDistance, 8.0f, 48.0f);
+    passiveEntityCap_ = std::clamp(passiveEntityCap, 1, 64);
+    ambientSpawnElapsed_ = 0.0f;
+    if (entities_.size() > maxEntities_) entities_.resize(maxEntities_);
+}
+
 void EntitySystem::Update(const VoxelWorld& world, const Player& player, float deltaSeconds) {
     const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
     animationTime_ = std::fmod(animationTime_ + dt, 4096.0f);
@@ -564,8 +588,10 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         const float towardZ = player.position.z - entity.position.z;
         const float distanceSquared = towardX * towardX + towardZ * towardZ;
         const bool passive = entity.kind != 4 && entity.kind != 5;
-        const bool closeForFlee = passive && distanceSquared < 36.0f;
-        const bool closeForPursuit = !passive && distanceSquared < 225.0f && distanceSquared > 2.0f;
+        const float fleeDistanceSquared = fleeRadius_ * fleeRadius_;
+        const float alertDistanceSquared = alertRadius_ * alertRadius_;
+        const bool closeForFlee = passive && distanceSquared < fleeDistanceSquared;
+        const bool closeForPursuit = !passive && distanceSquared < alertDistanceSquared && distanceSquared > 2.0f;
 
         if (closeForFlee) {
             entity.behavior = 1;
@@ -602,7 +628,8 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             const float length = std::sqrt(std::max(distanceSquared, 0.0001f));
             const float desiredX = towardX / length * sign;
             const float desiredZ = towardZ / length * sign;
-            const float speed = entity.speed * speedMultiplier_ *
+            const float speciesSpeed = passive ? passiveSpeedMultiplier_ : hostileSpeedMultiplier_;
+            const float speed = entity.speed * speedMultiplier_ * speciesSpeed *
                 (entity.behavior == 1 ? 2.8f : 1.65f);
             const float step = std::min(speed * dt, 0.12f);
             float bestX = entity.position.x;
@@ -636,11 +663,34 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             entity.phase = std::fmod(entity.phase + dt * 0.55f, 4096.0f);
         } else {
             MfEntityState state{entity.position.x, entity.position.y, entity.position.z,
-                                entity.phase, std::clamp(entity.speed * speedMultiplier_, 0.0f, 3.0f), entity.kind};
+                                entity.phase, std::clamp(entity.speed * speedMultiplier_ *
+                                    (passive ? passiveSpeedMultiplier_ : hostileSpeedMultiplier_), 0.0f, 3.0f), entity.kind};
             minefade_entity_update(&state, dt, WorldSolidForRust, WorldSurfaceForRust,
                                    const_cast<VoxelWorld*>(&world));
             entity.position = {state.x, state.y, state.z};
             entity.phase = state.phase;
+        }
+    }
+    if (ambientSpawnInterval_ > 0.0f && entities_.size() < maxEntities_) {
+        ambientSpawnElapsed_ += dt;
+        if (ambientSpawnElapsed_ >= ambientSpawnInterval_) {
+            ambientSpawnElapsed_ = std::fmod(ambientSpawnElapsed_, ambientSpawnInterval_);
+            const std::size_t passiveCount = static_cast<std::size_t>(std::count_if(
+                entities_.begin(), entities_.end(), [](const Entity& entity) {
+                    return entity.kind != 4 && entity.kind != 5;
+                }));
+            if (passiveCount < static_cast<std::size_t>(passiveEntityCap_)) {
+                static constexpr std::array<int, 5> passiveKinds{{0, 1, 2, 3, 6}};
+                const std::uint32_t sequence = ambientSpawnSequence_++;
+                const float angle = static_cast<float>(sequence) * 2.39996323f;
+                const Vec3 spawnAnchor{
+                    player.position.x + std::cos(angle) * ambientSpawnDistance_,
+                    player.position.y,
+                    player.position.z + std::sin(angle) * ambientSpawnDistance_
+                };
+                const int kind = passiveKinds[static_cast<std::size_t>(sequence % passiveKinds.size())];
+                SpawnEntity(spawnAnchor, kind, world);
+            }
         }
     }
 }

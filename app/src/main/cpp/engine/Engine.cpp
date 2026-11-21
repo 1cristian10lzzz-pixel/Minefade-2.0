@@ -712,7 +712,12 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     LoadEnabledMods();
     player_.SetSpeedMultiplier(modPlayerSpeed_);
     player_.SetJumpMultiplier(modPlayerJump_);
+    player_.crouchSpeedMultiplier = modCrouchSpeed_;
     entities_.SetSpeedMultiplier(modEntitySpeed_);
+    entities_.SetModOptions(modPassiveEntitySpeed_, modHostileEntitySpeed_,
+                            modFleeRadius_, modAlertRadius_, modSpawnRadius_, modEntityCap_,
+                            modSpawnInterval_, modSpawnDistance_, modPassiveEntityCap_);
+    droppedItems_.SetModOptions(modPickupRadius_, modDropLifetime_);
     entities_.SpawnInitial(world_);
     const Vec3 modSpawn = player_.position;
     for (int i = 0; i < modSheepSpawns_; ++i) entities_.SpawnEntity(modSpawn, 0, world_);
@@ -1879,7 +1884,8 @@ void Engine::UpdateMining(float deltaSeconds) {
     }
     // Creative mode breaks ordinary blocks almost instantly; survival keeps the hardness curve.
     miningRequired_ = gameMode_ == 1 ? 0.07f
-        : std::clamp(definition->hardness * 1.5f * toolMultiplier, 0.12f, 10.0f);
+        : std::clamp(definition->hardness * 1.5f * toolMultiplier /
+                         std::clamp(modMiningSpeed_, 0.5f, 3.0f), 0.12f, 10.0f);
     miningElapsed_ += std::clamp(deltaSeconds, 0.0f, 0.05f);
     const float progress = std::clamp(miningElapsed_ / miningRequired_, 0.0f, 1.0f);
     ui_.SetTargetBlock(definition->nameEs, progress);
@@ -1894,8 +1900,9 @@ void Engine::UpdateMining(float deltaSeconds) {
         });
         const BlockDefinition* brokenDefinition = GetBlockDefinition(brokenType);
         if (brokenDefinition != nullptr && brokenDefinition->dropId > 0u) {
+            const auto dropQuantity = static_cast<std::uint16_t>(std::clamp(modDropQuantity_, 1, 4));
             droppedItems_.Spawn({broken.x + 0.5f, broken.y + 0.55f, broken.z + 0.5f},
-                                brokenDefinition->dropId, 1u);
+                                brokenDefinition->dropId, dropQuantity);
         }
         soundEvents_.fetch_or(1u, std::memory_order_release);
         if (HasBlockFlag(brokenType, BlockFluid))
@@ -2157,6 +2164,20 @@ void Engine::LoadEnabledMods() {
     modDaySpeed_ = 1.0f;
     modEntitySpeed_ = 1.0f;
     modPlayerJump_ = 1.0f;
+    modCrouchSpeed_ = 0.46f;
+    modPassiveEntitySpeed_ = 1.0f;
+    modHostileEntitySpeed_ = 1.0f;
+    modFleeRadius_ = 6.0f;
+    modAlertRadius_ = 15.0f;
+    modSpawnRadius_ = 1.8f;
+    modPickupRadius_ = 1.65f;
+    modDropLifetime_ = 300.0f;
+    modMiningSpeed_ = 1.0f;
+    modDropQuantity_ = 1;
+    modEntityCap_ = 128;
+    modSpawnInterval_ = 0.0f;
+    modSpawnDistance_ = 18.0f;
+    modPassiveEntityCap_ = 24;
     if (modsDirectory_.empty()) return;
 
     std::error_code error;
@@ -2169,13 +2190,21 @@ void Engine::LoadEnabledMods() {
         if (entry.path().extension() == ".mfmod") packs.push_back(entry.path());
     }
     std::sort(packs.begin(), packs.end());
+    bool hasExplicitSpawnDistance = false;
+    bool hasExplicitPassiveCap = false;
 
     const auto isAllowedKey = [](const std::string& key) {
         static const std::unordered_set<std::string> allowed{
             "id", "name", "version", "description", "enabled",
             "spawn.sheep", "spawn.cow", "spawn.bird", "spawn.pig",
             "spawn.rabbit", "spawn.zombie", "spawn.skeleton",
-            "player.speed", "player.jump", "entity.speed", "world.day_speed"
+            "player.speed", "player.jump", "player.crouch_speed",
+            "entity.speed", "entity.passive_speed", "entity.hostile_speed",
+            "entity.flee_radius", "entity.alert_radius", "entity.spawn_radius",
+            "world.day_speed", "world.entity_cap", "world.spawn_interval",
+            "world.spawn_distance", "world.passive_cap",
+            "drops.pickup_radius", "drops.lifetime", "drops.quantity",
+            "mining.speed"
         };
         return allowed.find(key) != allowed.end();
     };
@@ -2226,17 +2255,18 @@ void Engine::LoadEnabledMods() {
             const std::size_t first = line.find_first_not_of(" \t\r");
             if (first == std::string::npos || line[first] == '#') continue;
             const std::size_t split = line.find('=', first);
-            if (split == std::string::npos) {
+            if (split == std::string::npos || split == first) {
                 valid = false;
                 break;
             }
-            const std::string key = line.substr(first, split - first);
-            const std::size_t valueStart = line.find_first_not_of(" \t", split + 1);
-            if (valueStart == std::string::npos) {
+            const std::size_t keyEnd = line.find_last_not_of(" \t", split - 1u);
+            if (keyEnd == std::string::npos || keyEnd < first) {
                 valid = false;
                 break;
             }
-            std::string value = line.substr(valueStart);
+            const std::string key = line.substr(first, keyEnd - first + 1u);
+            const std::size_t valueStart = line.find_first_not_of(" \t", split + 1u);
+            std::string value = valueStart == std::string::npos ? std::string{} : line.substr(valueStart);
             const std::size_t valueEnd = value.find_last_not_of(" \t\r");
             if (valueEnd != std::string::npos) value.resize(valueEnd + 1u);
             if (key.empty() || key.size() > 64u || value.size() > 512u ||
@@ -2261,40 +2291,76 @@ void Engine::LoadEnabledMods() {
         if (description != values.end() && description->second.size() > 512u) continue;
         if (enabled->second != "true") continue;
 
-        const auto readSpawn = [&values, &parseFiniteNumber](const char* key, int& output) {
+        const auto readSpawn = [&values](const char* key, int& output) {
             const auto found = values.find(key);
             if (found == values.end()) { output = 0; return true; }
-            float number = 0.0f;
-            if (!parseFiniteNumber(found->second, number) || std::floor(number) != number ||
-                number < 0.0f || number > 24.0f) return false;
-            output = static_cast<int>(number);
-            return true;
+            try {
+                std::size_t consumed = 0;
+                const int number = std::stoi(found->second, &consumed);
+                if (consumed != found->second.size() || number < 0 || number > 24) return false;
+                output = number;
+                return true;
+            } catch (...) {
+                return false;
+            }
         };
-        const auto readMultiplier = [&values, &parseFiniteNumber](const char* key,
-                                                                  float minimum,
-                                                                  float maximum,
-                                                                  float& output) {
+        const auto readRange = [&values, &parseFiniteNumber](const char* key, float fallback,
+                                                              float minimum, float maximum,
+                                                              float& output) {
             const auto found = values.find(key);
-            if (found == values.end()) { output = 1.0f; return true; }
+            if (found == values.end()) { output = fallback; return true; }
             float number = 0.0f;
             if (!parseFiniteNumber(found->second, number) ||
                 number < minimum || number > maximum) return false;
             output = number;
             return true;
         };
+        const auto readIntRange = [&values](const char* key, int fallback, int minimum,
+                                             int maximum, int& output) {
+            const auto found = values.find(key);
+            if (found == values.end()) { output = fallback; return true; }
+            try {
+                std::size_t consumed = 0;
+                const int number = std::stoi(found->second, &consumed);
+                if (consumed != found->second.size() || number < minimum || number > maximum)
+                    return false;
+                output = number;
+                return true;
+            } catch (...) {
+                return false;
+            }
+        };
 
         int sheep = 0, cows = 0, birds = 0, pigs = 0;
         int rabbits = 0, zombies = 0, skeletons = 0;
-        float playerSpeed = 1.0f, daySpeed = 1.0f;
-        float playerJump = 1.0f, entitySpeed = 1.0f;
+        int dropQuantity = 1, entityCap = 128, passiveEntityCap = 24;
+        float playerSpeed = 1.0f, playerJump = 1.0f, daySpeed = 1.0f, entitySpeed = 1.0f;
+        float crouchSpeed = 0.46f, passiveSpeed = 1.0f, hostileSpeed = 1.0f;
+        float fleeRadius = 6.0f, alertRadius = 15.0f, spawnRadius = 1.8f;
+        float pickupRadius = 1.65f, dropLifetime = 300.0f, miningSpeed = 1.0f;
+        float spawnInterval = 0.0f, spawnDistance = 18.0f;
         if (!readSpawn("spawn.sheep", sheep) || !readSpawn("spawn.cow", cows) ||
             !readSpawn("spawn.bird", birds) || !readSpawn("spawn.pig", pigs) ||
             !readSpawn("spawn.rabbit", rabbits) || !readSpawn("spawn.zombie", zombies) ||
             !readSpawn("spawn.skeleton", skeletons) ||
-            !readMultiplier("player.speed", 0.5f, 2.0f, playerSpeed) ||
-            !readMultiplier("player.jump", 0.75f, 1.5f, playerJump) ||
-            !readMultiplier("entity.speed", 0.5f, 2.0f, entitySpeed) ||
-            !readMultiplier("world.day_speed", 0.25f, 4.0f, daySpeed)) continue;
+            !readRange("player.speed", 1.0f, 0.5f, 2.0f, playerSpeed) ||
+            !readRange("player.jump", 1.0f, 0.75f, 1.5f, playerJump) ||
+            !readRange("player.crouch_speed", 0.46f, 0.25f, 1.0f, crouchSpeed) ||
+            !readRange("entity.speed", 1.0f, 0.5f, 2.0f, entitySpeed) ||
+            !readRange("entity.passive_speed", 1.0f, 0.5f, 2.0f, passiveSpeed) ||
+            !readRange("entity.hostile_speed", 1.0f, 0.5f, 2.0f, hostileSpeed) ||
+            !readRange("entity.flee_radius", 6.0f, 2.0f, 16.0f, fleeRadius) ||
+            !readRange("entity.alert_radius", 15.0f, 4.0f, 32.0f, alertRadius) ||
+            !readRange("entity.spawn_radius", 1.8f, 1.0f, 8.0f, spawnRadius) ||
+            !readRange("world.day_speed", 1.0f, 0.25f, 4.0f, daySpeed) ||
+            !readIntRange("world.entity_cap", 128, 8, 128, entityCap) ||
+            !readRange("world.spawn_interval", 0.0f, 30.0f, 900.0f, spawnInterval) ||
+            !readRange("world.spawn_distance", 18.0f, 8.0f, 48.0f, spawnDistance) ||
+            !readIntRange("world.passive_cap", 24, 1, 64, passiveEntityCap) ||
+            !readRange("drops.pickup_radius", 1.65f, 0.8f, 4.0f, pickupRadius) ||
+            !readRange("drops.lifetime", 300.0f, 30.0f, 900.0f, dropLifetime) ||
+            !readIntRange("drops.quantity", 1, 1, 4, dropQuantity) ||
+            !readRange("mining.speed", 1.0f, 0.5f, 3.0f, miningSpeed)) continue;
 
         modSheepSpawns_ = std::clamp(modSheepSpawns_ + sheep, 0, 24);
         modCowSpawns_ = std::clamp(modCowSpawns_ + cows, 0, 24);
@@ -2305,8 +2371,32 @@ void Engine::LoadEnabledMods() {
         modSkeletonSpawns_ = std::clamp(modSkeletonSpawns_ + skeletons, 0, 8);
         modPlayerSpeed_ = std::clamp(modPlayerSpeed_ * playerSpeed, 0.5f, 2.0f);
         modPlayerJump_ = std::clamp(modPlayerJump_ * playerJump, 0.75f, 1.5f);
+        modCrouchSpeed_ = std::clamp(modCrouchSpeed_ * (crouchSpeed / 0.46f), 0.25f, 1.0f);
         modEntitySpeed_ = std::clamp(modEntitySpeed_ * entitySpeed, 0.5f, 2.0f);
+        modPassiveEntitySpeed_ = std::clamp(modPassiveEntitySpeed_ * passiveSpeed, 0.5f, 2.0f);
+        modHostileEntitySpeed_ = std::clamp(modHostileEntitySpeed_ * hostileSpeed, 0.5f, 2.0f);
+        modFleeRadius_ = std::clamp(modFleeRadius_ * (fleeRadius / 6.0f), 2.0f, 16.0f);
+        modAlertRadius_ = std::clamp(modAlertRadius_ * (alertRadius / 15.0f), 4.0f, 32.0f);
+        modSpawnRadius_ = std::clamp(modSpawnRadius_ * (spawnRadius / 1.8f), 1.0f, 8.0f);
         modDaySpeed_ = std::clamp(modDaySpeed_ * daySpeed, 0.25f, 4.0f);
+        modPickupRadius_ = std::clamp(modPickupRadius_ * (pickupRadius / 1.65f), 0.8f, 4.0f);
+        modDropLifetime_ = std::clamp(modDropLifetime_ * (dropLifetime / 300.0f), 30.0f, 900.0f);
+        modDropQuantity_ = std::clamp(modDropQuantity_ * dropQuantity, 1, 4);
+        modMiningSpeed_ = std::clamp(modMiningSpeed_ * miningSpeed, 0.5f, 3.0f);
+        modEntityCap_ = std::min(modEntityCap_, entityCap);
+        if (spawnInterval > 0.0f)
+            modSpawnInterval_ = modSpawnInterval_ <= 0.0f ? spawnInterval
+                : std::min(modSpawnInterval_, spawnInterval);
+        if (values.find("world.spawn_distance") != values.end()) {
+            modSpawnDistance_ = hasExplicitSpawnDistance
+                ? std::min(modSpawnDistance_, spawnDistance) : spawnDistance;
+            hasExplicitSpawnDistance = true;
+        }
+        if (values.find("world.passive_cap") != values.end()) {
+            modPassiveEntityCap_ = hasExplicitPassiveCap
+                ? std::min(modPassiveEntityCap_, passiveEntityCap) : passiveEntityCap;
+            hasExplicitPassiveCap = true;
+        }
     }
 }
 
