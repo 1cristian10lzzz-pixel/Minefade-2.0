@@ -182,6 +182,7 @@ private:
     std::string modsDirectory_;
     std::vector<ModRecipe> modRecipes_;
     std::vector<ModBiomeDefinition> modBiomes_;
+    std::vector<ModStructureDefinition> modStructures_;
     std::vector<std::string> activeContentMods_;
     bool modCompatibilityError_{false};
     int modSheepSpawns_{0};
