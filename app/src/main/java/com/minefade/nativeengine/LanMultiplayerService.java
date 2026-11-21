@@ -236,7 +236,9 @@ public final class LanMultiplayerService implements Closeable {
         postStatus("Verificando los mods instalados…");
 
         io.execute(() -> {
-            sessionModsFingerprint = currentModsFingerprint();
+            String computedFingerprint = currentModsFingerprint();
+            if (closed || listener != callback) return;
+            sessionModsFingerprint = computedFingerprint;
             if (!isValidModsFingerprint(sessionModsFingerprint)) {
                 hosting = false;
                 postStatus("No se pudieron verificar los mods instalados. No se publicó la partida.");
@@ -304,7 +306,9 @@ public final class LanMultiplayerService implements Closeable {
         notifyGames();
         postStatus("Verificando los mods instalados…");
         io.execute(() -> {
-            sessionModsFingerprint = currentModsFingerprint();
+            String computedFingerprint = currentModsFingerprint();
+            if (closed || listener != callback) return;
+            sessionModsFingerprint = computedFingerprint;
             if (!isValidModsFingerprint(sessionModsFingerprint)) {
                 postStatus("No se pudieron verificar los mods instalados. No se inició la búsqueda LAN.");
                 return;
@@ -399,6 +403,7 @@ public final class LanMultiplayerService implements Closeable {
         postStatus("Verificando los mods instalados…");
         io.execute(() -> {
             String localFingerprint = currentModsFingerprint();
+            if (closed || listener != callback) return;
             if (!isValidModsFingerprint(localFingerprint) ||
                     !localFingerprint.equals(game.modsFingerprint)) {
                 postStatus("No puedes entrar: la partida usa un conjunto de mods diferente.");
