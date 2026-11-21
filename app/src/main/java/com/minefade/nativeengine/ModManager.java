@@ -175,7 +175,8 @@ public final class ModManager {
                 while ((entry = zip.getNextEntry()) != null) {
                     if (++entryCount > MAX_ZIP_ENTRIES) throw new IOException("Demasiados archivos.");
                     String name = entry.getName();
-                    validateZipPath(name);
+                    validateZipPath(entry.isDirectory() && name.endsWith("/")
+                            ? name.substring(0, name.length() - 1) : name);
                     if (entry.isDirectory()) { zip.closeEntry(); continue; }
                     if (!seen.add(name)) throw new IOException("Archivo ZIP duplicado.");
                     if (!"manifest.json".equals(name) &&
@@ -281,8 +282,10 @@ public final class ModManager {
         if (!id.matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
                 name.trim().isEmpty() || name.length() > 96 ||
                 !version.matches("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?") ||
-                description.length() > 512 || description.indexOf('|') >= 0)
+                description.length() > 512 || description.indexOf('|') >= 0 ||
+                description.indexOf('\n') >= 0 || description.indexOf('\r') >= 0)
             throw new IOException("Los metadatos del manifiesto no son válidos.");
+        validateLabel(name);
 
         JSONArray blocks = manifest.optJSONArray("blocks");
         JSONArray items = manifest.optJSONArray("items");
@@ -385,17 +388,23 @@ public final class ModManager {
                 options.outWidth > 128 || options.outHeight > 128)
             throw new IOException("Las texturas deben ser PNG de hasta 128×128.");
     }
+    private static boolean oneOf(String value, String... choices) {
+        if (value == null) return false;
+        for (String choice : choices) if (choice.equals(value)) return true;
+        return false;
+    }
+
     private static void validateSound(String value) throws IOException {
-        if (!Set.of("stone", "wood", "gravel", "sand", "grass", "glass", "metal").contains(value))
+        if (!oneOf(value, "stone", "wood", "gravel", "sand", "grass", "glass", "metal"))
             throw new IOException("Tipo de sonido no permitido.");
     }
     private static void validateShape(String value) throws IOException {
-        if (!Set.of("cube", "slab", "stairs", "cross_plant", "thin", "pane",
-                "fence", "door", "trapdoor", "fluid", "scaffolding").contains(value))
+        if (!oneOf(value, "cube", "slab", "stairs", "cross_plant", "thin", "pane",
+                "fence", "door", "trapdoor", "fluid", "scaffolding"))
             throw new IOException("Forma de bloque no permitida.");
     }
     private static void validateTool(String value) throws IOException {
-        if (!Set.of("none", "pickaxe", "axe", "shovel", "shears").contains(value))
+        if (!oneOf(value, "none", "pickaxe", "axe", "shovel", "shears"))
             throw new IOException("Herramienta no permitida.");
     }
     private static void finiteRange(double value, double minimum, double maximum) throws IOException {
@@ -419,7 +428,7 @@ public final class ModManager {
                 if (split <= 0) continue;
                 String key = line.substring(0, split).trim();
                 String value = line.substring(split + 1).trim();
-                if (!Set.of("format", "id", "name", "version", "description", "enabled").contains(key) ||
+                if (!oneOf(key, "format", "id", "name", "version", "description", "enabled") ||
                         value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.length() > 512 ||
                         values.containsKey(key)) return null;
                 values.put(key, value);
@@ -455,7 +464,7 @@ public final class ModManager {
                     JSONObject textures = block.getJSONObject("textures");
                     Bitmap[] faces = loadFaces(root, textures.getString("top"),
                             textures.getString("side"), textures.getString("bottom"));
-                    ownedBitmaps.addAll(List.of(faces));
+                    for (Bitmap face : faces) ownedBitmaps.add(face);
                     int tile = ATLAS_TILE_COUNT + entries.size() * 3;
                     String key = mod.id + ":" + block.getString("id");
                     int flags = block.optBoolean("transparent", false)
