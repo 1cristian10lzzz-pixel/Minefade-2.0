@@ -315,6 +315,22 @@ class ModPackTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "comportamiento"):
                 parse_mod(path)
 
+    def test_v2_zip_rejects_unsupported_sound_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-sounds.mfmod"
+            self.write_v2_zip(path, {"audio/custom.ogg": b"OggS" + bytes(32)},
+                              {"sounds": {"execute_code": "audio/custom.ogg"}})
+            with self.assertRaisesRegex(ValueError, "evento de sonido"):
+                parse_mod(path)
+
+    def test_v2_zip_rejects_non_audio_payload_for_sound_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-audio.mfmod"
+            self.write_v2_zip(path, {"audio/noise.wav": b"not a wave file"},
+                              {"sounds": {"water": "audio/noise.wav"}})
+            with self.assertRaisesRegex(ValueError, "cabecera OGG/WAV"):
+                parse_mod(path)
+
     def test_v2_zip_rejects_duplicate_resource_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "duplicate.mfmod"
