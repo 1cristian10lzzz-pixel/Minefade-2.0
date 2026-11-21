@@ -548,7 +548,7 @@ public final class ModManager {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             ArrayList<File> files = new ArrayList<>();
-            collectContentFiles(root, files);
+            collectContentFiles(root, root, files);
             Collections.sort(files, (left, right) -> relativeContentPath(root, left)
                     .compareTo(relativeContentPath(root, right)));
             byte[] buffer = new byte[8192];
@@ -579,13 +579,13 @@ public final class ModManager {
         }
     }
 
-    private static void collectContentFiles(File directory, List<File> output) throws IOException {
+    private static void collectContentFiles(File root, File directory, List<File> output) throws IOException {
         File[] children = directory.listFiles();
         if (children == null) throw new IOException("No se pudieron enumerar los recursos del mod.");
         for (File child : children) {
-            if (child.isDirectory()) collectContentFiles(child, output);
+            if (child.isDirectory()) collectContentFiles(root, child, output);
             else if (child.isFile()) {
-                String relative = relativeContentPath(directory, child);
+                String relative = relativeContentPath(root, child);
                 if ("manifest.json".equals(relative) ||
                         relative.startsWith("textures/") || relative.startsWith("audio/"))
                     output.add(child);
