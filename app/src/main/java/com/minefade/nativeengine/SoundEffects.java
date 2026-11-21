@@ -10,6 +10,16 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.json.JSONObject;
 
 /** Low-latency local game audio with load-state tracking and live master volume. */
 public final class SoundEffects {
@@ -17,6 +27,8 @@ public final class SoundEffects {
     private final SoundPool pool;
     private final SharedPreferences preferences;
     private final Set<Integer> loadedSamples = Collections.synchronizedSet(new HashSet<>());
+    private final Map<String, Integer> modSoundOverrides = new LinkedHashMap<>();
+    private final Set<Integer> modSampleIds = new HashSet<>();
     private final AtomicInteger variationSequence = new AtomicInteger();
     private final int blockBreak;
     private final int blockPlace;
@@ -97,6 +109,98 @@ public final class SoundEffects {
         return Math.max(0.0f, Math.min(1.0f, value));
     }
 
+    /** Loads enabled pack overrides in a stable order; first mod wins on conflicts. */
+    public synchronized void loadModOverrides(String modsDirectory) {
+        for (int sampleId : modSampleIds) {
+            loadedSamples.remove(sampleId);
+            pool.unload(sampleId);
+        }
+        modSampleIds.clear();
+        modSoundOverrides.clear();
+        if (released || modsDirectory == null) return;
+        File root = new File(modsDirectory);
+        File[] children = root.listFiles();
+        if (children == null) return;
+        ArrayList<File> packs = new ArrayList<>();
+        for (File child : children) if (child.isDirectory()) packs.add(child);
+        packs.sort(Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
+        for (File pack : packs) {
+            File manifestIni = new File(pack, "manifest.ini");
+            File manifestJson = new File(pack, "manifest.json");
+            if (!manifestIni.isFile() || !manifestJson.isFile()) continue;
+            boolean enabled = false;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    new FileInputStream(manifestIni), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null)
+                    if ("enabled=true".equals(line.trim())) enabled = true;
+            } catch (Exception ignored) { continue; }
+            if (!enabled) continue;
+            try {
+                byte[] bytes = readBounded(manifestJson, 1024 * 1024);
+                JSONObject manifest = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+                if (manifest.optInt("format", 0) != 2) continue;
+                JSONObject sounds = manifest.optJSONObject("sounds");
+                if (sounds == null) continue;
+                java.util.Iterator<String> keys = sounds.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (modSoundOverrides.containsKey(key)) continue;
+                    String relative = sounds.optString(key, "");
+                    String lower = relative.toLowerCase(java.util.Locale.ROOT);
+                    if (!isSoundKey(key) || !relative.startsWith("audio/") ||
+                            relative.contains("..") || relative.indexOf('\\') >= 0 ||
+                            !(lower.endsWith(".ogg") || lower.endsWith(".wav"))) continue;
+                    File audio = new File(pack, relative);
+                    String canonicalRoot = pack.getCanonicalPath() + File.separator;
+                    if (!audio.getCanonicalPath().startsWith(canonicalRoot) ||
+                            !audio.isFile() || audio.length() < 12L ||
+                            audio.length() > 4L * 1024L * 1024L) continue;
+                    int sampleId = pool.load(audio.getAbsolutePath(), 1);
+                    if (sampleId != 0) {
+                        modSoundOverrides.put(key, sampleId);
+                        modSampleIds.add(sampleId);
+                    }
+                }
+            } catch (Exception error) {
+                Log.w(TAG, "Ignored an invalid mod audio manifest: " + pack.getName(), error);
+            }
+        }
+    }
+
+    private static byte[] readBounded(File file, int maximum) throws Exception {
+        try (FileInputStream input = new FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count, total = 0;
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > maximum) throw new java.io.IOException("Manifest too large");
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        }
+    }
+
+    private static boolean isSoundKey(String key) {
+        switch (key) {
+            case "block_break": case "block_place": case "ui_click": case "item_pickup":
+            case "jump": case "footstep": case "block_wood": case "block_stone":
+            case "block_dirt": case "block_leaves": case "sheep": case "cow":
+            case "bird": case "pig": case "zombie": case "skeleton": case "rabbit":
+            case "chest_open": case "command_success": case "water": return true;
+            default: return false;
+        }
+    }
+
+    private void playCue(String key, int defaultSample, float gain, float rate) {
+        Integer replacementSample = modSoundOverrides.get(key);
+        if (replacementSample != null && loadedSamples.contains(replacementSample))
+            play(replacementSample, gain, rate);
+        else
+            play(defaultSample, gain, rate);
+    }
+
     private void play(int sampleId, float gain, float rate) {
         if (released || sampleId == 0 || !loadedSamples.contains(sampleId)) return;
         final float volume = clamp(masterVolume * gain);
@@ -123,47 +227,47 @@ public final class SoundEffects {
      */
     public void playEvents(int events) {
         if (!preferences.getBoolean("sound_effects_enabled", true)) return;
-        if ((events & 1) != 0) play(blockBreak, 0.82f, 1.0f);
-        if ((events & 2) != 0) play(blockPlace, 0.72f, 1.0f);
-        if ((events & 4) != 0) play(uiClick, 0.48f, 1.0f);
+        if ((events & 1) != 0) playCue("block_break", blockBreak, 0.82f, 1.0f);
+        if ((events & 2) != 0) playCue("block_place", blockPlace, 0.72f, 1.0f);
+        if ((events & 4) != 0) playCue("ui_click", uiClick, 0.48f, 1.0f);
         if ((events & 8) != 0) {
-            play(itemPickup, 0.88f, 1.0f);
-            play(uiClick, 0.13f, 1.28f);
+            playCue("item_pickup", itemPickup, 0.88f, 1.0f);
+            playCue("ui_click", uiClick, 0.13f, 1.28f);
         }
         if ((events & 16) != 0) {
-            play(jump, 0.74f, 1.0f);
-            play(footstep, 0.10f, 0.82f);
+            playCue("jump", jump, 0.74f, 1.0f);
+            playCue("footstep", footstep, 0.10f, 0.82f);
         }
-        if ((events & 32) != 0) play(footstep, 0.32f, 1.0f);
+        if ((events & 32) != 0) playCue("footstep", footstep, 0.32f, 1.0f);
         if ((events & 64) != 0) {
-            play(blockBreak, 0.27f, 0.76f);
-            play(blockPlace, 0.10f, 1.18f);
+            playCue("block_break", blockBreak, 0.27f, 0.76f);
+            playCue("block_place", blockPlace, 0.10f, 1.18f);
         }
         if ((events & 128) != 0) {
-            play(footstep, 0.22f, 0.72f);
-            play(blockPlace, 0.18f, 0.90f);
+            playCue("footstep", footstep, 0.22f, 0.72f);
+            playCue("block_place", blockPlace, 0.18f, 0.90f);
         }
         if ((events & 256) != 0) {
-            play(footstep, 0.20f, 0.86f);
-            play(blockBreak, 0.12f, 1.14f);
+            playCue("footstep", footstep, 0.20f, 0.86f);
+            playCue("block_break", blockBreak, 0.12f, 1.14f);
         }
         if ((events & 512) != 0) {
-            play(blockLeaves, 0.60f, 1.08f);
-            play(footstep, 0.10f, 1.18f);
+            playCue("block_leaves", blockLeaves, 0.60f, 1.08f);
+            playCue("footstep", footstep, 0.10f, 1.18f);
         }
-        if ((events & 64) != 0) play(blockStone, 0.62f, 0.96f);
-        if ((events & 128) != 0) play(blockWood, 0.62f, 0.92f);
-        if ((events & 256) != 0) play(blockDirt, 0.66f, 0.94f);
-        if ((events & 1024) != 0) play(sheepCall, 0.76f, 1.0f);
-        if ((events & 2048) != 0) play(cowCall, 0.76f, 0.93f);
-        if ((events & 4096) != 0) play(birdCall, 0.62f, 1.08f);
-        if ((events & 8192) != 0) play(pigCall, 0.72f, 1.0f);
-        if ((events & 16384) != 0) play(zombieCall, 0.78f, 0.88f);
-        if ((events & 32768) != 0) play(skeletonCall, 0.72f, 0.96f);
-        if ((events & 65536) != 0) play(rabbitCall, 0.56f, 1.12f);
-        if ((events & 131072) != 0) play(chestOpen, 0.72f, 0.96f);
-        if ((events & 262144) != 0) play(commandSuccess, 0.54f, 1.0f);
-        if ((events & 524288) != 0) play(waterSplash, 0.48f, 0.92f);
+        if ((events & 64) != 0) playCue("block_stone", blockStone, 0.62f, 0.96f);
+        if ((events & 128) != 0) playCue("block_wood", blockWood, 0.62f, 0.92f);
+        if ((events & 256) != 0) playCue("block_dirt", blockDirt, 0.66f, 0.94f);
+        if ((events & 1024) != 0) playCue("sheep", sheepCall, 0.76f, 1.0f);
+        if ((events & 2048) != 0) playCue("cow", cowCall, 0.76f, 0.93f);
+        if ((events & 4096) != 0) playCue("bird", birdCall, 0.62f, 1.08f);
+        if ((events & 8192) != 0) playCue("pig", pigCall, 0.72f, 1.0f);
+        if ((events & 16384) != 0) playCue("zombie", zombieCall, 0.78f, 0.88f);
+        if ((events & 32768) != 0) playCue("skeleton", skeletonCall, 0.72f, 0.96f);
+        if ((events & 65536) != 0) playCue("rabbit", rabbitCall, 0.56f, 1.12f);
+        if ((events & 131072) != 0) playCue("chest_open", chestOpen, 0.72f, 0.96f);
+        if ((events & 262144) != 0) playCue("command_success", commandSuccess, 0.54f, 1.0f);
+        if ((events & 524288) != 0) playCue("water", waterSplash, 0.48f, 0.92f);
     }
 
     public int loadedSampleCount() {
