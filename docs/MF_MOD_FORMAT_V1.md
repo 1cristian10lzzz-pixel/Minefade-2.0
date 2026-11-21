@@ -10,11 +10,19 @@ Un archivo .mfmod es texto UTF-8 con una propiedad clave=valor por línea. Las l
 | name | Nombre visible (1–96 caracteres) |
 | version | Versión del formato: 1 o 1.0 |
 | enabled | true o false |
-| description | Texto opcional, hasta 512 caracteres |
+| description | Texto opcional, hasta 512 caracteres |\n| icon | Icono opcional: `cube`, `tool`, `creature`, `world`, `magic` o `decor` |
+
+## Herramientas de autoría
+
+El menú MODS permite crear un paquete desde el botón **+**, asignar nombre,
+descripción y categoría visual, e importar paquetes existentes. También ofrece
+una plantilla de fauna que se crea solo cuando el jugador la solicita. Los
+paquetes nuevos y la plantilla comienzan desactivados; no se instala contenido
+demo silenciosamente. El campo `icon` es metadato visual y no altera la lógica.
 
 ## Ajustes admitidos
 
-Los paquetes antiguos que solo usan los campos originales siguen siendo compatibles. Las nuevas claves extienden el formato de datos v1 sin cambiar la importación.
+Los paquetes antiguos que solo usan los campos originales siguen siendo compatibles. El campo opcional `icon` solo afecta a la tarjeta visual del gestor. Las nuevas claves extienden el formato de datos v1 sin cambiar la importación.
 
 | Clave | Tipo | Rango | Efecto |
 |---|---:|---:|---|
