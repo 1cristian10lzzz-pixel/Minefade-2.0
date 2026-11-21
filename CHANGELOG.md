@@ -15,7 +15,7 @@
 - Se sincronizan las validaciones Java, C++ y Python y se prueban rangos y valores inválidos.
 - Se añade el mod de ejemplo Minefade Aventura Plus en examples/; empieza desactivado y no se instala desde assets.
 - Se conserva la compatibilidad de mods de datos antiguos. Estas opciones requieren actualizar el APK a 2.2.0.
-- Android versionCode 25 / versionName 2.2.0; la compilación sigue pendiente de CI y pruebas físicas.
+- Android versionCode 25 / versionName 2.2.0; la compilación de CI pasó, pero aún faltaban pruebas físicas.
 
 ## Actualización 2.1 — estabilidad del renderer y del repositorio
 - Se limita la cantidad de chunks cuyo mesh se transfiere a GPU por pasada (1/2/3 según calidad), priorizando los más cercanos.
