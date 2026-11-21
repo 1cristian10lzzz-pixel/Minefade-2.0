@@ -218,9 +218,10 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
             items = manifest.get("items", [])
             recipes = manifest.get("recipes", [])
             biomes = manifest.get("biomes", [])
-            if not all(isinstance(x, list) for x in (blocks, items, recipes, biomes)):
-                raise ValueError("blocks, items, recipes y biomes deben ser listas")
-            if len(blocks) + len(items) > 128 or len(recipes) > 128 or len(biomes) > 32:
+            structures = manifest.get("structures", [])
+            if not all(isinstance(x, list) for x in (blocks, items, recipes, biomes, structures)):
+                raise ValueError("blocks, items, recipes, biomes y structures deben ser listas")
+            if len(blocks) + len(items) > 128 or len(recipes) > 128 or len(biomes) > 32 or len(structures) > 16:
                 raise ValueError("demasiados recursos definidos")
             ids: set[str] = set()
             for block in blocks:
@@ -282,6 +283,29 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
                 reference(biome.get("fillerBlock"))
                 integer(biome.get("priority", 0), -100, 100, "priority")
                 integer(biome.get("surfaceOffset", 0), -16, 16, "surfaceOffset")
+            for structure in structures:
+                if not isinstance(structure, dict):
+                    raise ValueError("definición de estructura inválida")
+                rid = local_id(structure.get("id"))
+                structure_id = "structure:" + rid
+                if structure_id in ids:
+                    raise ValueError("ID de estructura duplicado")
+                ids.add(structure_id)
+                label(structure.get("name"))
+                chance = structure.get("chance", 0.02)
+                if isinstance(chance, bool) or not isinstance(chance, (int, float)) or \
+                        not math.isfinite(chance) or not 0.0001 <= chance <= 1.0:
+                    raise ValueError("probabilidad de estructura fuera de rango")
+                placements = structure.get("blocks")
+                if not isinstance(placements, list) or not 1 <= len(placements) <= 128:
+                    raise ValueError("una estructura necesita entre 1 y 128 bloques")
+                for placement in placements:
+                    if not isinstance(placement, dict):
+                        raise ValueError("bloque de estructura inválido")
+                    integer(placement.get("x"), 0, 15, "x")
+                    integer(placement.get("y"), -16, 48, "y")
+                    integer(placement.get("z"), 0, 15, "z")
+                    reference(placement.get("id"))
             for recipe in recipes:
                 if not isinstance(recipe, dict):
                     raise ValueError("receta inválida")
