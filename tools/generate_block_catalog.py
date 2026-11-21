@@ -1080,8 +1080,10 @@ def main():
     h += ['    Count = '+str(len(entries)),'};',
           'enum class BlockShape : std::uint8_t { None, Cube, Slab, Stairs, CrossPlant, Thin, Pane, Fence, Door, Trapdoor, Fluid, Scaffolding };',
           'enum class BlockTool : std::uint8_t { None, Pickaxe, Axe, Shovel, Shears };',
-          'enum BlockFlags : std::uint16_t { BlockCollidable=1, BlockOpaque=2, BlockTransparent=4, BlockFluid=8, BlockPlant=16, BlockEmissive=32, BlockPlaceable=64 };',
+          'enum BlockFlags : std::uint16_t { BlockCollidable=1, BlockOpaque=2, BlockTransparent=4, BlockFluid=8, BlockPlant=16, BlockEmissive=32, BlockPlaceable=64, BlockInventoryOnly=128 };',
           'struct BlockDefinition { BlockId id; const char* key; const char* nameEs; const char* sound; const char* textureTop; const char* textureSide; const char* textureBottom; std::uint16_t tileTop, tileSide, tileBottom; float hardness; std::uint16_t dropId; std::uint8_t stackLimit; std::uint8_t lightLevel; std::uint16_t flags; BlockShape shape; BlockTool preferredTool; };',
+          'void ClearModBlockDefinitions() noexcept;',
+          'bool RegisterModBlockDefinition(std::string_view key, std::string_view nameEs, std::string_view sound, std::uint16_t tileTop, std::uint16_t tileSide, std::uint16_t tileBottom, float hardness, std::uint8_t stackLimit, std::uint8_t lightLevel, std::uint16_t flags, BlockShape shape, BlockTool preferredTool) noexcept;',
           'const BlockDefinition* GetBlockDefinition(BlockId id) noexcept;',
           'const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept;',
           'std::size_t GetBlockDefinitionCount() noexcept;',
@@ -1091,16 +1093,40 @@ def main():
     OUT_H.write_text('\n'.join(h)+'\n',encoding='utf-8')
     shapes=['None','Cube','Slab','Stairs','CrossPlant','Thin','Pane','Fence','Door','Trapdoor','Fluid','Scaffolding']
     tools=['None','Pickaxe','Axe','Shovel','Shears']
-    c=['#include "BlockRegistry.h"','#include <algorithm>','#include <array>','#include <cmath>','namespace minefade {','namespace {',f'constexpr std::array<BlockDefinition, {len(catalogue)}> kBlocks{{{{']
+    c=['#include "BlockRegistry.h"','#include <algorithm>','#include <array>','#include <cmath>','#include <deque>','#include <string>','#include <vector>','namespace minefade {','namespace {',f'constexpr std::array<BlockDefinition, {len(catalogue)}> kBlocks{{{{']
     for d in catalogue:
         c.append('    BlockDefinition{BlockId::%s, "%s", "%s", "%s", "%s", "%s", "%s", %d, %d, %d, %.2ff, %d, %d, %d, %d, BlockShape::%s, BlockTool::%s},' % (
             d['enum'],d['key'],d['name_es'].replace('\\','\\\\').replace('"','\\"'),d['sound'],
             d['texture_aliases']['top'],d['texture_aliases']['side'],d['texture_aliases']['bottom'],
             d['atlas']['top'],d['atlas']['side'],d['atlas']['bottom'],d['hardness'],d['drop_id'],d['stack_limit'],d['light'],d['flags'],d['shape'],d['tool']))
-    c += ['}};','} // namespace',
-          'const BlockDefinition* GetBlockDefinition(BlockId id) noexcept { const auto index=static_cast<std::size_t>(id); return index<kBlocks.size()?&kBlocks[index]:nullptr; }',
-          'const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept { for (const auto& block:kBlocks) if (key==block.key) return &block; return nullptr; }',
-          'std::size_t GetBlockDefinitionCount() noexcept { return kBlocks.size(); }',
+    c += ['}};',
+          'std::vector<BlockDefinition> gModBlocks;',
+          'std::deque<std::string> gModStrings;',
+          'const char* StoreModString(std::string_view value) {',
+          '    gModStrings.emplace_back(value);',
+          '    return gModStrings.back().c_str();',
+          '}',
+          '} // namespace',
+          'void ClearModBlockDefinitions() noexcept { gModBlocks.clear(); gModStrings.clear(); }',
+          'bool RegisterModBlockDefinition(std::string_view key, std::string_view nameEs, std::string_view sound, std::uint16_t tileTop, std::uint16_t tileSide, std::uint16_t tileBottom, float hardness, std::uint8_t stackLimit, std::uint8_t lightLevel, std::uint16_t flags, BlockShape shape, BlockTool preferredTool) noexcept {',
+          '    try {',
+          '        if (key.size()<3u || key.size()>129u || nameEs.empty() || nameEs.size()>384u || sound.size()>24u || !std::isfinite(hardness) || hardness<0.0f || hardness>100.0f || stackLimit==0u || stackLimit>64u || lightLevel>15u) return false;',
+          '        if (FindBlockDefinition(key)!=nullptr) return false;',
+          '        const std::size_t nextId=kBlocks.size()+gModBlocks.size();',
+          '        if (nextId>=static_cast<std::size_t>(UINT16_MAX)) return false;',
+          '        const std::uint16_t id=static_cast<std::uint16_t>(nextId);',
+          '        const char* stableKey=StoreModString(key);',
+          '        const char* stableName=StoreModString(nameEs);',
+          '        const char* stableSound=StoreModString(sound);',
+          '        const char* stableTexture=StoreModString("mod_atlas");',
+          '        BlockDefinition definition{static_cast<BlockId>(id),stableKey,stableName,stableSound,stableTexture,stableTexture,stableTexture,tileTop,tileSide,tileBottom,hardness,static_cast<std::uint16_t>((flags & BlockPlaceable)!=0u?id:0u),stackLimit,lightLevel,flags,shape,preferredTool};',
+          '        gModBlocks.push_back(definition);',
+          '        return true;',
+          '    } catch (...) { return false; }',
+          '}',
+          'const BlockDefinition* GetBlockDefinition(BlockId id) noexcept { const auto index=static_cast<std::size_t>(id); if (index<kBlocks.size()) return &kBlocks[index]; const std::size_t modIndex=index-kBlocks.size(); return modIndex<gModBlocks.size()?&gModBlocks[modIndex]:nullptr; }',
+          'const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept { for (const auto& block:kBlocks) if (key==block.key) return &block; for (const auto& block:gModBlocks) if (key==block.key) return &block; return nullptr; }',
+          'std::size_t GetBlockDefinitionCount() noexcept { return kBlocks.size()+gModBlocks.size(); }',
           'bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept { const auto* block=GetBlockDefinition(id); return block && (block->flags & static_cast<std::uint16_t>(flag))!=0; }',
           f'void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept {{ const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (static_cast<std::size_t>(tile)>=tileCount) {{ u0=v0=u1=v1=0.0f; return; }} const std::size_t rows=(tileCount+{COLS}u-1u)/{COLS}u; const float atlasHeight=static_cast<float>(rows*{CELL}u); const unsigned col=tile%{COLS}u,row=tile/{COLS}u; const float x=static_cast<float>(col*{CELL}u+1u), y=static_cast<float>(row*{CELL}u+1u); u0=(x+0.5f)/{WIDTH}.0f; u1=(x+15.5f)/{WIDTH}.0f; v0=(y+0.5f)/atlasHeight; v1=(y+15.5f)/atlasHeight; }}',
           '} // namespace minefade']
