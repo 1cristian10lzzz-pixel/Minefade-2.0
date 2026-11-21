@@ -1465,7 +1465,8 @@ void Engine::HandleUiAction(const std::string& action) {
         try {
             const int itemId = std::stoi(action.substr(16));
             if (itemId > 0 && itemId < static_cast<int>(GetBlockDefinitionCount()) &&
-                HasBlockFlag(static_cast<BlockId>(itemId), BlockPlaceable)) {
+                (HasBlockFlag(static_cast<BlockId>(itemId), BlockPlaceable) ||
+                 HasBlockFlag(static_cast<BlockId>(itemId), BlockInventoryOnly))) {
                 inventory_.counts[inventory_.selectedSlot] =
                     static_cast<std::uint32_t>(itemId) * 1000u + 64u;
                 RefreshInventoryUi();
