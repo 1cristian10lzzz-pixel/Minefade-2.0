@@ -531,10 +531,16 @@ public final class ModManager {
             throw new IOException("Herramienta no permitida.");
     }
     private static void validateRangeObject(JSONObject range, double minimum, double maximum) throws IOException {
-        finiteRange(range.getDouble("min"), minimum, maximum);
-        finiteRange(range.getDouble("max"), minimum, maximum);
-        if (range.getDouble("min") > range.getDouble("max"))
-            throw new IOException("Rango de clima invertido.");
+        if (range == null) throw new IOException("Falta un rango climático.");
+        try {
+            double min = range.getDouble("min");
+            double max = range.getDouble("max");
+            finiteRange(min, minimum, maximum);
+            finiteRange(max, minimum, maximum);
+            if (min > max) throw new IOException("Rango de clima invertido.");
+        } catch (org.json.JSONException error) {
+            throw new IOException("Rango climático incompleto o no numérico.", error);
+        }
     }
     private static void finiteRange(double value, double minimum, double maximum) throws IOException {
         if (Double.isNaN(value) || Double.isInfinite(value) || value < minimum || value > maximum)
