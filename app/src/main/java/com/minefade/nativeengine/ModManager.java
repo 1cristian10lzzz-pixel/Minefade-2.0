@@ -300,6 +300,7 @@ public final class ModManager {
         if (blocks != null) for (int i = 0; i < blocks.length(); i++) {
             JSONObject block = blocks.getJSONObject(i);
             String localId = requireLocalId(block.optString("id", ""));
+            if (id.length() + 1 + localId.length() > 129) throw new IOException("ID de bloque demasiado largo.");
             if (!ids.add(localId)) throw new IOException("ID de contenido duplicado.");
             validateLabel(block.optString("name", ""));
             JSONObject textures = block.getJSONObject("textures");
@@ -316,6 +317,7 @@ public final class ModManager {
         if (items != null) for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.getJSONObject(i);
             String localId = requireLocalId(item.optString("id", ""));
+            if (id.length() + 1 + localId.length() > 129) throw new IOException("ID de objeto demasiado largo.");
             if (!ids.add(localId)) throw new IOException("ID de contenido duplicado.");
             validateLabel(item.optString("name", ""));
             String texture = item.optString("texture", "");
@@ -331,7 +333,8 @@ public final class ModManager {
         }
         if (recipes != null) for (int i = 0; i < recipes.length(); i++) {
             JSONObject recipe = recipes.getJSONObject(i);
-            requireLocalId(recipe.optString("id", ""));
+            String recipeId = requireLocalId(recipe.optString("id", ""));
+            if (id.length() + 1 + recipeId.length() > 129) throw new IOException("ID de receta demasiado largo.");
             validateLabel(recipe.optString("name", ""));
             JSONObject output = recipe.getJSONObject("output");
             validateReference(output.optString("id", ""), id);
