@@ -1,0 +1,32 @@
+# Minefade Aventura Plus Extendido 2.0
+# Configurado para Minefade 2.2.0 o posterior con MFMod ampliado.
+id=minefade_aventura_plus_extendido_20
+name=Minefade Aventura Plus Extendido 2.0
+version=1.0
+enabled=false
+description=Fauna abundante con limites, enemigos mas atentos, movimiento agil, mineria mejorada y objetos mas faciles de recoger.
+spawn.sheep=4
+spawn.cow=3
+spawn.bird=4
+spawn.pig=3
+spawn.rabbit=4
+spawn.zombie=2
+spawn.skeleton=1
+player.speed=1.16
+player.jump=1.12
+player.crouch_speed=0.58
+entity.speed=1.04
+entity.passive_speed=1.08
+entity.hostile_speed=1.12
+entity.flee_radius=8.5
+entity.alert_radius=21.0
+entity.spawn_radius=4.0
+world.day_speed=0.90
+world.entity_cap=96
+world.spawn_interval=75
+world.spawn_distance=24
+world.passive_cap=48
+drops.pickup_radius=2.10
+drops.lifetime=420
+drops.quantity=2
+mining.speed=1.60
