@@ -124,7 +124,7 @@ public final class ModManager {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (String identity : identities) {
                 digest.update(identity.getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) '\\n');
+                digest.update((byte) '\n');
             }
             return fingerprintHex(digest.digest());
         } catch (Exception error) {
