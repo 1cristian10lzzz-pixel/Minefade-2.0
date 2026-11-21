@@ -2834,7 +2834,10 @@ void Engine::LoadEnabledMods() {
 
 void Engine::ValidateLoadedWorldMods() {
     modCompatibilityError_ = false;
-    if (multiplayerMode_) { modCompatibilityError_ = !activeContentMods_.empty(); return; }
+    // The Java LAN transport verifies a SHA-256 fingerprint of every enabled
+    // v1/v2 mod before it reports a peer as connected. Only then does the
+    // activity initialise the native multiplayer world.
+    if (multiplayerMode_) { modCompatibilityError_ = false; return; }
     if (storagePath_.empty()) return;
     std::error_code error;
     const bool saveExists = std::filesystem::exists(storagePath_, error) && !error;
