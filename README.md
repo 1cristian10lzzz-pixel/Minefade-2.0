@@ -22,7 +22,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - RmlUi 6.3 y FreeType 2.13.3.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
 
-## Actualización técnica 2.2 — sistema MFMod ampliado
+## Actualización técnica 2.2.1 — creación de mods\n\n- Se recuperan las herramientas del repositorio histórico para crear paquetes `.mfmod` desde el menú MODS, elegir icono/categoría y crear una plantilla de ejemplo a petición.\n- Los paquetes creados quedan desactivados y se mantienen los límites de seguridad del formato v1.\n- Esto restaura autoría del paquete, pero no añade todavía registros de bloques, objetos, biomas o entidades personalizados.\n\n## Actualización técnica 2.2 — sistema MFMod ampliado
 
 - Se amplía el formato de mods de datos para controlar movimiento agachado, velocidad y radios de IA de criaturas, aparición periódica limitada de fauna, límites de población, minería y objetos soltados.
 - El importador Android, el motor C++ y el validador Python comparten claves y límites; los paquetes antiguos siguen siendo válidos.
@@ -36,7 +36,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Diagnóstico del HUD con chunks pendientes y recursos GPU residentes/pendientes.
 - GitHub Actions valida los pull requests y no crea commits automáticos de recursos.
 
-**Versión Android:** versionCode 25 / versionName 2.2.0. Es una compilación de validación hasta probarla en dispositivos Android reales.
+**Versión Android:** versionCode 26 / versionName 2.2.1. Es una compilación de validación hasta probarla en dispositivos Android reales.
 
 ## Sistemas presentes
 
