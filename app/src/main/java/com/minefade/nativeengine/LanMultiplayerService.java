@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class LanMultiplayerService implements Closeable {
     private static final String TAG = "MinefadeLAN";
     private static final String SERVICE_TYPE = "_minefade._tcp.";
-    private static final int PROTOCOL_VERSION = 2;
+    private static final int PROTOCOL_VERSION = 3;
     private static final int MAX_PLAYERS = 8;
     private static final long STATE_INTERVAL_NS = 50_000_000L;
     private static final long INTERPOLATION_DELAY_NS = 110_000_000L;
@@ -56,11 +56,13 @@ public final class LanMultiplayerService implements Closeable {
         public final String name;
         public final String host;
         public final int port;
+        public final String modsFingerprint;
 
-        GameInfo(String name, String host, int port) {
+        GameInfo(String name, String host, int port, String modsFingerprint) {
             this.name = name == null || name.isEmpty() ? "Partida Minefade" : name;
             this.host = host;
             this.port = port;
+            this.modsFingerprint = modsFingerprint == null ? "" : modsFingerprint;
         }
 
         @Override public String toString() {
@@ -194,10 +196,19 @@ public final class LanMultiplayerService implements Closeable {
     private volatile long lastStateSentNs;
     private volatile String playerName = "Jugador";
     private volatile String advertisedName = "Minefade";
+    private volatile String sessionModsFingerprint = "";
 
     public LanMultiplayerService(Context context) {
         appContext = context.getApplicationContext();
         nsdManager = (NsdManager) appContext.getSystemService(Context.NSD_SERVICE);
+    }
+
+    private String currentModsFingerprint() {
+        return new ModManager(appContext).getActiveModsFingerprint();
+    }
+
+    private static boolean isValidModsFingerprint(String value) {
+        return value != null && value.matches("[a-f0-9]{64}");
     }
 
     public boolean isConnected() {
@@ -216,6 +227,13 @@ public final class LanMultiplayerService implements Closeable {
         stopSession();
         listener = callback;
         playerName = safeField(nickname, "Jugador");
+        sessionModsFingerprint = currentModsFingerprint();
+        if (!isValidModsFingerprint(sessionModsFingerprint)) {
+            hosting = false;
+            postStatus("No se pudieron verificar los mods instalados. No se publicó la partida.");
+            postDisconnected("No se pudo calcular la huella de los mods.");
+            return;
+        }
         hosting = true;
         connected = false;
         localPlayerId = 0;
@@ -240,6 +258,7 @@ public final class LanMultiplayerService implements Closeable {
                 service.setServiceType(SERVICE_TYPE);
                 service.setPort(server.getLocalPort());
                 service.setAttribute("protocol", String.valueOf(PROTOCOL_VERSION));
+                service.setAttribute("mods_hash", sessionModsFingerprint.getBytes(StandardCharsets.UTF_8));
                 NsdManager.RegistrationListener registration = new NsdManager.RegistrationListener() {
                     @Override public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
                         Log.e(TAG, "NSD registration failed: " + errorCode);
@@ -274,6 +293,11 @@ public final class LanMultiplayerService implements Closeable {
     public void discover(Listener callback) {
         stopDiscovery();
         listener = callback;
+        sessionModsFingerprint = currentModsFingerprint();
+        if (!isValidModsFingerprint(sessionModsFingerprint)) {
+            postStatus("No se pudieron verificar los mods instalados. No se inició la búsqueda LAN.");
+            return;
+        }
         discoveredGames.clear();
         notifyGames();
         acquireMulticastLock();
@@ -301,10 +325,19 @@ public final class LanMultiplayerService implements Closeable {
                                 Log.i(TAG, "Ignoring incompatible LAN protocol " + protocol);
                                 return;
                             }
+                            Map<String, byte[]> attributes = info.getAttributes();
+                            byte[] advertisedMods = attributes == null ? null : attributes.get("mods_hash");
+                            String remoteFingerprint = advertisedMods == null ? "" :
+                                    new String(advertisedMods, StandardCharsets.UTF_8);
+                            if (!isValidModsFingerprint(remoteFingerprint) ||
+                                    !sessionModsFingerprint.equals(remoteFingerprint)) {
+                                postStatus("Partida encontrada con mods diferentes. Instala el mismo conjunto para entrar.");
+                                return;
+                            }
                             InetAddress address = info.getHost();
                             if (address == null || info.getPort() <= 0) return;
                             GameInfo game = new GameInfo(info.getServiceName(),
-                                    address.getHostAddress(), info.getPort());
+                                    address.getHostAddress(), info.getPort(), remoteFingerprint);
                             discoveredGames.put(game.name, game);
                             notifyGames();
                         }
@@ -343,9 +376,17 @@ public final class LanMultiplayerService implements Closeable {
             postStatus("Selecciona una partida de la lista.");
             return;
         }
+        String localFingerprint = currentModsFingerprint();
+        if (!isValidModsFingerprint(localFingerprint) ||
+                !localFingerprint.equals(game.modsFingerprint)) {
+            postStatus("No puedes entrar: la partida usa un conjunto de mods diferente.");
+            postDisconnected("Los mods instalados no coinciden con los del anfitrión.");
+            return;
+        }
         stopDiscovery();
         stopSession();
         listener = callback;
+        sessionModsFingerprint = localFingerprint;
         playerName = safeField(nickname, "Jugador");
         postStatus("Conectando con " + game.name + "…");
         io.execute(() -> {
@@ -361,16 +402,23 @@ public final class LanMultiplayerService implements Closeable {
                         new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                 clientWriter = writer;
                 synchronized (clientWriteLock) {
-                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + playerName);
+                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + playerName + "|" + sessionModsFingerprint);
                     writer.newLine();
                     writer.flush();
                 }
                 String line;
                 boolean welcomed = false;
                 while (!closed && (line = reader.readLine()) != null) {
-                    if (line.startsWith("WELCOME|")) {
+                    if (line.startsWith("ERROR|MODS")) {
+                        connected = false;
+                        postStatus("El anfitrión rechazó la conexión: los mods no coinciden.");
+                        postDisconnected("Conjunto de mods incompatible.");
+                        break;
+                    } else if (line.startsWith("WELCOME|")) {
                         String[] fields = line.split("\\|", -1);
-                        if (fields.length >= 4 && parseInt(fields[1], -1) == PROTOCOL_VERSION) {
+                        if (fields.length == 5 && parseInt(fields[1], -1) == PROTOCOL_VERSION &&
+                                isValidModsFingerprint(fields[4]) &&
+                                sessionModsFingerprint.equals(fields[4])) {
                             localPlayerId = parseInt(fields[2], -1);
                             playerNames.put(0, fields[3]);
                             connected = localPlayerId > 0;
@@ -442,9 +490,17 @@ public final class LanMultiplayerService implements Closeable {
                 return;
             }
             String[] helloFields = hello.split("\\|", -1);
-            if (helloFields.length != 3 || !"HELLO".equals(helloFields[0]) ||
+            if (helloFields.length != 4 || !"HELLO".equals(helloFields[0]) ||
                     parseInt(helloFields[1], -1) != PROTOCOL_VERSION) {
                 writer.write("ERROR|VERSION");
+                writer.newLine();
+                writer.flush();
+                socket.close();
+                return;
+            }
+            if (!isValidModsFingerprint(helloFields[3]) ||
+                    !sessionModsFingerprint.equals(helloFields[3])) {
+                writer.write("ERROR|MODS");
                 writer.newLine();
                 writer.flush();
                 socket.close();
@@ -455,7 +511,8 @@ public final class LanMultiplayerService implements Closeable {
             peer = new Peer(id, name, socket, writer);
             peers.put(id, peer);
             playerNames.put(id, name);
-            peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName);
+            peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName +
+                    "|" + sessionModsFingerprint);
             peer.send("PLAYER|0|" + playerName);
             for (Map.Entry<Integer, String> entry : playerNames.entrySet()) {
                 if (entry.getKey() != 0 && entry.getKey() != id)
