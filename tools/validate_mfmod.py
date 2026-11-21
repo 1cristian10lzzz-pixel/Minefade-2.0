@@ -4,6 +4,9 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import json
+import struct
+import zipfile
 from pathlib import Path
 
 MAX_BYTES, MAX_LINES = 32768, 128
@@ -49,6 +52,8 @@ FLOAT_RANGES = {
 
 def parse_mod(path: Path) -> dict[str, str]:
     raw = path.read_bytes()
+    if raw[:2] == b"PK":
+        return parse_mfmod_v2_zip(path)
     if not raw or len(raw) > MAX_BYTES:
         raise ValueError("tamaño fuera del límite")
     text = raw.decode("utf-8")
@@ -116,6 +121,165 @@ def parse_mod(path: Path) -> dict[str, str]:
         if not math.isfinite(number) or not minimum <= number <= maximum:
             raise ValueError(f"{key} fuera de rango {minimum}..{maximum}")
     return values
+
+
+def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
+    if path.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("ZIP comprimido supera 16 MB")
+    allowed_sounds = {"stone", "wood", "gravel", "sand", "grass", "glass", "metal"}
+    allowed_shapes = {"cube", "slab", "stairs", "cross_plant", "thin", "pane",
+                      "fence", "door", "trapdoor", "fluid", "scaffolding"}
+    allowed_tools = {"none", "pickaxe", "axe", "shovel", "shears"}
+
+    def local_id(value: object) -> str:
+        if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", value):
+            raise ValueError("ID de recurso inválido")
+        return value
+
+    def label(value: object) -> str:
+        if not isinstance(value, str) or not value.strip() or len(value) > 96 or any(c in value for c in "|\r\n"):
+            raise ValueError("Nombre de recurso inválido")
+        return value
+
+    def integer(value: object, low: int, high: int, field: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(f"{field} fuera de rango")
+        return value
+
+    def texture(zf: zipfile.ZipFile, path_value: object) -> None:
+        if not isinstance(path_value, str) or not path_value.startswith("textures/") or not path_value.lower().endswith(".png") or "\\" in path_value or ".." in path_value:
+            raise ValueError("Ruta de textura inválida")
+        try:
+            data = zf.read(path_value)
+        except KeyError as exc:
+            raise ValueError("No existe una textura declarada") from exc
+        if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+            raise ValueError("Textura PNG inválida")
+        width, height = struct.unpack(">II", data[16:24])
+        if not 1 <= width <= 128 or not 1 <= height <= 128:
+            raise ValueError("Textura fuera de tamaño 1..128")
+
+    def reference(value: object) -> None:
+        if not isinstance(value, str) or not value or len(value) > 128 or any(c in value for c in "|\r\n"):
+            raise ValueError("Referencia de recurso inválida")
+        if value.startswith("minecraft:"):
+            value = value[len("minecraft:"):]
+        if ":" in value:
+            parts = value.split(":")
+            if len(parts) != 2 or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,63}", parts[0]) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", parts[1]):
+                raise ValueError("Namespace de recurso inválido")
+        else:
+            local_id(value)
+
+    try:
+        with zipfile.ZipFile(path) as zf:
+            infos = zf.infolist()
+            if not 1 <= len(infos) <= 256:
+                raise ValueError("cantidad de archivos ZIP fuera del límite")
+            seen: set[str] = set()
+            total = 0
+            for info in infos:
+                name = info.filename
+                safe_name = name[:-1] if info.is_dir() and name.endswith("/") else name
+                if not safe_name or safe_name.startswith("/") or "\\" in safe_name or any(part in {"", ".", ".."} for part in safe_name.split("/")):
+                    raise ValueError("ruta ZIP insegura")
+                if safe_name in seen:
+                    raise ValueError("archivo ZIP duplicado")
+                seen.add(safe_name)
+                if info.is_dir():
+                    continue
+                if safe_name != "manifest.json" and not (safe_name.startswith("textures/") and safe_name.lower().endswith(".png")):
+                    raise ValueError("tipo de archivo no permitido en el mod")
+                if info.file_size > 4 * 1024 * 1024:
+                    raise ValueError("archivo descomprimido supera 4 MB")
+                total += info.file_size
+                if total > 32 * 1024 * 1024:
+                    raise ValueError("contenido descomprimido supera 32 MB")
+            if "manifest.json" not in seen:
+                raise ValueError("falta manifest.json")
+            manifest_raw = zf.read("manifest.json")
+            if not manifest_raw or len(manifest_raw) > 1024 * 1024:
+                raise ValueError("manifest.json demasiado grande")
+            manifest = json.loads(manifest_raw.decode("utf-8"))
+            if not isinstance(manifest, dict) or manifest.get("format") != 2:
+                raise ValueError("formato MFMod no compatible")
+            mod_id = manifest.get("id")
+            if not isinstance(mod_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,63}", mod_id):
+                raise ValueError("id de mod inválido")
+            name = label(manifest.get("name"))
+            version = manifest.get("version")
+            if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+([+-][A-Za-z0-9.-]+)?", version):
+                raise ValueError("versión de mod inválida")
+            description = manifest.get("description", "")
+            if not isinstance(description, str) or len(description) > 512 or any(c in description for c in "|\r\n"):
+                raise ValueError("descripción inválida")
+
+            blocks = manifest.get("blocks", [])
+            items = manifest.get("items", [])
+            recipes = manifest.get("recipes", [])
+            if not isinstance(blocks, list) or not isinstance(items, list) or not isinstance(recipes, list):
+                raise ValueError("blocks, items y recipes deben ser listas")
+            if len(blocks) + len(items) > 128 or len(recipes) > 128:
+                raise ValueError("demasiados recursos definidos")
+            ids: set[str] = set()
+            for block in blocks:
+                if not isinstance(block, dict):
+                    raise ValueError("definición de bloque inválida")
+                rid = local_id(block.get("id"))
+                if rid in ids:
+                    raise ValueError("ID duplicado")
+                ids.add(rid)
+                label(block.get("name"))
+                textures = block.get("textures")
+                if not isinstance(textures, dict):
+                    raise ValueError("texturas de bloque inválidas")
+                for face in ("top", "side", "bottom"):
+                    texture(zf, textures.get(face))
+                hardness = block.get("hardness", 1.5)
+                if isinstance(hardness, bool) or not isinstance(hardness, (int, float)) or not math.isfinite(hardness) or not 0 <= hardness <= 100:
+                    raise ValueError("hardness fuera de rango")
+                if block.get("sound", "stone") not in allowed_sounds:
+                    raise ValueError("sonido no permitido")
+                integer(block.get("stack", 64), 1, 64, "stack")
+                integer(block.get("light", 0), 0, 15, "light")
+                if block.get("shape", "cube") not in allowed_shapes or block.get("tool", "pickaxe") not in allowed_tools:
+                    raise ValueError("shape o tool no permitido")
+            for item in items:
+                if not isinstance(item, dict):
+                    raise ValueError("definición de objeto inválida")
+                rid = local_id(item.get("id"))
+                if rid in ids:
+                    raise ValueError("ID duplicado")
+                ids.add(rid)
+                label(item.get("name"))
+                if "texture" in item:
+                    texture(zf, item["texture"])
+                else:
+                    textures = item.get("textures")
+                    if not isinstance(textures, dict):
+                        raise ValueError("texturas de objeto inválidas")
+                    for face in ("top", "side", "bottom"):
+                        texture(zf, textures.get(face))
+                integer(item.get("stack", 64), 1, 64, "stack")
+            for recipe in recipes:
+                if not isinstance(recipe, dict):
+                    raise ValueError("receta inválida")
+                local_id(recipe.get("id"))
+                label(recipe.get("name"))
+                output = recipe.get("output")
+                ingredients = recipe.get("ingredients")
+                if not isinstance(output, dict) or not isinstance(ingredients, list) or not 1 <= len(ingredients) <= 5:
+                    raise ValueError("estructura de receta inválida")
+                reference(output.get("id"))
+                integer(output.get("count", 1), 1, 64, "output.count")
+                for ingredient in ingredients:
+                    if not isinstance(ingredient, dict):
+                        raise ValueError("ingrediente inválido")
+                    reference(ingredient.get("id"))
+                    integer(ingredient.get("count", 1), 1, 64, "ingredient.count")
+            return {"id": mod_id, "name": name, "version": version, "format": "2"}
+    except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(f"paquete ZIP/JSON inválido: {exc}") from exc
 
 
 def main() -> int:
