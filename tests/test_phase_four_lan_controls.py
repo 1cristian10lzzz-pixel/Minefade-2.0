@@ -49,6 +49,17 @@ def test_lan_negotiates_enabled_mod_fingerprints_before_joining():
     assert "modCompatibilityError_ = false; return;" in ENGINE
 
 
+def test_mod_dependencies_conflicts_and_cycles_are_validated():
+    MOD = (JAVA / "ModManager.java").read_text(encoding="utf-8")
+    assert 'manifest.optJSONArray("dependencies")' in MOD
+    assert 'manifest.optJSONArray("conflicts")' in MOD
+    assert "isValidVersionRequirement" in MOD
+    assert "activeModSetError()" in MOD
+    assert "hasDependencyCycle" in MOD
+    assert "writeAtomically(info.file, previous);" in MOD
+    assert "getLastValidationError" in MOD
+
+
 def test_touch_layout_has_modes_and_hand_mirroring():
     assert '"control_mode"' in HOME
     assert "controlMode_ == 1" in RML and "controlMode_ == 2" in RML
