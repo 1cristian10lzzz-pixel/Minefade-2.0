@@ -229,6 +229,36 @@ class ModPackTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "climático"):
                 parse_mod(path)
 
+    def test_v2_zip_accepts_deterministic_chunk_structures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "structure.mfmod"
+            structure = {
+                "id": "ruined_shrine",
+                "name": "Santuario en ruinas",
+                "chance": 0.025,
+                "blocks": [
+                    {"x": 7, "y": 0, "z": 7, "id": "minecraft:stonebrick"},
+                    {"x": 7, "y": 1, "z": 7, "id": "ruby_pack:ruby_ore"},
+                    {"x": 8, "y": 0, "z": 7, "id": "minecraft:mossy_cobblestone"}
+                ]
+            }
+            self.write_v2_zip(path, manifest_overrides={"structures": [structure]})
+            values = parse_mod(path)
+            self.assertEqual(values["format"], "2")
+
+    def test_v2_zip_rejects_structure_blocks_outside_chunk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-structure.mfmod"
+            structure = {
+                "id": "giant_tower",
+                "name": "Torre",
+                "chance": 0.2,
+                "blocks": [{"x": 16, "y": 0, "z": 7, "id": "minecraft:stone"}]
+            }
+            self.write_v2_zip(path, manifest_overrides={"structures": [structure]})
+            with self.assertRaisesRegex(ValueError, "x fuera de rango"):
+                parse_mod(path)
+
     def test_v2_zip_rejects_duplicate_resource_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "duplicate.mfmod"
