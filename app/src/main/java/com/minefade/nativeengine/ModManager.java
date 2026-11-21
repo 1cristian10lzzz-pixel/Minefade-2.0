@@ -101,6 +101,58 @@ public final class ModManager {
 
     public File getDirectory() { return modsDirectory; }
 
+    /**
+     * Stable fingerprint of every enabled gameplay mod.
+     * Content packs use the imported SHA-256; legacy v1 files are hashed byte-for-byte.
+     * A failure returns an empty value so LAN rejects the session instead of guessing.
+     */
+    public synchronized String getActiveModsFingerprint() {
+        try {
+            ArrayList<String> identities = new ArrayList<>();
+            for (ModInfo info : listMods()) {
+                if (!info.enabled) continue;
+                if (info.contentPack) {
+                    File root = info.file.getParentFile();
+                    String expected = info.settings.get("hash");
+                    if (!verifyContentHash(root, expected)) return "";
+                    identities.add("v2|" + info.id + "|" + info.version + "|" + expected);
+                } else {
+                    identities.add("v1|" + info.id + "|" + info.version + "|" + sha256File(info.file));
+                }
+            }
+            Collections.sort(identities);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (String identity : identities) {
+                digest.update(identity.getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) '\\n');
+            }
+            return fingerprintHex(digest.digest());
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    private static String sha256File(File file) throws IOException {
+        if (file == null || !file.isFile()) throw new IOException("Mod file is unavailable.");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            try (InputStream input = new FileInputStream(file)) {
+                int count;
+                while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+            }
+            return fingerprintHex(digest.digest());
+        } catch (NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 is unavailable.", error);
+        }
+    }
+
+    private static String fingerprintHex(byte[] bytes) {
+        StringBuilder hex = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return hex.toString();
+    }
+
     public synchronized List<ModInfo> listMods() {
         ArrayList<ModInfo> result = new ArrayList<>();
         File[] files = modsDirectory.listFiles();
