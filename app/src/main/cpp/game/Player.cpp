@@ -522,6 +522,15 @@ void DroppedItemSystem::AppendMesh(std::vector<WorldVertex>& output, const Camer
     }
 }
 
+void EntitySystem::Reset() {
+    entities_.clear();
+    modEntities_.clear();
+    initialized_ = false;
+    ambientSpawnElapsed_ = 0.0f;
+    ambientSpawnSequence_ = 0u;
+    animationTime_ = 0.0f;
+}
+
 void EntitySystem::SetModEntities(std::vector<ModEntityDefinition> definitions) {
     definitions.erase(std::remove_if(definitions.begin(), definitions.end(),
         [](const ModEntityDefinition& definition) {
@@ -763,9 +772,16 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
 
 void EntitySystem::AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum) const {
     for (const Entity& entity : entities_) {
-        if (frustum != nullptr && !frustum->IntersectsAabb(
-                entity.position.x-0.85f,entity.position.y-0.10f,entity.position.z-0.85f,
-                entity.position.x+0.85f,entity.position.y+2.15f,entity.position.z+0.85f)) continue;
+        if (frustum != nullptr) {
+            const bool custom = entity.kind > 6;
+            const float extent = custom ? 3.6f : 0.85f;
+            const float minY = custom ? -1.6f : -0.10f;
+            const float maxY = custom ? 5.2f : 2.15f;
+            if (!frustum->IntersectsAabb(
+                    entity.position.x - extent, entity.position.y + minY, entity.position.z - extent,
+                    entity.position.x + extent, entity.position.y + maxY, entity.position.z + extent))
+                continue;
+        }
         if (entity.kind > 6) {
             const std::size_t customIndex = static_cast<std::size_t>(entity.kind - 7);
             if (customIndex >= modEntities_.size()) continue;
