@@ -17,7 +17,7 @@ mi_mod.mfmod
     └── mineral_bottom.png
 ```
 
-El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplicados y cualquier carga que no sea `manifest.json` o una textura PNG dentro de `textures/`.
+El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplicados y cualquier carga que no sea `manifest.json` o una textura PNG dentro de `textures/`. Los modelos y las reglas de comportamiento son datos declarativos, no código ejecutable.
 
 ## Ejemplo de manifest.json
 
@@ -78,6 +78,22 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
       "surfaceOffset": 1
     }
   ],
+  "entities": [
+    {
+      "id": "crystal_golem",
+      "name": "Gólem de cristal",
+      "hostile": true,
+      "speed": 0.34,
+      "spawnChance": 0.12,
+      "behavior": "pursue",
+      "model": [
+        { "center": [0, 1.0, 0], "size": [0.65, 0.8, 0.45], "color": "#55CCFF" },
+        { "center": [0, 2.0, 0], "size": [0.4, 0.35, 0.35], "color": "#B8EEFF" },
+        { "center": [-0.45, 1.0, 0], "size": [0.18, 0.6, 0.2], "color": "#3288AA" },
+        { "center": [0.45, 1.0, 0], "size": [0.18, 0.6, 0.2], "color": "#3288AA" }
+      ]
+    }
+  ],
   "structures": [
     {
       "id": "ruined_shrine",
@@ -114,6 +130,9 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
 | Biomas por mod | 32 |
 | Estructuras por mod | 16 |
 | Estructuras por mundo (total) | 32 |
+| Criaturas por mod | 16 |
+| Criaturas por mundo (total) | 32 |
+| Piezas por modelo de criatura | 24 |
 | Bloques por estructura | 128 |
 | Ingredientes por receta | 5 |
 | Salida de receta | 1–64 |
@@ -128,6 +147,7 @@ Se admiten sonidos de bloque de la lista integrada: `stone`, `wood`, `gravel`, `
 - Recetas personalizadas visibles en la mesa de fabricación, con verificación y consumo de ingredientes.
 - Biomas definidos por rangos de temperatura, humedad y continentalidad; permiten escoger un bloque de superficie, uno de relleno, prioridad y pequeño ajuste de altura.
 - Estructuras por plantillas de bloques con coordenadas relativas al chunk, probabilidad determinista por chunk y límite de 128 bloques por plantilla.
+- Criaturas definidas por modelos de cajas 3D de colores, con velocidad, aparición determinista y comportamiento básico de paseo, huida, pastoreo o persecución.
 - Atlas RGBA extendido compartido por el mundo y los iconos del inventario.
 - Mods v1 y sus ajustes de jugabilidad continúan importándose.
 
@@ -135,4 +155,4 @@ El mundo guarda un manifiesto lateral con la lista de mods de contenido, sus ver
 
 ## Lo que todavía no ofrece MFMod v2
 
-El soporte de entidades/modelos/IA personalizados, audio personalizado, pantallas/UI y logros personalizados aún no forma parte de la API ejecutable descrita arriba. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
+Las criaturas personalizadas actuales usan modelos de cajas voxel y una IA local básica; aún no ofrecen esqueletos articulados, animaciones de huesos, salud/combate, rutas avanzadas ni monturas. El audio personalizado, pantallas/UI y logros personalizados tampoco forman parte de esta versión. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
