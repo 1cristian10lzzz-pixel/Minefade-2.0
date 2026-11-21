@@ -188,7 +188,9 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
                 seen.add(safe_name)
                 if info.is_dir():
                     continue
-                if safe_name != "manifest.json" and not (safe_name.startswith("textures/") and safe_name.lower().endswith(".png")):
+                allowed_texture = safe_name.startswith("textures/") and safe_name.lower().endswith(".png")
+                allowed_audio = safe_name.startswith("audio/") and safe_name.lower().endswith((".ogg", ".wav"))
+                if safe_name != "manifest.json" and not allowed_texture and not allowed_audio:
                     raise ValueError("tipo de archivo no permitido en el mod")
                 if info.file_size > 4 * 1024 * 1024:
                     raise ValueError("archivo descomprimido supera 4 MB")
@@ -307,6 +309,30 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
                     integer(placement.get("y"), -16, 48, "y")
                     integer(placement.get("z"), 0, 15, "z")
                     reference(placement.get("id"))
+            sounds = manifest.get("sounds", {})
+            allowed_sound_keys = {
+                "block_break", "block_place", "ui_click", "item_pickup", "jump",
+                "footstep", "block_wood", "block_stone", "block_dirt", "block_leaves",
+                "sheep", "cow", "bird", "pig", "zombie", "skeleton", "rabbit",
+                "chest_open", "command_success", "water"
+            }
+            if not isinstance(sounds, dict) or len(sounds) > 20:
+                raise ValueError("mapa de sonidos inválido")
+            for sound_key, sound_path in sounds.items():
+                if sound_key not in allowed_sound_keys or not isinstance(sound_path, str) or \
+                        not sound_path.startswith("audio/") or ".." in sound_path or "\\" in sound_path or \
+                        not sound_path.lower().endswith((".ogg", ".wav")):
+                    raise ValueError("ruta o evento de sonido no permitido")
+                try:
+                    sound_data = zf.read(sound_path)
+                except KeyError as exc:
+                    raise ValueError("falta un archivo de audio declarado") from exc
+                if len(sound_data) < 12 or len(sound_data) > 4 * 1024 * 1024:
+                    raise ValueError("archivo de audio inválido o demasiado grande")
+                is_ogg = sound_path.lower().endswith(".ogg") and sound_data[:4] == b"OggS"
+                is_wav = sound_path.lower().endswith(".wav") and sound_data[:4] == b"RIFF" and sound_data[8:12] == b"WAVE"
+                if not is_ogg and not is_wav:
+                    raise ValueError("el audio no tiene cabecera OGG/WAV válida")
             for entity in entities:
                 if not isinstance(entity, dict):
                     raise ValueError("definición de criatura inválida")
