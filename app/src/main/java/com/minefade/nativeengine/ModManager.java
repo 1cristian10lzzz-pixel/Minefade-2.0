@@ -183,7 +183,10 @@ public final class ModManager {
                     if (entry.isDirectory()) { zip.closeEntry(); continue; }
                     if (!seen.add(name)) throw new IOException("Archivo ZIP duplicado.");
                     if (!"manifest.json".equals(name) &&
-                            !(name.startsWith("textures/") && name.toLowerCase(Locale.ROOT).endsWith(".png")))
+                            !(name.startsWith("textures/") && name.toLowerCase(Locale.ROOT).endsWith(".png")) &&
+                            !(name.startsWith("audio/") &&
+                                (name.toLowerCase(Locale.ROOT).endsWith(".ogg") ||
+                                 name.toLowerCase(Locale.ROOT).endsWith(".wav"))))
                         throw new IOException("El paquete contiene un tipo de archivo no permitido.");
                     File target = new File(staging, name);
                     String canonicalRoot = staging.getCanonicalPath() + File.separator;
@@ -297,6 +300,7 @@ public final class ModManager {
         JSONArray biomes = manifest.optJSONArray("biomes");
         JSONArray structures = manifest.optJSONArray("structures");
         JSONArray entities = manifest.optJSONArray("entities");
+        JSONObject customSounds = manifest.optJSONObject("sounds");
         int blockCount = blocks == null ? 0 : blocks.length();
         int itemCount = items == null ? 0 : items.length();
         int recipeCount = recipes == null ? 0 : recipes.length();
@@ -372,6 +376,19 @@ public final class ModManager {
                 integerRange(placement.getInt("y"), -16, 48);
                 integerRange(placement.getInt("z"), 0, 15);
                 validateReference(placement.optString("id", ""), id);
+            }
+        }
+        if (customSounds != null) {
+            if (customSounds.length() > 20) throw new IOException("Demasiadas sustituciones de audio.");
+            java.util.Iterator<String> soundKeys = customSounds.keys();
+            while (soundKeys.hasNext()) {
+                String soundKey = soundKeys.next();
+                if (!oneOf(soundKey, "block_break", "block_place", "ui_click", "item_pickup",
+                        "jump", "footstep", "block_wood", "block_stone", "block_dirt",
+                        "block_leaves", "sheep", "cow", "bird", "pig", "zombie",
+                        "skeleton", "rabbit", "chest_open", "command_success", "water"))
+                    throw new IOException("Evento de audio no permitido.");
+                validateAudio(root, customSounds.getString(soundKey));
             }
         }
         if (entities != null) for (int i = 0; i < entities.length(); i++) {
@@ -454,6 +471,28 @@ public final class ModManager {
             throw new IOException("Referencia de recurso inválida.");
         return value;
     }
+    private static void validateAudio(File root, String path) throws IOException {
+        if (path == null || !path.startsWith("audio/") || path.contains("..") ||
+                path.indexOf('\\') >= 0 ||
+                !(path.toLowerCase(Locale.ROOT).endsWith(".ogg") ||
+                  path.toLowerCase(Locale.ROOT).endsWith(".wav")))
+            throw new IOException("Ruta de audio inválida.");
+        File file = new File(root, path);
+        if (!file.getCanonicalPath().startsWith(root.getCanonicalPath() + File.separator) ||
+                !file.isFile() || file.length() < 12L || file.length() > MAX_ENTRY_BYTES)
+            throw new IOException("Archivo de audio inexistente o demasiado grande.");
+        byte[] header = new byte[12];
+        try (InputStream input = new FileInputStream(file)) {
+            if (input.read(header) != header.length) throw new IOException("Audio incompleto.");
+        }
+        boolean ogg = path.toLowerCase(Locale.ROOT).endsWith(".ogg") &&
+                header[0] == 'O' && header[1] == 'g' && header[2] == 'g' && header[3] == 'S';
+        boolean wav = path.toLowerCase(Locale.ROOT).endsWith(".wav") &&
+                header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
+                header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+        if (!ogg && !wav) throw new IOException("El audio no es OGG ni WAV válido.");
+    }
+
     private static void validateTexture(File root, String path) throws IOException {
         if (path == null || !path.startsWith("textures/") ||
                 !path.toLowerCase(Locale.ROOT).endsWith(".png") ||
