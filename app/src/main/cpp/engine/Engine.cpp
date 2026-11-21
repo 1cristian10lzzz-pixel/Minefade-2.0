@@ -656,12 +656,14 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
             }
             world_ = VoxelWorld(requestedWorldSeed_);
             world_.SetModBiomes(modBiomes_);
+        world_.SetModStructures(modStructures_);
             world_.GenerateAround(8, 8, 0);
             player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
         }
     } else {
         world_ = VoxelWorld(requestedWorldSeed_);
         world_.SetModBiomes(modBiomes_);
+        world_.SetModStructures(modStructures_);
         world_.GenerateAround(8, 8, 0);
         player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
     }
@@ -2714,6 +2716,7 @@ void Engine::LoadEnabledMods() {
 
     std::sort(activeContentMods_.begin(), activeContentMods_.end());
     world_.SetModBiomes(modBiomes_);
+        world_.SetModStructures(modStructures_);
     world_.SetModStructures(modStructures_);
 
     // Resolve recipes only after every enabled pack has registered its items and blocks.
