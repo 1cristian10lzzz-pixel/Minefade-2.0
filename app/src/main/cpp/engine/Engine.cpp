@@ -2553,8 +2553,12 @@ void Engine::LoadEnabledMods() {
             else if (key == "hash") packHash = value;
         }
         if (!enabled) continue;
-        if (!packId.empty() && !packVersion.empty() && packHash.size() == 64u)
-            activeContentMods_.push_back(packId + "@" + packVersion + "#" + packHash);
+        const bool validPackHash = packHash.size() == 64u &&
+            std::all_of(packHash.begin(), packHash.end(), [](unsigned char c) {
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+            });
+        if (packId.empty() || packVersion.empty() || !validPackHash) continue;
+        activeContentMods_.push_back(packId + "@" + packVersion + "#" + packHash);
 
         std::ifstream blocksFile(directory / "blocks.mfdata", std::ios::binary);
         std::string blockLine;
