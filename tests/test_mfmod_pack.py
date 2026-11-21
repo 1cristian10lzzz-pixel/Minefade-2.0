@@ -195,6 +195,40 @@ class ModPackTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no permitido"):
                 parse_mod(path)
 
+    def test_v2_zip_accepts_data_driven_climate_biomes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "biome.mfmod"
+            biome = {
+                "id": "crystal_forest",
+                "name": "Bosque de cristal",
+                "temperature": {"min": -0.2, "max": 0.7},
+                "humidity": {"min": 0.2, "max": 1.0},
+                "continental": {"min": -0.1, "max": 0.9},
+                "topBlock": "minecraft:grass",
+                "fillerBlock": "minecraft:dirt",
+                "priority": 10,
+                "surfaceOffset": 2
+            }
+            self.write_v2_zip(path, manifest_overrides={"biomes": [biome]})
+            values = parse_mod(path)
+            self.assertEqual(values["id"], "ruby_pack")
+
+    def test_v2_zip_rejects_invalid_biome_climate_ranges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-biome.mfmod"
+            biome = {
+                "id": "bad_climate",
+                "name": "Bad climate",
+                "temperature": {"min": 0.8, "max": -0.8},
+                "humidity": {"min": 0.0, "max": 1.0},
+                "continental": {"min": -1.0, "max": 1.0},
+                "topBlock": "minecraft:grass",
+                "fillerBlock": "minecraft:dirt"
+            }
+            self.write_v2_zip(path, manifest_overrides={"biomes": [biome]})
+            with self.assertRaisesRegex(ValueError, "climático"):
+                parse_mod(path)
+
     def test_v2_zip_rejects_duplicate_resource_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "duplicate.mfmod"
