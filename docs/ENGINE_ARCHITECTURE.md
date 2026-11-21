@@ -1,3 +1,5 @@
+> **Corrección de vigencia — 21 de noviembre de 2026:** la cifra de 284 bloques que aparece en la sección de pendientes corresponde a Review9 y es una fotografía histórica. En Minefade 2.0 `main`, el catálogo `minefade_block_catalog.json` contiene 414 definiciones y siguen presentes los siete módulos JSON de bloques. Esto amplía el contenido base, pero no introduce registro dinámico para mods: los IDs siguen ligados al catálogo del motor. Consulta `docs/MODDING_SYSTEM_AUDIT_AND_ROADMAP.md` para el diseño y las brechas actuales.
+
 # Arquitectura actual de Minefade Native Engine (Review9)
 
 ```text
