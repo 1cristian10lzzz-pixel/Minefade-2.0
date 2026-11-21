@@ -300,6 +300,9 @@ public final class ModManager {
         JSONArray biomes = manifest.optJSONArray("biomes");
         JSONArray structures = manifest.optJSONArray("structures");
         JSONArray entities = manifest.optJSONArray("entities");
+        Object soundsValue = manifest.opt("sounds");
+        if (soundsValue != null && !(soundsValue instanceof JSONObject))
+            throw new IOException("El campo sounds debe ser un objeto JSON.");
         JSONObject customSounds = manifest.optJSONObject("sounds");
         int blockCount = blocks == null ? 0 : blocks.length();
         int itemCount = items == null ? 0 : items.length();
@@ -541,7 +544,7 @@ public final class ModManager {
         if (value < minimum || value > maximum) throw new IOException("Valor entero fuera de rango.");
     }
 
-    private static String computeContentHash(File root) throws IOException {
+    public static String computeContentHash(File root) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             ArrayList<File> files = new ArrayList<>();
@@ -567,12 +570,26 @@ public final class ModManager {
         }
     }
 
+    public static boolean verifyContentHash(File root, String expectedHash) {
+        if (root == null || expectedHash == null || !expectedHash.matches("[a-f0-9]{64}")) return false;
+        try {
+            return expectedHash.equals(computeContentHash(root));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private static void collectContentFiles(File directory, List<File> output) throws IOException {
         File[] children = directory.listFiles();
         if (children == null) throw new IOException("No se pudieron enumerar los recursos del mod.");
         for (File child : children) {
             if (child.isDirectory()) collectContentFiles(child, output);
-            else if (child.isFile() && !"manifest.ini".equals(child.getName())) output.add(child);
+            else if (child.isFile()) {
+                String relative = relativeContentPath(directory, child);
+                if ("manifest.json".equals(relative) ||
+                        relative.startsWith("textures/") || relative.startsWith("audio/"))
+                    output.add(child);
+            }
         }
     }
 
@@ -632,6 +649,8 @@ public final class ModManager {
             for (ModInfo mod : mods) {
                 if (!mod.contentPack || !mod.enabled) continue;
                 File root = mod.file.getParentFile();
+                if (!verifyContentHash(root, mod.settings.get("hash")))
+                    throw new IOException("El contenido del mod fue modificado después de importarlo: " + mod.id);
                 JSONObject manifest = new JSONObject(new String(
                         readAll(new File(root, "manifest.json"), 1024 * 1024), StandardCharsets.UTF_8));
                 validateContentManifest(root, manifest);
