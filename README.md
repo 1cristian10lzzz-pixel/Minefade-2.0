@@ -1,4 +1,4 @@
-# Minefade 2.0
+# Minefade 2.0 — candidato Android 2.3.0
 
 Juego voxel nativo para Android. Este es el repositorio principal de desarrollo.
 
@@ -21,6 +21,12 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Rust: núcleo de simulación mediante ABI C.
 - RmlUi 6.3 y FreeType 2.13.3.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
+
+## Candidato 2.3.0 — MFMod v2
+
+- Bloques, objetos, texturas, recetas, biomas, estructuras y criaturas voxel personalizadas a través de paquetes ZIP de datos.
+- Sustituciones de audio OGG/WAV con validación y protección SHA-256 por mundo.
+- La compilación, firma y pruebas de instalación deben pasar antes de considerar el APK listo.
 
 ## Actualización técnica 2.2 — sistema MFMod ampliado
 
