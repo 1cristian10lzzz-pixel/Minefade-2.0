@@ -16,8 +16,8 @@ class ModPackTests(unittest.TestCase):
 
     def test_mod_icon_metadata_is_supported(self):
         content = (
-            "id=icon_mod\\nname=Icon\\nversion=1.0\\nenabled=false\\n"
-            "icon=creature\\n"
+            "id=icon_mod\nname=Icon\nversion=1.0\nenabled=false\n"
+            "icon=creature\n"
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "icon.mfmod"
@@ -27,7 +27,7 @@ class ModPackTests(unittest.TestCase):
 
     def test_invalid_mod_icon_is_rejected(self):
         self.assert_invalid(
-            "id=icon_mod\\nname=Icon\\nversion=1.0\\nenabled=false\\nicon=../../evil\\n",
+            "id=icon_mod\nname=Icon\nversion=1.0\nenabled=false\nicon=../../evil\n",
             "icon inválido",
         )
 
