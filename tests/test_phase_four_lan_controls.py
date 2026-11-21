@@ -61,8 +61,8 @@ def test_mod_dependencies_conflicts_and_cycles_are_validated():
     assert "contentMetadataMatches" in MOD
     assert "String.join(" not in MOD  # minSdk 24 compatibility
     assert "Verificando los mods instalados" in LAN
-    assert "if (attributes == null) return null;" in LAN or
-           "attributes == null ? null : attributes.get" in LAN
+    assert ("if (attributes == null) return null;" in LAN or
+            "attributes == null ? null : attributes.get" in LAN)
 
 
 def test_touch_layout_has_modes_and_hand_mirroring():
