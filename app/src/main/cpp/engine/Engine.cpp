@@ -2519,6 +2519,8 @@ void Engine::LoadEnabledMods() {
     }
     std::sort(contentPacks.begin(), contentPacks.end());
     std::vector<std::string> pendingRecipeLines;
+    std::vector<std::string> pendingBiomeLines;
+    std::vector<std::string> pendingStructureLines;
 
     const auto splitFields = [](const std::string& line, char delimiter) {
         std::vector<std::string> fields;
@@ -2627,93 +2629,17 @@ void Engine::LoadEnabledMods() {
         std::string biomeLine;
         std::size_t biomeLines = 0u;
         while (biomesFile && std::getline(biomesFile, biomeLine) && ++biomeLines <= 64u) {
-            if (biomeLine.empty() || biomeLine.size() > 512u) continue;
-            const auto fields = splitFields(biomeLine, '|');
-            if (fields.size() != 11u) continue;
-            float minTemp = 0.0f, maxTemp = 0.0f, minHumidity = 0.0f, maxHumidity = 0.0f;
-            float minContinental = 0.0f, maxContinental = 0.0f;
-            if (!parseFiniteNumber(fields[1], minTemp) || !parseFiniteNumber(fields[2], maxTemp) ||
-                !parseFiniteNumber(fields[3], minHumidity) || !parseFiniteNumber(fields[4], maxHumidity) ||
-                !parseFiniteNumber(fields[5], minContinental) || !parseFiniteNumber(fields[6], maxContinental) ||
-                minTemp < -1.0f || maxTemp > 1.0f || minTemp > maxTemp ||
-                minHumidity < -1.0f || maxHumidity > 1.0f || minHumidity > maxHumidity ||
-                minContinental < -1.0f || maxContinental > 1.0f || minContinental > maxContinental)
-                continue;
-            const BlockDefinition* surface = FindBlockDefinition(fields[7]);
-            const BlockDefinition* filler = FindBlockDefinition(fields[8]);
-            if (surface == nullptr || filler == nullptr ||
-                (surface->flags & BlockPlaceable) == 0u || (filler->flags & BlockPlaceable) == 0u)
-                continue;
-            try {
-                std::size_t priorityUsed = 0u, offsetUsed = 0u;
-                const int priority = std::stoi(fields[9], &priorityUsed);
-                const int surfaceOffset = std::stoi(fields[10], &offsetUsed);
-                if (priorityUsed != fields[9].size() || offsetUsed != fields[10].size() ||
-                    priority < -100 || priority > 100 || surfaceOffset < -16 || surfaceOffset > 16)
-                    continue;
-                ModBiomeDefinition biome;
-                biome.key = fields[0];
-                biome.minTemperature = minTemp;
-                biome.maxTemperature = maxTemp;
-                biome.minHumidity = minHumidity;
-                biome.maxHumidity = maxHumidity;
-                biome.minContinental = minContinental;
-                biome.maxContinental = maxContinental;
-                biome.surfaceBlock = surface->id;
-                biome.fillerBlock = filler->id;
-                biome.priority = priority;
-                biome.surfaceOffset = surfaceOffset;
-                modBiomes_.push_back(std::move(biome));
-            } catch (...) { continue; }
+            if (!biomeLine.empty() && biomeLine.size() <= 512u)
+                pendingBiomeLines.push_back(biomeLine);
         }
 
         std::ifstream structuresFile(directory / "structures.mfdata", std::ios::binary);
         std::string structureLine;
         std::size_t structureLines = 0u;
-        while (structuresFile && std::getline(structuresFile, structureLine) &&
-               ++structureLines <= 32u && modStructures_.size() < 32u) {
-            if (structureLine.empty() || structureLine.size() > 32768u) continue;
-            const auto fields = splitFields(structureLine, '|');
-            if (fields.size() != 3u || fields[0].empty()) continue;
-            float chance = 0.0f;
-            if (!parseFiniteNumber(fields[1], chance) || chance <= 0.0f || chance > 1.0f)
-                continue;
-            const auto placements = splitFields(fields[2], ';');
-            if (placements.empty() || placements.size() > 128u) continue;
-            ModStructureDefinition structure;
-            structure.key = fields[0];
-            structure.chancePerChunk = chance;
-            bool valid = true;
-            for (const std::string& placementText : placements) {
-                const auto parts = splitFields(placementText, ',');
-                if (parts.size() != 4u) { valid = false; break; }
-                try {
-                    std::size_t usedX = 0u, usedY = 0u, usedZ = 0u;
-                    const int x = std::stoi(parts[0], &usedX);
-                    const int y = std::stoi(parts[1], &usedY);
-                    const int z = std::stoi(parts[2], &usedZ);
-                    if (usedX != parts[0].size() || usedY != parts[1].size() ||
-                        usedZ != parts[2].size() || x < 0 || x >= VoxelWorld::kChunkSize ||
-                        z < 0 || z >= VoxelWorld::kChunkSize || y < -16 || y > 48) {
-                        valid = false;
-                        break;
-                    }
-                    const BlockDefinition* block = FindBlockDefinition(parts[3]);
-                    if (block == nullptr || (block->flags & BlockPlaceable) == 0u) {
-                        valid = false;
-                        break;
-                    }
-                    structure.blocks.push_back({
-                        static_cast<std::int8_t>(x), static_cast<std::int8_t>(y),
-                        static_cast<std::int8_t>(z), block->id
-                    });
-                } catch (...) {
-                    valid = false;
-                    break;
-                }
-            }
-            if (valid && !structure.blocks.empty())
-                modStructures_.push_back(std::move(structure));
+        while (structuresFile && std::getline(structuresFile, structureLine) && ++structureLines <= 16u) {
+            if (!structureLine.empty() && structureLine.size() <= 32768u &&
+                pendingStructureLines.size() < 32u)
+                pendingStructureLines.push_back(structureLine);
         }
 
         std::ifstream entitiesFile(directory / "entities.mfdata", std::ios::binary);
@@ -2772,6 +2698,92 @@ void Engine::LoadEnabledMods() {
             if (valid && !definition.model.empty())
                 modEntities_.push_back(std::move(definition));
         }
+    }
+
+    // Resolve cross-pack biome and structure block references only after every
+    // enabled package has registered all of its blocks.
+    for (const std::string& line : pendingBiomeLines) {
+        const auto fields = splitFields(line, '|');
+        if (fields.size() != 11u) continue;
+        float minTemp = 0.0f, maxTemp = 0.0f, minHumidity = 0.0f, maxHumidity = 0.0f;
+        float minContinental = 0.0f, maxContinental = 0.0f;
+        if (!parseFiniteNumber(fields[1], minTemp) || !parseFiniteNumber(fields[2], maxTemp) ||
+            !parseFiniteNumber(fields[3], minHumidity) || !parseFiniteNumber(fields[4], maxHumidity) ||
+            !parseFiniteNumber(fields[5], minContinental) || !parseFiniteNumber(fields[6], maxContinental) ||
+            minTemp < -1.0f || maxTemp > 1.0f || minTemp > maxTemp ||
+            minHumidity < -1.0f || maxHumidity > 1.0f || minHumidity > maxHumidity ||
+            minContinental < -1.0f || maxContinental > 1.0f || minContinental > maxContinental)
+            continue;
+        const BlockDefinition* surface = FindBlockDefinition(fields[7]);
+        const BlockDefinition* filler = FindBlockDefinition(fields[8]);
+        if (surface == nullptr || filler == nullptr ||
+            (surface->flags & BlockPlaceable) == 0u || (filler->flags & BlockPlaceable) == 0u)
+            continue;
+        try {
+            std::size_t priorityUsed = 0u, offsetUsed = 0u;
+            const int priority = std::stoi(fields[9], &priorityUsed);
+            const int surfaceOffset = std::stoi(fields[10], &offsetUsed);
+            if (priorityUsed != fields[9].size() || offsetUsed != fields[10].size() ||
+                priority < -100 || priority > 100 || surfaceOffset < -16 || surfaceOffset > 16)
+                continue;
+            ModBiomeDefinition biome;
+            biome.key = fields[0];
+            biome.minTemperature = minTemp;
+            biome.maxTemperature = maxTemp;
+            biome.minHumidity = minHumidity;
+            biome.maxHumidity = maxHumidity;
+            biome.minContinental = minContinental;
+            biome.maxContinental = maxContinental;
+            biome.surfaceBlock = surface->id;
+            biome.fillerBlock = filler->id;
+            biome.priority = priority;
+            biome.surfaceOffset = surfaceOffset;
+            modBiomes_.push_back(std::move(biome));
+        } catch (...) { continue; }
+    }
+
+    for (const std::string& line : pendingStructureLines) {
+        const auto fields = splitFields(line, '|');
+        if (fields.size() != 3u || fields[0].empty() || modStructures_.size() >= 32u) continue;
+        float chance = 0.0f;
+        if (!parseFiniteNumber(fields[1], chance) || chance <= 0.0f || chance > 1.0f)
+            continue;
+        const auto placements = splitFields(fields[2], ';');
+        if (placements.empty() || placements.size() > 128u) continue;
+        ModStructureDefinition structure;
+        structure.key = fields[0];
+        structure.chancePerChunk = chance;
+        bool valid = true;
+        for (const std::string& placementText : placements) {
+            const auto parts = splitFields(placementText, ',');
+            if (parts.size() != 4u) { valid = false; break; }
+            try {
+                std::size_t usedX = 0u, usedY = 0u, usedZ = 0u;
+                const int x = std::stoi(parts[0], &usedX);
+                const int y = std::stoi(parts[1], &usedY);
+                const int z = std::stoi(parts[2], &usedZ);
+                if (usedX != parts[0].size() || usedY != parts[1].size() ||
+                    usedZ != parts[2].size() || x < 0 || x >= VoxelWorld::kChunkSize ||
+                    z < 0 || z >= VoxelWorld::kChunkSize || y < -16 || y > 48) {
+                    valid = false;
+                    break;
+                }
+                const BlockDefinition* block = FindBlockDefinition(parts[3]);
+                if (block == nullptr || (block->flags & BlockPlaceable) == 0u) {
+                    valid = false;
+                    break;
+                }
+                structure.blocks.push_back({
+                    static_cast<std::int8_t>(x), static_cast<std::int8_t>(y),
+                    static_cast<std::int8_t>(z), block->id
+                });
+            } catch (...) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid && !structure.blocks.empty())
+            modStructures_.push_back(std::move(structure));
     }
 
     std::sort(activeContentMods_.begin(), activeContentMods_.end());
