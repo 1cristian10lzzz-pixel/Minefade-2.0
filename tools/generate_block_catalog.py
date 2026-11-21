@@ -1107,7 +1107,7 @@ def main():
             d['atlas']['top'],d['atlas']['side'],d['atlas']['bottom'],d['hardness'],d['drop_id'],d['stack_limit'],d['light'],d['flags'],d['shape'],d['tool']))
     c += ['}};',
           'std::vector<BlockDefinition> gModBlocks;',
-          'std::deque<std::string> gModStrings',
+          'std::deque<std::string> gModStrings;',
           '',
           'const char* StoreModString(std::string_view value) {',
           '    gModStrings.emplace_back(value);',
