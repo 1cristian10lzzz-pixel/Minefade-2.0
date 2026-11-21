@@ -219,9 +219,10 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
             recipes = manifest.get("recipes", [])
             biomes = manifest.get("biomes", [])
             structures = manifest.get("structures", [])
-            if not all(isinstance(x, list) for x in (blocks, items, recipes, biomes, structures)):
-                raise ValueError("blocks, items, recipes, biomes y structures deben ser listas")
-            if len(blocks) + len(items) > 128 or len(recipes) > 128 or len(biomes) > 32 or len(structures) > 16:
+            entities = manifest.get("entities", [])
+            if not all(isinstance(x, list) for x in (blocks, items, recipes, biomes, structures, entities)):
+                raise ValueError("blocks, items, recipes, biomes, structures y entities deben ser listas")
+            if len(blocks) + len(items) > 128 or len(recipes) > 128 or len(biomes) > 32 or len(structures) > 16 or len(entities) > 16:
                 raise ValueError("demasiados recursos definidos")
             ids: set[str] = set()
             for block in blocks:
@@ -306,6 +307,52 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
                     integer(placement.get("y"), -16, 48, "y")
                     integer(placement.get("z"), 0, 15, "z")
                     reference(placement.get("id"))
+            for entity in entities:
+                if not isinstance(entity, dict):
+                    raise ValueError("definición de criatura inválida")
+                rid = local_id(entity.get("id"))
+                entity_id = "entity:" + rid
+                if entity_id in ids:
+                    raise ValueError("ID de criatura duplicado")
+                ids.add(entity_id)
+                label(entity.get("name"))
+                hostile = entity.get("hostile")
+                if not isinstance(hostile, bool):
+                    raise ValueError("hostile debe ser booleano")
+                speed = entity.get("speed")
+                chance = entity.get("spawnChance", 0.1)
+                if isinstance(speed, bool) or not isinstance(speed, (int, float)) or \
+                        not math.isfinite(speed) or not 0.05 <= speed <= 2.0:
+                    raise ValueError("velocidad de criatura fuera de rango")
+                if isinstance(chance, bool) or not isinstance(chance, (int, float)) or \
+                        not math.isfinite(chance) or not 0.0 <= chance <= 1.0:
+                    raise ValueError("probabilidad de aparición fuera de rango")
+                behavior = entity.get("behavior", "wander")
+                if behavior not in {"wander", "flee", "graze", "pursue"} or \
+                        (hostile and behavior == "graze") or (not hostile and behavior == "pursue"):
+                    raise ValueError("comportamiento de criatura inválido")
+                model = entity.get("model")
+                if not isinstance(model, list) or not 1 <= len(model) <= 24:
+                    raise ValueError("el modelo necesita entre 1 y 24 piezas")
+                for part in model:
+                    if not isinstance(part, dict):
+                        raise ValueError("pieza de modelo inválida")
+                    center, size = part.get("center"), part.get("size")
+                    if not isinstance(center, list) or len(center) != 3 or \
+                            not isinstance(size, list) or len(size) != 3:
+                        raise ValueError("cada pieza necesita center y size XYZ")
+                    for index, value in enumerate(center):
+                        low, high = (-2.0, 2.0) if index != 1 else (0.0, 3.5)
+                        if isinstance(value, bool) or not isinstance(value, (int, float)) or \
+                                not math.isfinite(value) or not low <= value <= high:
+                            raise ValueError("centro de pieza fuera de rango")
+                    for value in size:
+                        if isinstance(value, bool) or not isinstance(value, (int, float)) or \
+                                not math.isfinite(value) or not 0.04 <= value <= 1.5:
+                            raise ValueError("tamaño de pieza fuera de rango")
+                    if not isinstance(part.get("color"), str) or \
+                            not re.fullmatch(r"#[0-9a-fA-F]{6}", part["color"]):
+                        raise ValueError("color de pieza inválido")
             for recipe in recipes:
                 if not isinstance(recipe, dict):
                     raise ValueError("receta inválida")
