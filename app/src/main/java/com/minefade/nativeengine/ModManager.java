@@ -133,7 +133,7 @@ public final class ModManager {
         if (name.isEmpty() || name.length() > 96) return null;
         String safeDescription = description == null ? "" : description.trim();
         if (safeDescription.length() > 512) safeDescription = safeDescription.substring(0, 512);
-        safeDescription = safeDescription.replace("\\n", " ").replace("\\r", " ");
+        safeDescription = safeDescription.replace("\n", " ").replace("\r", " ");
         String safeIcon = isValidIcon(icon) ? icon : "cube";
         String id = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_")
                 .replaceAll("^_+|_+$", "");
@@ -145,13 +145,13 @@ public final class ModManager {
             String tail = "_" + suffix++;
             id = baseId.substring(0, Math.min(baseId.length(), 64 - tail.length())) + tail;
         }
-        String data = "# Minefade data mod v1\\n"
-                + "id=" + id + "\\n"
-                + "name=" + name.replace("\\n", " ").replace("\\r", " ") + "\\n"
-                + "version=1.0\\n"
-                + "description=" + safeDescription + "\\n"
-                + "icon=" + safeIcon + "\\n"
-                + "enabled=false\\n";
+        String data = "# Minefade data mod v1\n"
+                + "id=" + id + "\n"
+                + "name=" + name.replace("\n", " ").replace("\r", " ") + "\n"
+                + "version=1.0\n"
+                + "description=" + safeDescription + "\n"
+                + "icon=" + safeIcon + "\n"
+                + "enabled=false\n";
         File file = new File(modsDirectory, id + ".mfmod");
         if (!writeAtomically(file, data.getBytes(StandardCharsets.UTF_8))) return null;
         return read(file);
@@ -159,19 +159,19 @@ public final class ModManager {
 
     /** Create a sample pack only when the player asks for it. */
     public synchronized File createExamplePack() {
-        String data = "# Minefade data mod v1\\n"
-                + "id=minefade_example_fauna\\n"
-                + "name=Fauna de ejemplo\\n"
-                + "version=1.0\\n"
-                + "description=Plantilla editable de ajustes de fauna y movimiento.\\n"
-                + "icon=creature\\n"
-                + "enabled=false\\n"
-                + "spawn.sheep=2\\n"
-                + "spawn.cow=1\\n"
-                + "spawn.bird=2\\n"
-                + "player.jump=1.08\\n"
-                + "entity.speed=1.12\\n"
-                + "world.day_speed=1.15\\n";
+        String data = "# Minefade data mod v1\n"
+                + "id=minefade_example_fauna\n"
+                + "name=Fauna de ejemplo\n"
+                + "version=1.0\n"
+                + "description=Plantilla editable de ajustes de fauna y movimiento.\n"
+                + "icon=creature\n"
+                + "enabled=false\n"
+                + "spawn.sheep=2\n"
+                + "spawn.cow=1\n"
+                + "spawn.bird=2\n"
+                + "player.jump=1.08\n"
+                + "entity.speed=1.12\n"
+                + "world.day_speed=1.15\n";
         File file = new File(modsDirectory, "minefade_example_fauna.mfmod");
         if (file.exists()) return null;
         if (!writeAtomically(file, data.getBytes(StandardCharsets.UTF_8))) return null;
