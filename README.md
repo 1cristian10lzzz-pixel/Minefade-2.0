@@ -1,4 +1,4 @@
-# Minefade 2.0 — candidato Android 2.3.0
+# Minefade 2.0 — candidato Android 2.4.0
 
 Juego voxel nativo para Android. Este es el repositorio principal de desarrollo.
 
@@ -22,11 +22,11 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - RmlUi 6.3 y FreeType 2.13.3.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
 
-## Candidato 2.3.0 — MFMod v2
+## Candidato 2.4.0 — MFMod v2 + LAN compatible
 
 - Bloques, objetos, texturas, recetas, biomas, estructuras y criaturas voxel personalizadas a través de paquetes ZIP de datos.
 - Sustituciones de audio OGG/WAV con validación y protección SHA-256 por mundo.
-- La compilación, firma y pruebas de instalación deben pasar antes de considerar el APK listo.
+- Protocolo LAN v3: anfitrión y clientes verifican que los mods activos sean idénticos antes de entrar al mundo.\n- El sistema sigue siendo de contenido declarativo; los límites pendientes se detallan en docs/MF_MOD_FORMAT_V2.md.
 
 ## Actualización técnica 2.2 — sistema MFMod ampliado
 
@@ -42,7 +42,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Diagnóstico del HUD con chunks pendientes y recursos GPU residentes/pendientes.
 - GitHub Actions valida los pull requests y no crea commits automáticos de recursos.
 
-**Versión Android:** versionCode 25 / versionName 2.2.0. Es una compilación de validación hasta probarla en dispositivos Android reales.
+**Versión Android candidata:** versionCode 27 / versionName 2.4.0. Es una compilación de validación hasta probarla en dispositivos Android reales.
 
 ## Sistemas presentes
 
