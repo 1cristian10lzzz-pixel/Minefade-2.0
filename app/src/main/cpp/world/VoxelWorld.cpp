@@ -303,6 +303,7 @@ VoxelWorld::Biome VoxelWorld::GetBiome(int x,int z) const {
     const float riverField=Noise2D(fx*0.0105f+riverWarp*2.0f+57.0f,
                                    fz*0.0105f-riverWarp*2.0f-93.0f);
 
+    if (FindModBiome(x, z) != nullptr) return Biome::Modded;
     if(continental<-0.50f)return Biome::Ocean;
     if(continental>-0.30f&&continental<0.43f&&std::abs(riverField)<0.026f)
         return Biome::River;
@@ -328,6 +329,42 @@ VoxelWorld::Biome VoxelWorld::GetBiome(int x,int z) const {
     return Biome::Plains;
 }
 
+const ModBiomeDefinition* VoxelWorld::FindModBiome(int x, int z) const {
+    if (modBiomes_.empty()) return nullptr;
+    const float fx = static_cast<float>(x), fz = static_cast<float>(z);
+    const float temperature = FractalNoise2D(fx*0.0028f+217.0f, fz*0.0028f-71.0f, 3, 0.52f, 2.0f);
+    const float humidity = FractalNoise2D(fx*0.0042f-493.0f, fz*0.0042f+119.0f, 3, 0.54f, 2.0f);
+    const float continental = FractalNoise2D(fx*0.0019f+901.0f, fz*0.0019f+401.0f, 4, 0.56f, 2.0f);
+    for (const ModBiomeDefinition& biome : modBiomes_) {
+        if (temperature >= biome.minTemperature && temperature <= biome.maxTemperature &&
+            humidity >= biome.minHumidity && humidity <= biome.maxHumidity &&
+            continental >= biome.minContinental && continental <= biome.maxContinental)
+            return &biome;
+    }
+    return nullptr;
+}
+
+void VoxelWorld::SetModBiomes(std::vector<ModBiomeDefinition> biomes) {
+    biomes.erase(std::remove_if(biomes.begin(), biomes.end(), [](const ModBiomeDefinition& biome) {
+        return biome.key.empty() || biome.minTemperature < -1.0f ||
+            biome.maxTemperature > 1.0f || biome.minTemperature > biome.maxTemperature ||
+            biome.minHumidity < -1.0f || biome.maxHumidity > 1.0f ||
+            biome.minHumidity > biome.maxHumidity ||
+            biome.minContinental < -1.0f || biome.maxContinental > 1.0f ||
+            biome.minContinental > biome.maxContinental ||
+            GetBlockDefinition(biome.surfaceBlock) == nullptr ||
+            GetBlockDefinition(biome.fillerBlock) == nullptr ||
+            biome.surfaceOffset < -16 || biome.surfaceOffset > 16 ||
+            biome.priority < -100 || biome.priority > 100;
+    }), biomes.end());
+    std::sort(biomes.begin(), biomes.end(), [](const ModBiomeDefinition& a,
+                                               const ModBiomeDefinition& b) {
+        if (a.priority != b.priority) return a.priority > b.priority;
+        return a.key < b.key;
+    });
+    modBiomes_ = std::move(biomes);
+}
+
 int VoxelWorld::TerrainHeight(int x,int z) const {
     const float fx=static_cast<float>(x),fz=static_cast<float>(z);
     const float continental=FractalNoise2D(fx*0.0019f+901.0f,fz*0.0019f+401.0f,4,0.56f,2.0f);
@@ -345,6 +382,10 @@ int VoxelWorld::TerrainHeight(int x,int z) const {
                +continentalMask*4.0f+mountainMask*(ridged*34.0f-5.0f)
                +detail*2.6f;
 
+    if (biome == Biome::Modded) {
+        if (const ModBiomeDefinition* custom = FindModBiome(x, z))
+            height += static_cast<float>(custom->surfaceOffset);
+    } else {
     if(biome==Biome::Desert||biome==Biome::Savanna||biome==Biome::Badlands)height+=1.5f;
     if(biome==Biome::Snow)height+=3.0f;
     if(biome==Biome::IceSpikes)height+=11.0f+std::max(0.0f,peakNoise)*13.0f;
@@ -355,6 +396,7 @@ int VoxelWorld::TerrainHeight(int x,int z) const {
     if(biome==Biome::Beach)height=29.0f+erosion*1.0f+detail*0.45f;
     if(biome==Biome::River)height=30.2f+erosion*1.1f+detail*0.45f;
     if(biome==Biome::Ocean)height=22.5f+continental*4.5f+erosion*1.8f;
+    }
     return std::clamp(static_cast<int>(std::lround(height)),5,kWorldHeight-7);
 }
 
@@ -363,10 +405,13 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
     for(int z=0;z<kChunkSize;++z)for(int x=0;x<kChunkSize;++x) {
         const int wx=chunkX*kChunkSize+x,wz=chunkZ*kChunkSize+z;
         const Biome biome=GetBiome(wx,wz); const int height=TerrainHeight(wx,wz);
+        const ModBiomeDefinition* customBiome = biome == Biome::Modded
+            ? FindModBiome(wx, wz) : nullptr;
         for(int y=0;y<=height;++y) {
             BlockId block = y < 17 ? BlockId::Deepslate : BlockId::Stone;
             if(y==height) {
-                if(biome==Biome::Desert || biome==Biome::Ocean || biome==Biome::Beach) block=BlockId::Sand;
+                if (customBiome != nullptr) block = customBiome->surfaceBlock;
+                else if(biome==Biome::Desert || biome==Biome::Ocean || biome==Biome::Beach) block=BlockId::Sand;
                 else if(biome==Biome::River) block=BlockId::Gravel;
                 else if(biome==Biome::Badlands) block=BlockId::HardenedClay;
                 else if(biome==Biome::MushroomFields) block=BlockId::Mycelium;
@@ -376,7 +421,8 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
                 else if(biome==Biome::StonyPeaks && height>63) block=BlockId::Stone;
                 else block=BlockId::Grass;
             } else if(y>=height-3) {
-                block=(biome==Biome::Desert || biome==Biome::Savanna || biome==Biome::Beach)?BlockId::Sand:
+                if (customBiome != nullptr) block = customBiome->fillerBlock;
+                else block=(biome==Biome::Desert || biome==Biome::Savanna || biome==Biome::Beach)?BlockId::Sand:
                       biome==Biome::Badlands?BlockId::RedSandstone:
                       biome==Biome::MangroveSwamp?BlockId::Mud:BlockId::Dirt;
             } else {
