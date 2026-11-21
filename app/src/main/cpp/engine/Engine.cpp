@@ -2669,7 +2669,7 @@ void Engine::LoadEnabledMods() {
         std::size_t structureLines = 0u;
         while (structuresFile && std::getline(structuresFile, structureLine) &&
                ++structureLines <= 32u && modStructures_.size() < 32u) {
-            if (structureLine.empty() || structureLine.size() > 8192u) continue;
+            if (structureLine.empty() || structureLine.size() > 32768u) continue;
             const auto fields = splitFields(structureLine, '|');
             if (fields.size() != 3u || fields[0].empty()) continue;
             float chance = 0.0f;
