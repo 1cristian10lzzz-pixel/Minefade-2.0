@@ -64,6 +64,19 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
         { "id": "ruby_pack:ruby_ore", "count": 1 }
       ]
     }
+  ],
+  "biomes": [
+    {
+      "id": "crystal_forest",
+      "name": "Bosque de cristal",
+      "temperature": { "min": -0.2, "max": 0.7 },
+      "humidity": { "min": 0.2, "max": 1.0 },
+      "continental": { "min": -0.1, "max": 0.9 },
+      "topBlock": "ruby_pack:ruby_ore",
+      "fillerBlock": "minecraft:dirt",
+      "priority": 10,
+      "surfaceOffset": 1
+    }
   ]
 }
 ```
@@ -86,6 +99,7 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
 | Textura PNG | 128 × 128 px |
 | Bloques + objetos por mod | 128 |
 | Recetas por mod | 128 |
+| Biomas por mod | 32 |
 | Ingredientes por receta | 5 |
 | Salida de receta | 1–64 |
 | Ingrediente | 1–64 |
@@ -97,6 +111,7 @@ Se admiten sonidos de bloque de la lista integrada: `stone`, `wood`, `gravel`, `
 - Bloques personalizados con nombre, dureza, resistencia, forma, herramienta preferida, nivel de luz y tres caras de textura.
 - Objetos personalizados con textura y límite de pila. En esta primera integración se representan como recursos de inventario y no como armas/armaduras con comportamiento propio.
 - Recetas personalizadas visibles en la mesa de fabricación, con verificación y consumo de ingredientes.
+- Biomas definidos por rangos de temperatura, humedad y continentalidad; permiten escoger un bloque de superficie, uno de relleno, prioridad y pequeño ajuste de altura.
 - Atlas RGBA extendido compartido por el mundo y los iconos del inventario.
 - Mods v1 y sus ajustes de jugabilidad continúan importándose.
 
@@ -104,4 +119,4 @@ El mundo guarda un manifiesto lateral con la lista de mods de contenido y sus ve
 
 ## Lo que todavía no ofrece MFMod v2
 
-El soporte de biomas, estructuras, entidades/modelos/IA, audio personalizado, pantallas/UI y logros personalizados aún no forma parte de la API ejecutable descrita arriba. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
+El soporte de estructuras, entidades/modelos/IA, audio personalizado, pantallas/UI y logros personalizados aún no forma parte de la API ejecutable descrita arriba. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
