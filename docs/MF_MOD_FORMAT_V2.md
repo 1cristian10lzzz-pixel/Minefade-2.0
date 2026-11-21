@@ -1,0 +1,170 @@
+# MFMod v2 — paquetes de contenido de Minefade
+
+## Objetivo
+
+MFMod v2 amplía el formato v1 (archivo de configuración de texto) con paquetes ZIP de datos y recursos. No carga bibliotecas nativas, APKs, JAR/DEX ni scripts ejecutables. El formato mantiene compatibilidad con mods v1.
+
+## Estructura del archivo
+
+Un archivo `.mfmod` v2 es un ZIP con esta estructura:
+
+```text
+mi_mod.mfmod
+├── manifest.json
+└── textures/
+    ├── mineral_top.png
+    ├── mineral_side.png
+    └── mineral_bottom.png
+```
+
+El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplicados y cualquier carga que no sea `manifest.json` o una textura PNG dentro de `textures/`. Los modelos y las reglas de comportamiento son datos declarativos, no código ejecutable.
+
+## Ejemplo de manifest.json
+
+```json
+{
+  "format": 2,
+  "id": "ruby_pack",
+  "name": "Ruby Pack",
+  "version": "1.0.0",
+  "description": "Añade mena de rubí y rubíes",
+  "blocks": [
+    {
+      "id": "ruby_ore",
+      "name": "Mena de rubí",
+      "hardness": 3.0,
+      "sound": "stone",
+      "textures": {
+        "top": "textures/mineral_top.png",
+        "side": "textures/mineral_side.png",
+        "bottom": "textures/mineral_bottom.png"
+      },
+      "shape": "cube",
+      "tool": "pickaxe",
+      "stack": 64,
+      "light": 0,
+      "transparent": false
+    }
+  ],
+  "items": [
+    {
+      "id": "ruby",
+      "name": "Rubí",
+      "texture": "textures/ruby.png",
+      "stack": 64
+    }
+  ],
+  "recipes": [
+    {
+      "id": "polished_ruby",
+      "name": "Pulir rubí",
+      "requiresTable": true,
+      "output": { "id": "ruby_pack:ruby", "count": 1 },
+      "ingredients": [
+        { "id": "ruby_pack:ruby_ore", "count": 1 }
+      ]
+    }
+  ],
+  "biomes": [
+    {
+      "id": "crystal_forest",
+      "name": "Bosque de cristal",
+      "temperature": { "min": -0.2, "max": 0.7 },
+      "humidity": { "min": 0.2, "max": 1.0 },
+      "continental": { "min": -0.1, "max": 0.9 },
+      "topBlock": "ruby_pack:ruby_ore",
+      "fillerBlock": "minecraft:dirt",
+      "priority": 10,
+      "surfaceOffset": 1
+    }
+  ],
+  "sounds": {
+    "block_break": "audio/ruby_break.ogg",
+    "water": "audio/water_splash.wav",
+    "zombie": "audio/crystal_golem.ogg"
+  },
+  "entities": [
+    {
+      "id": "crystal_golem",
+      "name": "Gólem de cristal",
+      "hostile": true,
+      "speed": 0.34,
+      "spawnChance": 0.12,
+      "behavior": "pursue",
+      "model": [
+        { "center": [0, 1.0, 0], "size": [0.65, 0.8, 0.45], "color": "#55CCFF" },
+        { "center": [0, 2.0, 0], "size": [0.4, 0.35, 0.35], "color": "#B8EEFF" },
+        { "center": [-0.45, 1.0, 0], "size": [0.18, 0.6, 0.2], "color": "#3288AA" },
+        { "center": [0.45, 1.0, 0], "size": [0.18, 0.6, 0.2], "color": "#3288AA" }
+      ]
+    }
+  ],
+  "structures": [
+    {
+      "id": "ruined_shrine",
+      "name": "Santuario en ruinas",
+      "chance": 0.025,
+      "blocks": [
+        { "x": 7, "y": 0, "z": 7, "id": "minecraft:stonebrick" },
+        { "x": 7, "y": 1, "z": 7, "id": "ruby_pack:ruby_ore" },
+        { "x": 8, "y": 0, "z": 7, "id": "minecraft:mossy_cobblestone" }
+      ]
+    }
+  ]
+}
+```
+
+## Identificadores
+
+- Los IDs locales usan minúsculas, números, punto, guion y guion bajo.
+- Los recursos del propio paquete usan `<id-del-mod>:<id-local>`, por ejemplo `ruby_pack:ruby_ore`.
+- Para recetas pueden usarse IDs del juego base sin namespace o recursos de otro mod con namespace.
+- Los IDs duplicados dentro del paquete se rechazan. Los conflictos entre paquetes se resuelven por orden estable de carga: el primer ID ya registrado gana y el duplicado no se instala en el registro del motor.
+
+## Límites de importación
+
+| Límite | Máximo |
+|---|---:|
+| ZIP comprimido | 16 MB |
+| Contenido descomprimido total | 32 MB |
+| Tamaño de cada archivo | 4 MB |
+| Entradas ZIP | 256 |
+| Textura PNG | 128 × 128 px |
+| Bloques + objetos por mod | 128 |
+| Recetas por mod | 128 |
+| Biomas por mod | 32 |
+| Estructuras por mod | 16 |
+| Estructuras por mundo (total) | 32 |
+| Criaturas por mod | 16 |
+| Criaturas por mundo (total) | 32 |
+| Piezas por modelo de criatura | 24 |
+| Sonidos sustituibles por mod | 20 |
+| Archivo de audio | 4 MB |
+| Bloques por estructura | 128 |
+| Ingredientes por receta | 5 |
+| Salida de receta | 1–64 |
+| Ingrediente | 1–64 |
+
+Se admiten sonidos de bloque de la lista integrada: `stone`, `wood`, `gravel`, `sand`, `grass`, `glass` y `metal`. Las formas de bloque admitidas son las formas ya implementadas por el motor: cubo, losa, escalera, planta cruzada, panel fino, cristal, valla, puerta, trampilla, fluido y andamio.
+
+## Integración del candidato Android 2.x
+
+La rama incluye primero los cambios de la base de jugabilidad 2.2 y añade encima la extensión de contenido MFMod v2. La validación CI del pull request debe reconstruir el catálogo determinista y compilar ambas ABI Android antes de distribuir el APK.
+
+## Qué aplica actualmente el motor
+
+- Bloques personalizados con nombre, dureza, resistencia, forma, herramienta preferida, nivel de luz y tres caras de textura.
+- Objetos personalizados con textura y límite de pila. En esta primera integración se representan como recursos de inventario y no como armas/armaduras con comportamiento propio.
+- Recetas personalizadas visibles en la mesa de fabricación, con verificación y consumo de ingredientes.
+- Biomas definidos por rangos de temperatura, humedad y continentalidad; permiten escoger un bloque de superficie, uno de relleno, prioridad y pequeño ajuste de altura.
+- Estructuras por plantillas de bloques con coordenadas relativas al chunk, probabilidad determinista por chunk y límite de 128 bloques por plantilla.
+- Criaturas definidas por modelos de cajas 3D de colores, con velocidad, aparición determinista y comportamiento básico de paseo, huida, pastoreo o persecución.
+- Sustitución de 20 eventos de sonido del juego con archivos OGG/WAV validados.
+- Atlas RGBA extendido compartido por el mundo y los iconos del inventario.
+- Mods v1 y sus ajustes de jugabilidad continúan importándose.
+
+El mundo guarda un manifiesto lateral con la lista de mods de contenido, sus versiones y una huella SHA-256 de todos sus archivos de definición/texturas. El motor bloquea una carga incompatible para evitar interpretar IDs guardados como bloques distintos. El multijugador con mods de contenido permanece bloqueado hasta que exista una negociación de hashes y versiones entre anfitrión y clientes.
+
+## Lo que todavía no ofrece MFMod v2
+
+Las criaturas personalizadas actuales usan modelos de cajas voxel y una IA local básica; aún no ofrecen esqueletos articulados, animaciones de huesos, salud/combate, rutas avanzadas ni monturas. Los sonidos personalizados sustituyen eventos existentes; todavía no se pueden registrar nuevos canales de audio o bandas sonoras. Las pantallas/UI y los logros personalizados tampoco forman parte de esta versión. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
