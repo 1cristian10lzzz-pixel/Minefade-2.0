@@ -785,8 +785,8 @@ public final class ModManager {
     }
 
     private String activeModSetError() {
-        Map<String, ModInfo> installed = new HashMap<>();
-        Map<String, ModInfo> active = new HashMap<>();
+        Map<String, ModInfo> installed = new LinkedHashMap<>();
+        Map<String, ModInfo> active = new LinkedHashMap<>();
         for (ModInfo mod : listMods()) {
             String key = mod.id.toLowerCase(Locale.ROOT);
             installed.put(key, mod);
