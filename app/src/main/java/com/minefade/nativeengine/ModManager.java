@@ -86,6 +86,7 @@ public final class ModManager {
 
     private final Context context;
     private final File modsDirectory;
+    private String lastValidationError = "";
 
     public ModManager(Context context) {
         this.context = context.getApplicationContext();
@@ -120,6 +121,8 @@ public final class ModManager {
                     identities.add("v1|" + info.id + "|" + info.version + "|" + sha256File(info.file));
                 }
             }
+            String compatibilityError = activeModSetError();
+            if (!compatibilityError.isEmpty()) return "";
             Collections.sort(identities);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (String identity : identities) {
@@ -280,6 +283,8 @@ public final class ModManager {
             metadata.put("version", manifest.getString("version"));
             metadata.put("description", manifest.optString("description", ""));
             metadata.put("hash", computeContentHash(staging));
+            metadata.put("requires", encodeDependencies(manifest.optJSONArray("dependencies")));
+            metadata.put("conflicts", encodeConflicts(manifest.optJSONArray("conflicts")));
             metadata.put("enabled", "false");
             StringBuilder ini = new StringBuilder("# Minefade content mod v2\n");
             for (Map.Entry<String,String> item : metadata.entrySet())
@@ -352,6 +357,40 @@ public final class ModManager {
         JSONArray biomes = manifest.optJSONArray("biomes");
         JSONArray structures = manifest.optJSONArray("structures");
         JSONArray entities = manifest.optJSONArray("entities");
+        Object dependenciesValue = manifest.opt("dependencies");
+        Object conflictsValue = manifest.opt("conflicts");
+        if (dependenciesValue != null && !(dependenciesValue instanceof JSONArray))
+            throw new IOException("El campo dependencies debe ser una lista.");
+        if (conflictsValue != null && !(conflictsValue instanceof JSONArray))
+            throw new IOException("El campo conflicts debe ser una lista.");
+        JSONArray dependencies = manifest.optJSONArray("dependencies");
+        JSONArray conflicts = manifest.optJSONArray("conflicts");
+        if (dependencies != null) {
+            if (dependencies.length() > 32) throw new IOException("Demasiadas dependencias.");
+            Set<String> dependencyIds = new HashSet<>();
+            for (int i = 0; i < dependencies.length(); i++) {
+                JSONObject dependency = dependencies.getJSONObject(i);
+                String dependencyId = dependency.optString("id", "");
+                String requirement = dependency.optString("version", "*");
+                Object optionalValue = dependency.opt("optional");
+                if (optionalValue != null && !(optionalValue instanceof Boolean))
+                    throw new IOException("El campo optional debe ser booleano.");
+                if (!dependencyId.matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
+                        dependencyId.equals(id) || !isValidVersionRequirement(requirement) ||
+                        !dependencyIds.add(dependencyId))
+                    throw new IOException("Dependencia inválida o duplicada: " + dependencyId);
+            }
+        }
+        if (conflicts != null) {
+            if (conflicts.length() > 32) throw new IOException("Demasiados conflictos declarados.");
+            Set<String> conflictIds = new HashSet<>();
+            for (int i = 0; i < conflicts.length(); i++) {
+                String conflictId = conflicts.getString(i);
+                if (!conflictId.matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
+                        conflictId.equals(id) || !conflictIds.add(conflictId))
+                    throw new IOException("Conflicto inválido o duplicado: " + conflictId);
+            }
+        }
         Object soundsValue = manifest.opt("sounds");
         if (soundsValue != null && !(soundsValue instanceof JSONObject))
             throw new IOException("El campo sounds debe ser un objeto JSON.");
@@ -674,7 +713,8 @@ public final class ModManager {
                 if (split <= 0) continue;
                 String key = line.substring(0, split).trim();
                 String value = line.substring(split + 1).trim();
-                if (!oneOf(key, "format", "id", "name", "version", "description", "hash", "enabled") ||
+                if (!oneOf(key, "format", "id", "name", "version", "description", "hash",
+                        "requires", "conflicts", "enabled") ||
                         value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.length() > 512 ||
                         values.containsKey(key)) return null;
                 values.put(key, value);
@@ -686,11 +726,129 @@ public final class ModManager {
                     !values.getOrDefault("hash", "").matches("[a-f0-9]{64}") ||
                     !"true".equals(values.get("enabled")) && !"false".equals(values.get("enabled")))
                 return null;
+            if (values.getOrDefault("requires", "").length() > 2048 ||
+                    values.getOrDefault("conflicts", "").length() > 2048) return null;
             return new ModInfo(file, values);
         } catch (Exception ignored) { return null; }
     }
 
+    private static String encodeDependencies(JSONArray dependencies) throws Exception {
+        if (dependencies == null) return "";
+        ArrayList<String> encoded = new ArrayList<>();
+        for (int i = 0; i < dependencies.length(); i++) {
+            JSONObject dependency = dependencies.getJSONObject(i);
+            encoded.add(dependency.getString("id") + "@" +
+                    dependency.optString("version", "*") + "@" +
+                    dependency.optBoolean("optional", false));
+        }
+        Collections.sort(encoded);
+        return String.join(";", encoded);
+    }
+
+    private static String encodeConflicts(JSONArray conflicts) throws Exception {
+        if (conflicts == null) return "";
+        ArrayList<String> encoded = new ArrayList<>();
+        for (int i = 0; i < conflicts.length(); i++) encoded.add(conflicts.getString(i));
+        Collections.sort(encoded);
+        return String.join(",", encoded);
+    }
+
+    private static boolean isValidVersionRequirement(String requirement) {
+        if (requirement == null || requirement.length() > 32 || "*".equals(requirement)) return true;
+        String version = requirement.startsWith(">=") ? requirement.substring(2) :
+                requirement.startsWith("=") ? requirement.substring(1) : requirement;
+        return version.matches("[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}([+-][A-Za-z0-9.-]+)?");
+    }
+
+    private static int compareVersions(String left, String right) {
+        String[] a = left.split("[-+]", 2)[0].split("\\.");
+        String[] b = right.split("[-+]", 2)[0].split("\\.");
+        if (a.length != 3 || b.length != 3) return Integer.MIN_VALUE;
+        try {
+            for (int i = 0; i < 3; i++) {
+                int difference = Integer.compare(Integer.parseInt(a[i]), Integer.parseInt(b[i]));
+                if (difference != 0) return difference;
+            }
+            return 0;
+        } catch (NumberFormatException error) {
+            return Integer.MIN_VALUE;
+        }
+    }
+
+    private static boolean satisfiesVersion(String actual, String requirement) {
+        if (requirement == null || requirement.isEmpty() || "*".equals(requirement)) return true;
+        if (!isValidVersionRequirement(requirement)) return false;
+        if (requirement.startsWith(">="))
+            return compareVersions(actual, requirement.substring(2)) >= 0;
+        String expected = requirement.startsWith("=") ? requirement.substring(1) : requirement;
+        return compareVersions(actual, expected) == 0;
+    }
+
+    private String activeModSetError() {
+        Map<String, ModInfo> installed = new HashMap<>();
+        Map<String, ModInfo> active = new HashMap<>();
+        for (ModInfo mod : listMods()) {
+            String key = mod.id.toLowerCase(Locale.ROOT);
+            installed.put(key, mod);
+            if (mod.enabled) active.put(key, mod);
+        }
+        for (ModInfo mod : active.values()) {
+            if (!mod.contentPack) continue;
+            String requires = mod.settings.getOrDefault("requires", "");
+            if (!requires.isEmpty()) for (String declaration : requires.split(";")) {
+                String[] fields = declaration.split("@", -1);
+                if (fields.length != 3 || !isValidVersionRequirement(fields[1]) ||
+                        !("true".equals(fields[2]) || "false".equals(fields[2])))
+                    return "El manifiesto de " + mod.name + " tiene dependencias dañadas.";
+                String dependencyId = fields[0].toLowerCase(Locale.ROOT);
+                ModInfo dependency = installed.get(dependencyId);
+                boolean optional = "true".equals(fields[2]);
+                if (dependency == null || !dependency.enabled) {
+                    if (!optional) return "Activa primero el mod requerido " + fields[0] +
+                            " para poder usar " + mod.name + ".";
+                    continue;
+                }
+                if (!satisfiesVersion(dependency.version, fields[1]))
+                    return mod.name + " necesita " + fields[0] + " " + fields[1] +
+                            ", pero está instalada la versión " + dependency.version + ".";
+            }
+            String conflicts = mod.settings.getOrDefault("conflicts", "");
+            if (!conflicts.isEmpty()) for (String conflictId : conflicts.split(",")) {
+                ModInfo other = active.get(conflictId.toLowerCase(Locale.ROOT));
+                if (other != null)
+                    return mod.name + " no es compatible con " + other.name + ".";
+            }
+        }
+        Map<String, Integer> marks = new HashMap<>();
+        for (String id : active.keySet())
+            if (hasDependencyCycle(id, active, marks))
+                return "Hay un ciclo de dependencias entre mods activos. Desactiva uno de ellos.";
+        return "";
+    }
+
+    private static boolean hasDependencyCycle(String id, Map<String, ModInfo> active,
+                                               Map<String, Integer> marks) {
+        Integer mark = marks.get(id);
+        if (mark != null) return mark == 1;
+        marks.put(id, 1);
+        ModInfo mod = active.get(id);
+        if (mod != null && mod.contentPack) {
+            String requires = mod.settings.getOrDefault("requires", "");
+            if (!requires.isEmpty()) for (String declaration : requires.split(";")) {
+                String[] fields = declaration.split("@", -1);
+                if (fields.length == 3 && active.containsKey(fields[0].toLowerCase(Locale.ROOT)) &&
+                        hasDependencyCycle(fields[0].toLowerCase(Locale.ROOT), active, marks)) return true;
+            }
+        }
+        marks.put(id, 2);
+        return false;
+    }
+
+    public synchronized String getLastValidationError() { return lastValidationError; }
+
     public synchronized AtlasData buildModAtlas(byte[] baseAtlas, int width, int height) {
+        String compatibilityError = activeModSetError();
+        if (!compatibilityError.isEmpty()) throw new IllegalStateException(compatibilityError);
         if (baseAtlas == null || width != 576 || height != 702 ||
                 baseAtlas.length != width * height * 4) return new AtlasData(baseAtlas, width, height);
         ArrayList<AtlasEntry> entries = new ArrayList<>();
@@ -960,8 +1118,19 @@ public final class ModManager {
                 if (key.matches("[a-zA-Z0-9_.-]{1,64}") && value.indexOf('\n') < 0 && value.indexOf('\r') < 0)
                     data.append(key).append('=').append(value).append('\n');
             }
-            return writeAtomically(info.file, data.toString().getBytes(StandardCharsets.UTF_8));
+            byte[] previous = readAll(info.file, info.contentPack ? 4096 : 32768);
+            if (!writeAtomically(info.file, data.toString().getBytes(StandardCharsets.UTF_8))) {
+                lastValidationError = "No se pudo guardar el estado del mod.";
+                return false;
+            }
+            lastValidationError = activeModSetError();
+            if (!lastValidationError.isEmpty()) {
+                writeAtomically(info.file, previous);
+                return false;
+            }
+            return true;
         } catch (Exception ignored) {
+            lastValidationError = "No se pudo validar el conjunto de mods.";
             return false;
         }
     }
