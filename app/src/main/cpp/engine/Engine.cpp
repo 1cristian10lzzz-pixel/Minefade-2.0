@@ -2244,6 +2244,7 @@ void Engine::SetModsDirectory(std::string path) {
 void Engine::LoadEnabledMods() {
     ClearModBlockDefinitions();
     modRecipes_.clear();
+    modBiomes_.clear();
     activeContentMods_.clear();
     modCompatibilityError_ = false;
     modSheepSpawns_ = modCowSpawns_ = modBirdSpawns_ = modPigSpawns_ = 0;
@@ -2593,9 +2594,54 @@ void Engine::LoadEnabledMods() {
             if (!recipeLine.empty() && recipeLine.size() <= 1024u)
                 pendingRecipeLines.push_back(recipeLine);
         }
+
+        std::ifstream biomesFile(directory / "biomes.mfdata", std::ios::binary);
+        std::string biomeLine;
+        std::size_t biomeLines = 0u;
+        while (biomesFile && std::getline(biomesFile, biomeLine) && ++biomeLines <= 64u) {
+            if (biomeLine.empty() || biomeLine.size() > 512u) continue;
+            const auto fields = splitFields(biomeLine, '|');
+            if (fields.size() != 11u) continue;
+            float minTemp = 0.0f, maxTemp = 0.0f, minHumidity = 0.0f, maxHumidity = 0.0f;
+            float minContinental = 0.0f, maxContinental = 0.0f;
+            if (!parseFiniteNumber(fields[1], minTemp) || !parseFiniteNumber(fields[2], maxTemp) ||
+                !parseFiniteNumber(fields[3], minHumidity) || !parseFiniteNumber(fields[4], maxHumidity) ||
+                !parseFiniteNumber(fields[5], minContinental) || !parseFiniteNumber(fields[6], maxContinental) ||
+                minTemp < -1.0f || maxTemp > 1.0f || minTemp > maxTemp ||
+                minHumidity < -1.0f || maxHumidity > 1.0f || minHumidity > maxHumidity ||
+                minContinental < -1.0f || maxContinental > 1.0f || minContinental > maxContinental)
+                continue;
+            const BlockDefinition* surface = FindBlockDefinition(fields[7]);
+            const BlockDefinition* filler = FindBlockDefinition(fields[8]);
+            if (surface == nullptr || filler == nullptr ||
+                (surface->flags & BlockPlaceable) == 0u || (filler->flags & BlockPlaceable) == 0u)
+                continue;
+            try {
+                std::size_t priorityUsed = 0u, offsetUsed = 0u;
+                const int priority = std::stoi(fields[9], &priorityUsed);
+                const int surfaceOffset = std::stoi(fields[10], &offsetUsed);
+                if (priorityUsed != fields[9].size() || offsetUsed != fields[10].size() ||
+                    priority < -100 || priority > 100 || surfaceOffset < -16 || surfaceOffset > 16)
+                    continue;
+                ModBiomeDefinition biome;
+                biome.key = fields[0];
+                biome.minTemperature = minTemp;
+                biome.maxTemperature = maxTemp;
+                biome.minHumidity = minHumidity;
+                biome.maxHumidity = maxHumidity;
+                biome.minContinental = minContinental;
+                biome.maxContinental = maxContinental;
+                biome.surfaceBlock = surface->id;
+                biome.fillerBlock = filler->id;
+                biome.priority = priority;
+                biome.surfaceOffset = surfaceOffset;
+                modBiomes_.push_back(std::move(biome));
+            } catch (...) { continue; }
+        }
     }
 
     std::sort(activeContentMods_.begin(), activeContentMods_.end());
+    world_.SetModBiomes(modBiomes_);
 
     // Resolve recipes only after every enabled pack has registered its items and blocks.
     for (const std::string& line : pendingRecipeLines) {
