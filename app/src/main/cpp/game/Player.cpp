@@ -522,6 +522,48 @@ void DroppedItemSystem::AppendMesh(std::vector<WorldVertex>& output, const Camer
     }
 }
 
+void EntitySystem::Reset() {
+    entities_.clear();
+    modEntities_.clear();
+    initialized_ = false;
+    ambientSpawnElapsed_ = 0.0f;
+    ambientSpawnSequence_ = 0u;
+    animationTime_ = 0.0f;
+}
+
+void EntitySystem::SetModEntities(std::vector<ModEntityDefinition> definitions) {
+    definitions.erase(std::remove_if(definitions.begin(), definitions.end(),
+        [](const ModEntityDefinition& definition) {
+            if (definition.key.empty() || definition.key.size() > 129u ||
+                !std::isfinite(definition.speed) || definition.speed < 0.05f ||
+                definition.speed > 2.0f || !std::isfinite(definition.spawnChance) ||
+                definition.spawnChance < 0.0f || definition.spawnChance > 1.0f ||
+                definition.behavior < 0 || definition.behavior > 3 ||
+                definition.model.empty() || definition.model.size() > 24u) return true;
+            return std::any_of(definition.model.begin(), definition.model.end(),
+                [](const ModEntityModelPart& part) {
+                    return !std::isfinite(part.center.x) || !std::isfinite(part.center.y) ||
+                        !std::isfinite(part.center.z) || !std::isfinite(part.halfExtents.x) ||
+                        !std::isfinite(part.halfExtents.y) || !std::isfinite(part.halfExtents.z) ||
+                        part.center.x < -2.0f || part.center.x > 2.0f ||
+                        part.center.y < 0.0f || part.center.y > 3.5f ||
+                        part.center.z < -2.0f || part.center.z > 2.0f ||
+                        part.halfExtents.x < 0.04f || part.halfExtents.x > 1.5f ||
+                        part.halfExtents.y < 0.04f || part.halfExtents.y > 1.5f ||
+                        part.halfExtents.z < 0.04f || part.halfExtents.z > 1.5f ||
+                        std::any_of(part.color.begin(), part.color.end(), [](float value) {
+                            return !std::isfinite(value) || value < 0.0f || value > 1.0f;
+                        });
+                });
+        }), definitions.end());
+    std::sort(definitions.begin(), definitions.end(),
+        [](const ModEntityDefinition& left, const ModEntityDefinition& right) {
+            return left.key < right.key;
+        });
+    if (definitions.size() > 32u) definitions.resize(32u);
+    modEntities_ = std::move(definitions);
+}
+
 void EntitySystem::SpawnInitial(const VoxelWorld& world) {
     if (initialized_) return;
     constexpr std::array<Vec3, 3> positions{{{5.0f, 0.0f, 5.0f}, {11.0f, 0.0f, 4.0f}, {13.0f, 0.0f, 12.0f}}};
@@ -537,11 +579,32 @@ void EntitySystem::SpawnInitial(const VoxelWorld& world) {
         entity.behaviorTimer = 2.0f + static_cast<float>(i) * 1.7f;
         entities_.push_back(entity);
     }
+    for (std::size_t i = 0; i < modEntities_.size() && entities_.size() < maxEntities_; ++i) {
+        const ModEntityDefinition& definition = modEntities_[i];
+        std::uint32_t spawnHash = world.Seed() ^ 0x4d46454eu ^
+            static_cast<std::uint32_t>(i * 0x9e3779b9u);
+        for (const unsigned char c : definition.key) {
+            spawnHash ^= static_cast<std::uint32_t>(c);
+            spawnHash *= 16777619u;
+        }
+        spawnHash ^= spawnHash >> 16u;
+        spawnHash *= 0x7feb352du;
+        spawnHash ^= spawnHash >> 15u;
+        const float roll = static_cast<float>(spawnHash & 0x00ffffffu) / 16777216.0f;
+        if (roll >= definition.spawnChance) continue;
+        const Vec3 anchor{
+            8.0f + static_cast<float>((spawnHash >> 8u) & 7u),
+            0.0f,
+            8.0f + static_cast<float>((spawnHash >> 16u) & 7u)
+        };
+        SpawnEntity(anchor, 7 + static_cast<int>(i), world);
+    }
     initialized_ = true;
 }
 
 bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world) {
-    if (entities_.size() >= maxEntities_ || kind < 0 || kind > 6) return false;
+    if (entities_.size() >= maxEntities_ || kind < 0 ||
+        (kind > 6 && static_cast<std::size_t>(kind - 7) >= modEntities_.size())) return false;
     const float index = static_cast<float>(entities_.size());
     const float angle = index * 2.39996323f;
     const float radius = spawnRadius_ + std::fmod(index, 3.0f) * 0.35f;
@@ -551,8 +614,14 @@ bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWo
     entity.position.y = static_cast<float>(world.GetSurfaceHeight(
         FloorToInt(entity.position.x), FloorToInt(entity.position.z))) + 1.0f;
     entity.phase = animationTime_ + index * 0.73f;
-    entity.speed = 0.12f + std::fmod(index, 4.0f) * 0.025f;
     entity.kind = kind;
+    if (kind > 6) {
+        const ModEntityDefinition& definition = modEntities_[static_cast<std::size_t>(kind - 7)];
+        entity.speed = definition.speed;
+        entity.behavior = definition.behavior;
+    } else {
+        entity.speed = 0.12f + std::fmod(index, 4.0f) * 0.025f;
+    }
     entity.behaviorTimer = 2.5f + std::fmod(index * 0.87f, 4.0f);
     entities_.push_back(entity);
     return true;
@@ -587,7 +656,13 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         const float towardX = player.position.x - entity.position.x;
         const float towardZ = player.position.z - entity.position.z;
         const float distanceSquared = towardX * towardX + towardZ * towardZ;
-        const bool passive = entity.kind != 4 && entity.kind != 5;
+        const ModEntityDefinition* customDefinition = nullptr;
+        if (entity.kind > 6) {
+            const std::size_t customIndex = static_cast<std::size_t>(entity.kind - 7);
+            if (customIndex < modEntities_.size()) customDefinition = &modEntities_[customIndex];
+        }
+        const bool passive = customDefinition != nullptr ? !customDefinition->hostile
+                                                         : (entity.kind != 4 && entity.kind != 5);
         const float fleeDistanceSquared = fleeRadius_ * fleeRadius_;
         const float alertDistanceSquared = alertRadius_ * alertRadius_;
         const bool closeForFlee = passive && distanceSquared < fleeDistanceSquared;
@@ -659,8 +734,31 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             }
             entity.phase = std::fmod(entity.phase + dt * speed * 7.0f, 4096.0f);
         } else if (entity.behavior == 2) {
-            // Eating animals hold position and keep a slow animation clock.
+            // Grazing creatures pause and keep a slow idle animation clock.
             entity.phase = std::fmod(entity.phase + dt * 0.55f, 4096.0f);
+        } else if (customDefinition != nullptr) {
+            // Custom creature kinds never cross the legacy Rust ABI enum. Their
+            // bounded wander behavior is evaluated directly by the native host.
+            entity.behaviorTimer -= dt;
+            if (entity.behaviorTimer <= 0.0f) {
+                entity.behaviorTimer = 1.2f +
+                    std::fmod(std::abs(std::sin(entity.phase * 1.17f)) * 4.0f, 3.8f);
+                entity.phase += 1.731f;
+            }
+            const float angle = entity.phase + std::sin(animationTime_ + entity.phase) * 0.18f;
+            const float step = std::min(entity.speed * speedMultiplier_ * dt * 0.45f, 0.08f);
+            const float nextX = entity.position.x + std::cos(angle) * step;
+            const float nextZ = entity.position.z + std::sin(angle) * step;
+            if (!world.IsSolid(FloorToInt(nextX), FloorToInt(entity.position.y + 0.25f),
+                               FloorToInt(nextZ))) {
+                entity.position.x = nextX;
+                entity.position.z = nextZ;
+                entity.position.y = static_cast<float>(world.GetSurfaceHeight(
+                    FloorToInt(nextX), FloorToInt(nextZ))) + 1.0f;
+            } else {
+                entity.phase += 1.731f;
+            }
+            entity.phase = std::fmod(entity.phase + dt * entity.speed * 1.8f, 4096.0f);
         } else {
             MfEntityState state{entity.position.x, entity.position.y, entity.position.z,
                                 entity.phase, std::clamp(entity.speed * speedMultiplier_ *
@@ -676,7 +774,11 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         if (ambientSpawnElapsed_ >= ambientSpawnInterval_) {
             ambientSpawnElapsed_ = std::fmod(ambientSpawnElapsed_, ambientSpawnInterval_);
             const std::size_t passiveCount = static_cast<std::size_t>(std::count_if(
-                entities_.begin(), entities_.end(), [](const Entity& entity) {
+                entities_.begin(), entities_.end(), [this](const Entity& entity) {
+                    if (entity.kind > 6) {
+                        const std::size_t index = static_cast<std::size_t>(entity.kind - 7);
+                        return index < modEntities_.size() && !modEntities_[index].hostile;
+                    }
                     return entity.kind != 4 && entity.kind != 5;
                 }));
             if (passiveCount < static_cast<std::size_t>(passiveEntityCap_)) {
@@ -697,9 +799,37 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
 
 void EntitySystem::AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum) const {
     for (const Entity& entity : entities_) {
-        if (frustum != nullptr && !frustum->IntersectsAabb(
-                entity.position.x-0.85f,entity.position.y-0.10f,entity.position.z-0.85f,
-                entity.position.x+0.85f,entity.position.y+2.15f,entity.position.z+0.85f)) continue;
+        if (frustum != nullptr) {
+            const bool custom = entity.kind > 6;
+            const float extent = custom ? 3.6f : 0.85f;
+            const float minY = custom ? -1.6f : -0.10f;
+            const float maxY = custom ? 5.2f : 2.15f;
+            if (!frustum->IntersectsAabb(
+                    entity.position.x - extent, entity.position.y + minY, entity.position.z - extent,
+                    entity.position.x + extent, entity.position.y + maxY, entity.position.z + extent))
+                continue;
+        }
+        if (entity.kind > 6) {
+            const std::size_t customIndex = static_cast<std::size_t>(entity.kind - 7);
+            if (customIndex >= modEntities_.size()) continue;
+            const ModEntityDefinition& definition = modEntities_[customIndex];
+            if (contactShadows_)
+                AppendContactShadow(output,
+                    {entity.position.x, entity.position.y - 0.98f, entity.position.z},
+                    0.62f, 0.46f, 0.78f);
+            const float bob = animationsEnabled_
+                ? std::sin(animationTime_ * 2.1f + entity.phase) * 0.035f : 0.0f;
+            const float yaw = animationsEnabled_
+                ? std::sin(animationTime_ * 0.7f + entity.phase) * 0.025f : 0.0f;
+            for (const ModEntityModelPart& part : definition.model) {
+                Vec3 center = part.center;
+                center.y += bob;
+                AppendEntityBoxAnimated(output, entity.position, center,
+                    part.halfExtents, part.color, part.center,
+                    {0.0f, yaw, 0.0f});
+            }
+            continue;
+        }
         MfEntityPose pose{};
         minefade_entity_compute_pose(entity.kind, entity.phase, animationTime_,
                                      static_cast<std::uint8_t>(entity.behavior), animationQuality_,

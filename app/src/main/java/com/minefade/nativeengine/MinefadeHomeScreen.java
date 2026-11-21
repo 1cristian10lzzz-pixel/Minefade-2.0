@@ -674,7 +674,12 @@ public final class MinefadeHomeScreen extends FrameLayout {
         enabled.setScaleX(0.78f);
         enabled.setScaleY(0.78f);
         enabled.setOnCheckedChangeListener((button, checked) -> {
-            modManager.setEnabled(mod, checked);
+            if (!modManager.setEnabled(mod, checked)) {
+                String reason = modManager.getLastValidationError();
+                android.widget.Toast.makeText(getContext(),
+                        reason.isEmpty() ? "No se pudo cambiar el estado del mod." : reason,
+                        android.widget.Toast.LENGTH_LONG).show();
+            }
             showModsPage();
         });
         bottom.addView(enabled);

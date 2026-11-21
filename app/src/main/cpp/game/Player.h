@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace minefade {
@@ -73,6 +74,21 @@ struct Entity {
     float behaviorTimer{0.0f};
 };
 
+struct ModEntityModelPart {
+    Vec3 center;
+    Vec3 halfExtents;
+    std::array<float, 3> color{{0.7f, 0.7f, 0.7f}};
+};
+
+struct ModEntityDefinition {
+    std::string key;
+    bool hostile{false};
+    float speed{0.2f};
+    float spawnChance{0.1f};
+    int behavior{0}; // 0 wander, 1 flee, 2 graze, 3 pursue
+    std::vector<ModEntityModelPart> model;
+};
+
 struct DroppedItem {
     Vec3 position;
     Vec3 velocity;
@@ -99,7 +115,9 @@ private:
 
 class EntitySystem {
 public:
+    void Reset();
     void SpawnInitial(const VoxelWorld& world);
+    void SetModEntities(std::vector<ModEntityDefinition> definitions);
     void Update(const VoxelWorld& world, const Player& player, float deltaSeconds);
     void AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum = nullptr) const;
     void SetContactShadows(bool enabled) { contactShadows_ = enabled; }
@@ -112,6 +130,7 @@ public:
     bool SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world);
 private:
     std::vector<Entity> entities_;
+    std::vector<ModEntityDefinition> modEntities_;
     bool initialized_{false};
     bool contactShadows_{true};
     std::uint8_t animationQuality_{2};

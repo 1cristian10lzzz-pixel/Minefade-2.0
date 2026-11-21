@@ -37,6 +37,36 @@ def test_lan_protocol_checks_bounds_and_cleans_up():
     assert "io.shutdownNow();" in LAN
 
 
+def test_lan_negotiates_enabled_mod_fingerprints_before_joining():
+    assert "private static final int PROTOCOL_VERSION = 3;" in LAN
+    assert 'service.setAttribute("mods_hash", sessionModsFingerprint);' in LAN
+    assert 'attributes.get("mods_hash")' in LAN
+    assert 'writer.write("HELLO|" + PROTOCOL_VERSION + "|" + playerName + "|" + sessionModsFingerprint);' in LAN
+    assert 'fields.length == 5' in LAN and 'sessionModsFingerprint.equals(fields[4])' in LAN
+    assert 'writer.write("ERROR|MODS")' in LAN
+    assert 'getActiveModsFingerprint()' in (JAVA / "ModManager.java").read_text(encoding="utf-8")
+    assert "The Java LAN transport verifies a SHA-256 fingerprint" in ENGINE
+    assert "modCompatibilityError_ = false; return;" in ENGINE
+
+
+def test_mod_dependencies_conflicts_and_cycles_are_validated():
+    MOD = (JAVA / "ModManager.java").read_text(encoding="utf-8")
+    assert 'manifest.optJSONArray("dependencies")' in MOD
+    assert 'manifest.optJSONArray("conflicts")' in MOD
+    assert "isValidVersionRequirement" in MOD
+    assert "activeModSetError()" in MOD
+    assert "hasDependencyCycle" in MOD
+    assert "writeAtomically(info.file, previous);" in MOD
+    assert "getLastValidationError" in MOD
+    assert "contentMetadataMatches" in MOD
+    assert "file.length() > 8192L" in MOD
+    assert "maximumValueLength = oneOf(key, \"requires\", \"conflicts\") ? 4096 : 512" in MOD
+    assert "String.join(" not in MOD  # minSdk 24 compatibility
+    assert "Verificando los mods instalados" in LAN
+    assert ("if (attributes == null) return null;" in LAN or
+            "attributes == null ? null : attributes.get" in LAN)
+
+
 def test_touch_layout_has_modes_and_hand_mirroring():
     assert '"control_mode"' in HOME
     assert "controlMode_ == 1" in RML and "controlMode_ == 2" in RML

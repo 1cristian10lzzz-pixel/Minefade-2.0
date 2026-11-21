@@ -119,6 +119,7 @@ public final class MainActivity extends Activity {
         engineReady = false;
         loadingOverlay = null;
         surfaceView = null;
+        if (soundEffects != null) soundEffects.loadModOverrides(null);
         gameContainer = null;
         fallbackOverlay = null;
         root.removeAllViews();
@@ -197,6 +198,7 @@ public final class MainActivity extends Activity {
         boolean allowCheats = world != null && world.allowCheats;
         boolean starterChest = world != null && world.starterChest;
         String modsPath = new java.io.File(getFilesDir(), "mods").getAbsolutePath();
+        soundEffects.loadModOverrides(modsPath);
         surfaceView = new MinefadeSurfaceView(this, soundEffects,
                 getResources().getDisplayMetrics().density,
                 multiplayer, requestedPlayerSlot, worldPath, modsPath, worldSeed,
