@@ -365,6 +365,30 @@ void VoxelWorld::SetModBiomes(std::vector<ModBiomeDefinition> biomes) {
     modBiomes_ = std::move(biomes);
 }
 
+void VoxelWorld::SetModStructures(std::vector<ModStructureDefinition> structures) {
+    structures.erase(std::remove_if(structures.begin(), structures.end(),
+        [](const ModStructureDefinition& structure) {
+            if (structure.key.empty() || structure.key.size() > 129u ||
+                !std::isfinite(structure.chancePerChunk) ||
+                structure.chancePerChunk <= 0.0f || structure.chancePerChunk > 1.0f ||
+                structure.blocks.empty() || structure.blocks.size() > 128u) return true;
+            return std::any_of(structure.blocks.begin(), structure.blocks.end(),
+                [](const ModStructureBlockPlacement& block) {
+                    return block.x < 0 || block.x >= kChunkSize ||
+                        block.z < 0 || block.z >= kChunkSize ||
+                        block.y < -16 || block.y > 48 ||
+                        GetBlockDefinition(block.block) == nullptr ||
+                        !HasBlockFlag(block.block, BlockPlaceable);
+                });
+        }), structures.end());
+    std::sort(structures.begin(), structures.end(),
+        [](const ModStructureDefinition& a, const ModStructureDefinition& b) {
+            return a.key < b.key;
+        });
+    if (structures.size() > 32u) structures.resize(32u);
+    modStructures_ = std::move(structures);
+}
+
 int VoxelWorld::TerrainHeight(int x,int z) const {
     const float fx=static_cast<float>(x),fz=static_cast<float>(z);
     const float continental=FractalNoise2D(fx*0.0019f+901.0f,fz*0.0019f+401.0f,4,0.56f,2.0f);
@@ -592,6 +616,40 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
             chunk.blocks[Index(9, altarY + 1, 8)] = BlockId::MossyCobblestone;
             if ((ruinHash & 2u) != 0u)
                 chunk.blocks[Index(8, altarY + 1, 7)] = BlockId::Stonebrick;
+        }
+    }
+
+
+    // Mod structures are deterministic, self-contained chunk templates. Their
+    // placement never depends on which neighboring chunk happened to load first.
+    if (!modStructures_.empty()) {
+        const int centerX = chunkX * kChunkSize + kChunkSize / 2;
+        const int centerZ = chunkZ * kChunkSize + kChunkSize / 2;
+        const Biome centerBiome = GetBiome(centerX, centerZ);
+        const bool drySurface = centerBiome != Biome::Ocean &&
+            centerBiome != Biome::River && centerBiome != Biome::Beach &&
+            centerBiome != Biome::Swamp && centerBiome != Biome::MangroveSwamp;
+        if (drySurface) {
+            const int baseY = TerrainHeight(centerX, centerZ);
+            for (const ModStructureDefinition& structure : modStructures_) {
+                std::uint32_t keyHash = 2166136261u;
+                for (const unsigned char c : structure.key) {
+                    keyHash ^= static_cast<std::uint32_t>(c);
+                    keyHash *= 16777619u;
+                }
+                const std::uint32_t placementHash = Hash(seed_ ^ keyHash ^
+                    (static_cast<std::uint32_t>(chunkX) * 0x9e3779b9u) ^
+                    (static_cast<std::uint32_t>(chunkZ) * 0x85ebca6bu) ^ 0x4d465354u);
+                const float chanceRoll = static_cast<float>(placementHash & 0x00ffffffu) /
+                                          16777216.0f;
+                if (chanceRoll >= structure.chancePerChunk) continue;
+                for (const ModStructureBlockPlacement& placement : structure.blocks) {
+                    const int y = baseY + static_cast<int>(placement.y);
+                    if (y < 1 || y >= kWorldHeight - 1) continue;
+                    chunk.blocks[Index(static_cast<int>(placement.x), y,
+                                       static_cast<int>(placement.z))] = placement.block;
+                }
+            }
         }
     }
 
