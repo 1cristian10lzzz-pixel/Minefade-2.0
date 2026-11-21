@@ -115,7 +115,12 @@ public final class ModManager {
                 if (info.contentPack) {
                     File root = info.file.getParentFile();
                     String expected = info.settings.get("hash");
-                    if (!verifyContentHash(root, expected)) return "";
+                    File manifestFile = new File(root, "manifest.json");
+                    JSONObject manifest = new JSONObject(new String(
+                            readAll(manifestFile, 1024 * 1024), StandardCharsets.UTF_8));
+                    validateContentManifest(root, manifest);
+                    if (!contentMetadataMatches(info, manifest) ||
+                            !verifyContentHash(root, expected)) return "";
                     identities.add("v2|" + info.id + "|" + info.version + "|" + expected);
                 } else {
                     identities.add("v1|" + info.id + "|" + info.version + "|" + sha256File(info.file));
@@ -732,6 +737,15 @@ public final class ModManager {
         } catch (Exception ignored) { return null; }
     }
 
+    private static boolean contentMetadataMatches(ModInfo info, JSONObject manifest) throws Exception {
+        return info.id.equals(manifest.getString("id")) &&
+                info.version.equals(manifest.getString("version")) &&
+                info.settings.getOrDefault("requires", "").equals(
+                        encodeDependencies(manifest.optJSONArray("dependencies"))) &&
+                info.settings.getOrDefault("conflicts", "").equals(
+                        encodeConflicts(manifest.optJSONArray("conflicts")));
+    }
+
     private static String encodeDependencies(JSONArray dependencies) throws Exception {
         if (dependencies == null) return "";
         ArrayList<String> encoded = new ArrayList<>();
@@ -879,6 +893,8 @@ public final class ModManager {
                 JSONObject manifest = new JSONObject(new String(
                         readAll(new File(root, "manifest.json"), 1024 * 1024), StandardCharsets.UTF_8));
                 validateContentManifest(root, manifest);
+                if (!contentMetadataMatches(mod, manifest))
+                    throw new IOException("Los metadatos internos no coinciden con manifest.json: " + mod.id);
                 ArrayList<String> lines = new ArrayList<>();
                 JSONArray blocks = manifest.optJSONArray("blocks");
                 if (blocks != null) for (int i = 0; i < blocks.length(); i++) {
