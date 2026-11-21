@@ -305,6 +305,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         private final SoundEffects soundEffects;
         private final float displayDensity;
         private final AssetManager assetManager;
+        private final ModManager modManager;
         private final boolean multiplayerMode;
         private final int playerSlot;
         private final String storagePath;
@@ -321,6 +322,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                        boolean allowCheats, boolean starterChest,
                        LanMultiplayerService multiplayer) {
             assetManager = context.getAssets();
+            modManager = new ModManager(context);
             this.soundEffects = soundEffects;
             this.displayDensity = displayDensity;
             this.multiplayerMode = multiplayerMode;
@@ -341,7 +343,9 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             GLES20.glClearColor(0.035f, 0.055f, 0.08f, 1.0f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
             try {
-                byte[] atlas = readBlockAtlas(assetManager);
+                ModManager.AtlasData modAtlas = modManager.buildModAtlas(
+                        readBlockAtlas(assetManager), ATLAS_WIDTH, ATLAS_HEIGHT);
+                byte[] atlas = modAtlas.pixels;
                 // Set mode and storage on the same GL thread as nativeInit/render.
                 NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
                 NativeBridge.nativeSetStoragePath(storagePath);
@@ -382,7 +386,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                         preferences.getInt("avatar_accesorios", 0)
                 };
                 NativeBridge.nativeSetAvatarAppearance(avatarChoices);
-                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT);
+                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, modAtlas.width, modAtlas.height);
                 if (!nativeReady) {
                     final String firstFailure = readNativeInitError();
                     // Retry once with a smaller workload only for resource-allocation failures.
@@ -394,7 +398,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                     if (retryable) {
                         Log.w(TAG, "Retrying with conservative graphics settings: " + firstFailure);
                         NativeBridge.nativeSetGraphicsOptions(0, 1, false, fieldOfView, false);
-                        nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT);
+                        nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, modAtlas.width, modAtlas.height);
                         if (nativeReady) {
                             preferences.edit().putInt("graphics_quality", 0)
                                     .putInt("render_distance", 0)
