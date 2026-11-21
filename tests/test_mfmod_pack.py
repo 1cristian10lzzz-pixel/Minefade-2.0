@@ -259,6 +259,62 @@ class ModPackTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "x fuera de rango"):
                 parse_mod(path)
 
+    def test_v2_zip_accepts_low_poly_custom_creature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "creature.mfmod"
+            creature = {
+                "id": "crystal_golem",
+                "name": "Gólem de cristal",
+                "hostile": True,
+                "speed": 0.34,
+                "spawnChance": 0.12,
+                "behavior": "pursue",
+                "model": [
+                    {"center": [0, 1.0, 0], "size": [0.65, 0.8, 0.45], "color": "#55CCFF"},
+                    {"center": [0, 2.0, 0], "size": [0.4, 0.35, 0.35], "color": "#B8EEFF"},
+                    {"center": [-0.45, 1.0, 0], "size": [0.18, 0.6, 0.2], "color": "#3288AA"},
+                    {"center": [0.45, 1.0, 0], "size": [0.18, 0.6, 0.2], "color": "#3288AA"}
+                ]
+            }
+            self.write_v2_zip(path, manifest_overrides={"entities": [creature]})
+            values = parse_mod(path)
+            self.assertEqual(values["id"], "ruby_pack")
+
+    def test_v2_zip_rejects_creature_model_outside_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-creature.mfmod"
+            creature = {
+                "id": "giant",
+                "name": "Giant",
+                "hostile": False,
+                "speed": 0.2,
+                "spawnChance": 0.1,
+                "behavior": "wander",
+                "model": [
+                    {"center": [4, 1, 0], "size": [0.5, 0.5, 0.5], "color": "#FFFFFF"}
+                ]
+            }
+            self.write_v2_zip(path, manifest_overrides={"entities": [creature]})
+            with self.assertRaisesRegex(ValueError, "centro de pieza"):
+                parse_mod(path)
+
+    def test_v2_zip_rejects_hostile_grazer_behavior(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-behavior.mfmod"
+            creature = {
+                "id": "hostile_cow",
+                "name": "Hostile Cow",
+                "hostile": True,
+                "speed": 0.2,
+                "behavior": "graze",
+                "model": [
+                    {"center": [0, 1, 0], "size": [0.5, 0.5, 0.5], "color": "#FFFFFF"}
+                ]
+            }
+            self.write_v2_zip(path, manifest_overrides={"entities": [creature]})
+            with self.assertRaisesRegex(ValueError, "comportamiento"):
+                parse_mod(path)
+
     def test_v2_zip_rejects_duplicate_resource_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "duplicate.mfmod"
