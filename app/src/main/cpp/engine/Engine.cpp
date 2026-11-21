@@ -622,8 +622,11 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     // Load content registries before reading a save: stored numeric block IDs may
     // refer to mod resources and must never be mistaken for air during deserialisation.
     LoadEnabledMods();
-    if (modCompatibilityError_)
+    if (modCompatibilityError_) {
+        if (multiplayerMode_)
+            return failInitialisation("El multijugador LAN todavía no negocia los hashes de los mods. Desactiva los mods de contenido para entrar a esta partida.");
         return failInitialisation("Este mundo necesita los mismos mods de contenido y versiones con los que fue guardado. Activa los mods requeridos o desactívalos para abrir otro mundo.");
+    }
 
     starterChestOpen_ = false;
     starterChestContents_ = {{1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u}};
@@ -2597,7 +2600,8 @@ void Engine::LoadEnabledMods() {
     // Resolve recipes only after every enabled pack has registered its items and blocks.
     for (const std::string& line : pendingRecipeLines) {
         const auto fields = splitFields(line, '|');
-        if (fields.size() < 7u || fields.size() > 15u || fields[0].rfind("mod:", 0u) != 0u)
+        if (fields.size() < 7u || fields.size() > 15u || (fields.size() - 5u) % 2u != 0u ||
+            fields[0].rfind("mod:", 0u) != 0u)
             continue;
         const BlockDefinition* output = FindBlockDefinition(fields[2]);
         if (output == nullptr) continue;
@@ -2610,8 +2614,8 @@ void Engine::LoadEnabledMods() {
         recipe.outputAmount = static_cast<std::uint16_t>(amount);
         recipe.needsTable = fields[4] == "true";
         bool valid = (fields[4] == "true" || fields[4] == "false") &&
-                     !recipe.id.empty() && recipe.id.size() <= 128u &&
-                     !recipe.label.empty() && recipe.label.size() <= 96u;
+                     !recipe.id.empty() && recipe.id.size() <= 129u &&
+                     !recipe.label.empty() && recipe.label.size() <= 384u;
         for (std::size_t i = 5u; valid && i + 1u < fields.size(); i += 2u) {
             const BlockDefinition* ingredient = FindBlockDefinition(fields[i]);
             unsigned long ingredientAmount = 0u;
@@ -2636,7 +2640,8 @@ void Engine::LoadEnabledMods() {
 
 void Engine::ValidateLoadedWorldMods() {
     modCompatibilityError_ = false;
-    if (multiplayerMode_ || storagePath_.empty()) return;
+    if (multiplayerMode_) { modCompatibilityError_ = !activeContentMods_.empty(); return; }
+    if (storagePath_.empty()) return;
     std::error_code error;
     const bool saveExists = std::filesystem::exists(storagePath_, error) && !error;
     if (!saveExists) return;
