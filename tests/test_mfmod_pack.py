@@ -14,6 +14,23 @@ class ModPackTests(unittest.TestCase):
         self.assertFalse((ROOT / "mods" / "Minefade_Ultimate_Core_0.1.mfmod").exists())
         self.assertFalse((ROOT / "app/src/main/assets/mods/minefade_ultimate_core.mfmod").exists())
 
+    def test_mod_icon_metadata_is_supported(self):
+        content = (
+            "id=icon_mod\\nname=Icon\\nversion=1.0\\nenabled=false\\n"
+            "icon=creature\\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "icon.mfmod"
+            path.write_text(content, encoding="utf-8")
+            values = parse_mod(path)
+            self.assertEqual(values["icon"], "creature")
+
+    def test_invalid_mod_icon_is_rejected(self):
+        self.assert_invalid(
+            "id=icon_mod\\nname=Icon\\nversion=1.0\\nenabled=false\\nicon=../../evil\\n",
+            "icon inválido",
+        )
+
     def test_unknown_setting_is_rejected(self):
         self.assert_invalid(
             "id=test_mod\nname=Test\nversion=1.0\nenabled=false\nshader=ultra\n",
