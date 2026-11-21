@@ -333,14 +333,14 @@ public final class LanMultiplayerService implements Closeable {
                             Log.w(TAG, "Could not resolve " + info.getServiceName() + ": " + errorCode);
                         }
                         @Override public void onServiceResolved(NsdServiceInfo info) {
-                            byte[] advertisedProtocol = info.getAttributes().get("protocol");
+                            Map<String, byte[]> attributes = info.getAttributes();
+                            byte[] advertisedProtocol = attributes == null ? null : attributes.get("protocol");
                             String protocol = advertisedProtocol == null ? "" :
                                     new String(advertisedProtocol, StandardCharsets.UTF_8);
                             if (!String.valueOf(PROTOCOL_VERSION).equals(protocol)) {
                                 Log.i(TAG, "Ignoring incompatible LAN protocol " + protocol);
                                 return;
                             }
-                            Map<String, byte[]> attributes = info.getAttributes();
                             byte[] advertisedMods = attributes == null ? null : attributes.get("mods_hash");
                             String remoteFingerprint = advertisedMods == null ? "" :
                                     new String(advertisedMods, StandardCharsets.UTF_8);
