@@ -619,6 +619,15 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         return failInitialisation(std::string("Error al reservar buffers OpenGL: ") + code);
     }
 
+    // Load content registries before reading a save: stored numeric block IDs may
+    // refer to mod resources and must never be mistaken for air during deserialisation.
+    LoadEnabledMods();
+    if (modCompatibilityError_) {
+        if (multiplayerMode_)
+            return failInitialisation("El multijugador LAN todavía no negocia los hashes de los mods. Desactiva los mods de contenido para entrar a esta partida.");
+        return failInitialisation("Este mundo necesita los mismos mods de contenido y versiones con los que fue guardado. Activa los mods requeridos o desactívalos para abrir otro mundo.");
+    }
+
     starterChestOpen_ = false;
     starterChestContents_ = {{1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u}};
     bool loadedExistingWorld = false;
@@ -646,11 +655,15 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 else ENGINE_LOGE("Could not preserve unreadable world: %s", backupError.message().c_str());
             }
             world_ = VoxelWorld(requestedWorldSeed_);
+            world_.SetModBiomes(modBiomes_);
+        world_.SetModStructures(modStructures_);
             world_.GenerateAround(8, 8, 0);
             player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
         }
     } else {
         world_ = VoxelWorld(requestedWorldSeed_);
+        world_.SetModBiomes(modBiomes_);
+        world_.SetModStructures(modStructures_);
         world_.GenerateAround(8, 8, 0);
         player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
     }
@@ -709,7 +722,6 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     footstepElapsed_ = 0.0f;
     lastChunkX_ = static_cast<int>(std::floor(player_.position.x / 16.0f));
     lastChunkZ_ = static_cast<int>(std::floor(player_.position.z / 16.0f));
-    LoadEnabledMods();
     player_.SetSpeedMultiplier(modPlayerSpeed_);
     player_.SetJumpMultiplier(modPlayerJump_);
     player_.crouchSpeedMultiplier = modCrouchSpeed_;
@@ -782,6 +794,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
 
 void Engine::Shutdown() {
     if (ready_) SaveWorld();
+    entities_.Reset();
     ui_.Shutdown();
     worldRenderer_.Shutdown();
     if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
@@ -1465,7 +1478,8 @@ void Engine::HandleUiAction(const std::string& action) {
         try {
             const int itemId = std::stoi(action.substr(16));
             if (itemId > 0 && itemId < static_cast<int>(GetBlockDefinitionCount()) &&
-                HasBlockFlag(static_cast<BlockId>(itemId), BlockPlaceable)) {
+                (HasBlockFlag(static_cast<BlockId>(itemId), BlockPlaceable) ||
+                 HasBlockFlag(static_cast<BlockId>(itemId), BlockInventoryOnly))) {
                 inventory_.counts[inventory_.selectedSlot] =
                     static_cast<std::uint32_t>(itemId) * 1000u + 64u;
                 RefreshInventoryUi();
@@ -1521,6 +1535,45 @@ bool Engine::HasNearbyCraftingTable() const {
 }
 
 bool Engine::CraftRecipe(const std::string& recipe) {
+    if (recipe.rfind("mod:", 0u) == 0u) {
+        const std::string id = recipe.substr(4u);
+        const auto found = std::find_if(modRecipes_.begin(), modRecipes_.end(),
+            [&id](const ModRecipe& candidate) { return candidate.id == id; });
+        if (found == modRecipes_.end()) return false;
+        if (!inventory_.CanAdd(found->outputId, found->outputAmount)) {
+            ui_.SetChatMessage("No hay espacio suficiente para el objeto del mod.");
+            return false;
+        }
+        if (found->needsTable && !HasNearbyCraftingTable()) {
+            ui_.SetChatMessage("Necesitas una mesa de trabajo cerca para esta receta.");
+            return false;
+        }
+        for (std::size_t i = 0u; i < found->ingredientCount; ++i) {
+            const auto& ingredient = found->ingredients[i];
+            if (inventory_.CountItem(ingredient.first) < ingredient.second) {
+                ui_.SetChatMessage("Faltan materiales para fabricar este objeto.");
+                return false;
+            }
+        }
+        for (std::size_t i = 0u; i < found->ingredientCount; ++i) {
+            const auto& ingredient = found->ingredients[i];
+            if (!inventory_.ConsumeItem(ingredient.first, ingredient.second)) {
+                ui_.SetChatMessage("No se pudo completar la receta del mod.");
+                RefreshInventoryUi();
+                return false;
+            }
+        }
+        if (!inventory_.Add(found->outputId, found->outputAmount)) {
+            ui_.SetChatMessage("No se pudo guardar el objeto fabricado.");
+            RefreshInventoryUi();
+            return false;
+        }
+        const BlockDefinition* output = GetBlockDefinition(static_cast<BlockId>(found->outputId));
+        ui_.SetChatMessage(output != nullptr ? std::string("Fabricado: ") + output->nameEs
+                                             : "Objeto del mod fabricado.");
+        RefreshInventoryUi();
+        return true;
+    }
     struct Ingredient { std::uint16_t id; std::uint16_t amount; };
     std::array<Ingredient, 3> ingredients{};
     std::size_t ingredientCount = 0u;
@@ -1933,6 +1986,19 @@ void Engine::UpdateMining(float deltaSeconds) {
 void Engine::RefreshInventoryUi() {
     std::string markup;
     markup.reserve(gameMode_ == 1 ? 42000u : 2400u);
+    const auto escapeMarkup = [](std::string_view input) {
+        std::string output;
+        output.reserve(input.size());
+        for (const char c : input) {
+            if (c == '&') output += "&amp;";
+            else if (c == '<') output += "&lt;";
+            else if (c == '>') output += "&gt;";
+            else if (c == '"') output += "&quot;";
+            else if (c == '\'') output += "&#39;";
+            else output.push_back(c);
+        }
+        return output;
+    };
     for(std::size_t i=0;i<inventory_.counts.size();++i) {
         const std::uint32_t encoded=inventory_.counts[i];
         const std::uint16_t itemId=static_cast<std::uint16_t>(encoded/1000u);
@@ -1947,7 +2013,7 @@ void Engine::RefreshInventoryUi() {
             icon="<span class='inventory-icon empty-icon'>—</span>";
         }
         markup+="<button class='inventory-row' id='inventory-slot-"+std::to_string(i)+"'>"+icon+"<span>";
-        markup+=name;
+        markup+=escapeMarkup(name);
         if(quantity>0u)markup+=" × "+std::to_string(quantity);
         markup+="</span></button>";
 
@@ -1965,9 +2031,10 @@ void Engine::RefreshInventoryUi() {
         for (std::size_t id = 1; id < GetBlockDefinitionCount(); ++id) {
             const auto blockId = static_cast<BlockId>(id);
             const BlockDefinition* definition = GetBlockDefinition(blockId);
-            if (definition == nullptr || !HasBlockFlag(blockId, BlockPlaceable)) continue;
+            if (definition == nullptr || (!HasBlockFlag(blockId, BlockPlaceable) &&
+                !HasBlockFlag(blockId, BlockInventoryOnly))) continue;
             markup += "<div class='inventory-row creative-row'><img class='inventory-icon' src='minefade://block/"
-                + std::to_string(id) + "'/><span class='creative-name'>" + definition->nameEs
+                + std::to_string(id) + "'/><span class='creative-name'>" + escapeMarkup(definition->nameEs)
                 + "</span><button id='creative-select-" + std::to_string(id)
                 + "' class='creative-add'>USAR</button></div>";
         }
@@ -1984,7 +2051,7 @@ void Engine::RefreshInventoryUi() {
         const BlockDefinition* item = GetBlockDefinition(static_cast<BlockId>(id));
         if (item == nullptr) continue;
         materialMarkup += "<div class='material-row'><img class='inventory-icon' src='minefade://block/" +
-            std::to_string(id) + "'/><span>" + std::string(item->nameEs) + " × " +
+            std::to_string(id) + "'/><span>" + escapeMarkup(item->nameEs) + " × " +
             std::to_string(quantity) + "</span></div>";
     }
     ui_.SetInventoryCatalogContents(materialMarkup);
@@ -2005,7 +2072,7 @@ void Engine::RefreshInventoryUi() {
         GetBlockDefinition(static_cast<BlockId>(selectedId));
     if (selectedDefinition != nullptr && selectedId > 0u) {
         ui_.SetSelectedItem("<img src='minefade://block/" + std::to_string(selectedId) +
-            "'/><span>" + selectedDefinition->nameEs + "</span>");
+            "'/><span>" + escapeMarkup(selectedDefinition->nameEs) + "</span>");
     } else {
         ui_.SetSelectedItem({});
     }
@@ -2044,6 +2111,21 @@ void Engine::RefreshCraftingUi() {
             addRecipe(std::string(tier.first) + "_" + item.first, label);
         }
     }
+    const auto escapeLabel = [](const std::string& input) {
+        std::string output;
+        output.reserve(input.size());
+        for (const char c : input) {
+            if (c == '&') output += "&amp;";
+            else if (c == '<') output += "&lt;";
+            else if (c == '>') output += "&gt;";
+            else if (c == '"') output += "&quot;";
+            else if (c == '\'') output += "&#39;";
+            else output.push_back(c);
+        }
+        return output;
+    };
+    for (const ModRecipe& recipe : modRecipes_)
+        addRecipe("mod:" + recipe.id, escapeLabel(recipe.label));
     ui_.SetCraftingContents(markup);
 }
 
@@ -2061,6 +2143,27 @@ void Engine::SaveWorld() {
             ENGINE_LOGE("Failed to save world to %s", storagePath_.c_str());
         } else {
             ENGINE_LOGI("World saved to private app storage");
+            if (!multiplayerMode_) {
+                const std::string modPath = storagePath_ + ".mfmods";
+                const std::string modTemp = modPath + ".tmp";
+                std::ofstream modFile(modTemp, std::ios::binary | std::ios::trunc);
+                if (modFile) {
+                    for (const std::string& mod : activeContentMods_) modFile << mod << '\n';
+                    modFile.flush();
+                    modFile.close();
+                    std::error_code modError;
+                    std::filesystem::rename(modTemp, modPath, modError);
+                    if (modError) {
+                        std::filesystem::remove(modPath, modError);
+                        modError.clear();
+                        std::filesystem::rename(modTemp, modPath, modError);
+                    }
+                    if (modError) {
+                        std::filesystem::remove(modTemp);
+                        ENGINE_LOGE("Failed to save content-mod manifest: %s", modError.message().c_str());
+                    }
+                }
+            }
             {
                 const std::string gearPath = storagePath_ + ".armor";
                 const std::string gearTemp = gearPath + ".tmp";
@@ -2158,6 +2261,14 @@ void Engine::SetModsDirectory(std::string path) {
 }
 
 void Engine::LoadEnabledMods() {
+    ClearModBlockDefinitions();
+    modRecipes_.clear();
+    modBiomes_.clear();
+    modStructures_.clear();
+    modEntities_.clear();
+    entities_.SetModEntities({});
+    activeContentMods_.clear();
+    modCompatibilityError_ = false;
     modSheepSpawns_ = modCowSpawns_ = modBirdSpawns_ = modPigSpawns_ = 0;
     modRabbitSpawns_ = modZombieSpawns_ = modSkeletonSpawns_ = 0;
     modPlayerSpeed_ = 1.0f;
@@ -2178,10 +2289,10 @@ void Engine::LoadEnabledMods() {
     modSpawnInterval_ = 0.0f;
     modSpawnDistance_ = 18.0f;
     modPassiveEntityCap_ = 24;
-    if (modsDirectory_.empty()) return;
+    if (modsDirectory_.empty()) { ValidateLoadedWorldMods(); return; }
 
     std::error_code error;
-    if (!std::filesystem::is_directory(modsDirectory_, error) || error) return;
+    if (!std::filesystem::is_directory(modsDirectory_, error) || error) { ValidateLoadedWorldMods(); return; }
 
     std::vector<std::filesystem::path> packs;
     for (const auto& entry : std::filesystem::directory_iterator(modsDirectory_, error)) {
@@ -2398,7 +2509,361 @@ void Engine::LoadEnabledMods() {
             hasExplicitPassiveCap = true;
         }
     }
+    // Content packs are directories imported from a validated .mfmod ZIP (format v2).
+    // Keep them sorted so the generated atlas tile order matches the numeric registry order.
+    std::vector<std::filesystem::path> contentPacks;
+    error.clear();
+    for (const auto& entry : std::filesystem::directory_iterator(modsDirectory_, error)) {
+        if (error) break;
+        if (entry.is_directory()) contentPacks.push_back(entry.path());
+    }
+    std::sort(contentPacks.begin(), contentPacks.end());
+    std::vector<std::string> pendingRecipeLines;
+    std::vector<std::string> pendingBiomeLines;
+    std::vector<std::string> pendingStructureLines;
+
+    const auto splitFields = [](const std::string& line, char delimiter) {
+        std::vector<std::string> fields;
+        std::istringstream input(line);
+        std::string field;
+        while (std::getline(input, field, delimiter)) fields.push_back(field);
+        return fields;
+    };
+    const auto parseUnsigned = [](const std::string& text, unsigned long maximum,
+                                  unsigned long& output) {
+        try {
+            std::size_t consumed = 0u;
+            const unsigned long value = std::stoul(text, &consumed, 10);
+            if (consumed != text.size() || value > maximum) return false;
+            output = value;
+            return true;
+        } catch (...) { return false; }
+    };
+
+    for (const auto& directory : contentPacks) {
+        const auto manifestPath = directory / "manifest.ini";
+        std::ifstream manifest(manifestPath, std::ios::binary);
+        if (!manifest) continue;
+        bool enabled = false;
+        std::string packId;
+        std::string packVersion;
+        std::string packHash;
+        std::string metaLine;
+        std::size_t metaLines = 0u;
+        while (std::getline(manifest, metaLine) && ++metaLines <= 16u) {
+            const std::size_t equals = metaLine.find('=');
+            if (equals == std::string::npos) continue;
+            const std::string key = metaLine.substr(0u, equals);
+            const std::string value = metaLine.substr(equals + 1u);
+            if (key == "enabled" && value == "true") enabled = true;
+            else if (key == "id") packId = value;
+            else if (key == "version") packVersion = value;
+            else if (key == "hash") packHash = value;
+        }
+        if (!enabled) continue;
+        const bool validPackHash = packHash.size() == 64u &&
+            std::all_of(packHash.begin(), packHash.end(), [](unsigned char c) {
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+            });
+        if (packId.empty() || packVersion.empty() || !validPackHash) continue;
+        activeContentMods_.push_back(packId + "@" + packVersion + "#" + packHash);
+
+        std::ifstream blocksFile(directory / "blocks.mfdata", std::ios::binary);
+        std::string blockLine;
+        std::size_t blockLines = 0u;
+        while (blocksFile && std::getline(blocksFile, blockLine) && ++blockLines <= 256u) {
+            if (blockLine.empty() || blockLine.size() > 768u) continue;
+            const auto fields = splitFields(blockLine, '|');
+            if (fields.size() != 12u) continue;
+            unsigned long top = 0u, side = 0u, bottom = 0u, stack = 0u, light = 0u, flags = 0u;
+            float hardness = 0.0f;
+            try {
+                std::size_t consumed = 0u;
+                hardness = std::stof(fields[2], &consumed);
+                if (consumed != fields[2].size() || !std::isfinite(hardness) ||
+                    !parseUnsigned(fields[3], 65535u, top) ||
+                    !parseUnsigned(fields[4], 65535u, side) ||
+                    !parseUnsigned(fields[5], 65535u, bottom) ||
+                    !parseUnsigned(fields[7], 64u, stack) ||
+                    !parseUnsigned(fields[8], 15u, light) ||
+                    !parseUnsigned(fields[9], 65535u, flags)) continue;
+            } catch (...) { continue; }
+
+            BlockShape shape = BlockShape::Cube;
+            if (fields[10] == "none") shape = BlockShape::None;
+            else if (fields[10] == "slab") shape = BlockShape::Slab;
+            else if (fields[10] == "stairs") shape = BlockShape::Stairs;
+            else if (fields[10] == "cross_plant") shape = BlockShape::CrossPlant;
+            else if (fields[10] == "thin") shape = BlockShape::Thin;
+            else if (fields[10] == "pane") shape = BlockShape::Pane;
+            else if (fields[10] == "fence") shape = BlockShape::Fence;
+            else if (fields[10] == "door") shape = BlockShape::Door;
+            else if (fields[10] == "trapdoor") shape = BlockShape::Trapdoor;
+            else if (fields[10] == "fluid") shape = BlockShape::Fluid;
+            else if (fields[10] == "scaffolding") shape = BlockShape::Scaffolding;
+            else if (fields[10] != "cube") continue;
+
+            BlockTool tool = BlockTool::None;
+            if (fields[11] == "pickaxe") tool = BlockTool::Pickaxe;
+            else if (fields[11] == "axe") tool = BlockTool::Axe;
+            else if (fields[11] == "shovel") tool = BlockTool::Shovel;
+            else if (fields[11] == "shears") tool = BlockTool::Shears;
+            else if (fields[11] != "none") continue;
+
+            RegisterModBlockDefinition(fields[0], fields[1], fields[6],
+                static_cast<std::uint16_t>(top), static_cast<std::uint16_t>(side),
+                static_cast<std::uint16_t>(bottom), hardness,
+                static_cast<std::uint8_t>(stack), static_cast<std::uint8_t>(light),
+                static_cast<std::uint16_t>(flags), shape, tool);
+        }
+
+        std::ifstream recipesFile(directory / "recipes.mfdata", std::ios::binary);
+        std::string recipeLine;
+        std::size_t recipeLines = 0u;
+        while (recipesFile && std::getline(recipesFile, recipeLine) && ++recipeLines <= 256u) {
+            if (!recipeLine.empty() && recipeLine.size() <= 1024u)
+                pendingRecipeLines.push_back(recipeLine);
+        }
+
+        std::ifstream biomesFile(directory / "biomes.mfdata", std::ios::binary);
+        std::string biomeLine;
+        std::size_t biomeLines = 0u;
+        while (biomesFile && std::getline(biomesFile, biomeLine) && ++biomeLines <= 64u) {
+            if (!biomeLine.empty() && biomeLine.size() <= 512u)
+                pendingBiomeLines.push_back(biomeLine);
+        }
+
+        std::ifstream structuresFile(directory / "structures.mfdata", std::ios::binary);
+        std::string structureLine;
+        std::size_t structureLines = 0u;
+        while (structuresFile && std::getline(structuresFile, structureLine) && ++structureLines <= 16u) {
+            if (!structureLine.empty() && structureLine.size() <= 32768u &&
+                pendingStructureLines.size() < 32u)
+                pendingStructureLines.push_back(structureLine);
+        }
+
+        std::ifstream entitiesFile(directory / "entities.mfdata", std::ios::binary);
+        std::string entityLine;
+        std::size_t entityLines = 0u;
+        while (entitiesFile && std::getline(entitiesFile, entityLine) &&
+               ++entityLines <= 16u && modEntities_.size() < 32u) {
+            if (entityLine.empty() || entityLine.size() > 8192u) continue;
+            const auto fields = splitFields(entityLine, '|');
+            if (fields.size() != 6u || fields[0].empty() ||
+                (fields[1] != "true" && fields[1] != "false")) continue;
+            ModEntityDefinition definition;
+            definition.key = fields[0];
+            definition.hostile = fields[1] == "true";
+            if (!parseFiniteNumber(fields[2], definition.speed) ||
+                !parseFiniteNumber(fields[3], definition.spawnChance) ||
+                definition.speed < 0.05f || definition.speed > 2.0f ||
+                definition.spawnChance < 0.0f || definition.spawnChance > 1.0f)
+                continue;
+            if (fields[4] == "wander") definition.behavior = 0;
+            else if (fields[4] == "flee") definition.behavior = 1;
+            else if (fields[4] == "graze") definition.behavior = 2;
+            else if (fields[4] == "pursue") definition.behavior = 3;
+            else continue;
+            if ((definition.hostile && definition.behavior == 2) ||
+                (!definition.hostile && definition.behavior == 3)) continue;
+            const auto parts = splitFields(fields[5], ';');
+            if (parts.empty() || parts.size() > 24u) continue;
+            bool valid = true;
+            for (const std::string& partText : parts) {
+                const auto part = splitFields(partText, ',');
+                if (part.size() != 7u || part[6].size() != 7u || part[6][0] != '#') {
+                    valid = false;
+                    break;
+                }
+                ModEntityModelPart modelPart;
+                float* values[] = {
+                    &modelPart.center.x, &modelPart.center.y, &modelPart.center.z,
+                    &modelPart.halfExtents.x, &modelPart.halfExtents.y, &modelPart.halfExtents.z
+                };
+                for (std::size_t k = 0u; k < 6u; ++k)
+                    if (!parseFiniteNumber(part[k], *values[k])) valid = false;
+                if (!valid) break;
+                try {
+                    std::size_t consumed = 0u;
+                    const unsigned long rgb = std::stoul(part[6].substr(1u), &consumed, 16);
+                    if (consumed != 6u || rgb > 0xFFFFFFu) { valid = false; break; }
+                    modelPart.color = {
+                        static_cast<float>((rgb >> 16u) & 0xffu) / 255.0f,
+                        static_cast<float>((rgb >> 8u) & 0xffu) / 255.0f,
+                        static_cast<float>(rgb & 0xffu) / 255.0f
+                    };
+                } catch (...) { valid = false; break; }
+                definition.model.push_back(modelPart);
+            }
+            if (valid && !definition.model.empty())
+                modEntities_.push_back(std::move(definition));
+        }
+    }
+
+    // Resolve cross-pack biome and structure block references only after every
+    // enabled package has registered all of its blocks.
+    for (const std::string& line : pendingBiomeLines) {
+        const auto fields = splitFields(line, '|');
+        if (fields.size() != 11u) continue;
+        float minTemp = 0.0f, maxTemp = 0.0f, minHumidity = 0.0f, maxHumidity = 0.0f;
+        float minContinental = 0.0f, maxContinental = 0.0f;
+        if (!parseFiniteNumber(fields[1], minTemp) || !parseFiniteNumber(fields[2], maxTemp) ||
+            !parseFiniteNumber(fields[3], minHumidity) || !parseFiniteNumber(fields[4], maxHumidity) ||
+            !parseFiniteNumber(fields[5], minContinental) || !parseFiniteNumber(fields[6], maxContinental) ||
+            minTemp < -1.0f || maxTemp > 1.0f || minTemp > maxTemp ||
+            minHumidity < -1.0f || maxHumidity > 1.0f || minHumidity > maxHumidity ||
+            minContinental < -1.0f || maxContinental > 1.0f || minContinental > maxContinental)
+            continue;
+        const BlockDefinition* surface = FindBlockDefinition(fields[7]);
+        const BlockDefinition* filler = FindBlockDefinition(fields[8]);
+        if (surface == nullptr || filler == nullptr ||
+            (surface->flags & BlockPlaceable) == 0u || (filler->flags & BlockPlaceable) == 0u)
+            continue;
+        try {
+            std::size_t priorityUsed = 0u, offsetUsed = 0u;
+            const int priority = std::stoi(fields[9], &priorityUsed);
+            const int surfaceOffset = std::stoi(fields[10], &offsetUsed);
+            if (priorityUsed != fields[9].size() || offsetUsed != fields[10].size() ||
+                priority < -100 || priority > 100 || surfaceOffset < -16 || surfaceOffset > 16)
+                continue;
+            ModBiomeDefinition biome;
+            biome.key = fields[0];
+            biome.minTemperature = minTemp;
+            biome.maxTemperature = maxTemp;
+            biome.minHumidity = minHumidity;
+            biome.maxHumidity = maxHumidity;
+            biome.minContinental = minContinental;
+            biome.maxContinental = maxContinental;
+            biome.surfaceBlock = surface->id;
+            biome.fillerBlock = filler->id;
+            biome.priority = priority;
+            biome.surfaceOffset = surfaceOffset;
+            modBiomes_.push_back(std::move(biome));
+        } catch (...) { continue; }
+    }
+
+    for (const std::string& line : pendingStructureLines) {
+        const auto fields = splitFields(line, '|');
+        if (fields.size() != 3u || fields[0].empty() || modStructures_.size() >= 32u) continue;
+        float chance = 0.0f;
+        if (!parseFiniteNumber(fields[1], chance) || chance <= 0.0f || chance > 1.0f)
+            continue;
+        const auto placements = splitFields(fields[2], ';');
+        if (placements.empty() || placements.size() > 128u) continue;
+        ModStructureDefinition structure;
+        structure.key = fields[0];
+        structure.chancePerChunk = chance;
+        bool valid = true;
+        for (const std::string& placementText : placements) {
+            const auto parts = splitFields(placementText, ',');
+            if (parts.size() != 4u) { valid = false; break; }
+            try {
+                std::size_t usedX = 0u, usedY = 0u, usedZ = 0u;
+                const int x = std::stoi(parts[0], &usedX);
+                const int y = std::stoi(parts[1], &usedY);
+                const int z = std::stoi(parts[2], &usedZ);
+                if (usedX != parts[0].size() || usedY != parts[1].size() ||
+                    usedZ != parts[2].size() || x < 0 || x >= VoxelWorld::kChunkSize ||
+                    z < 0 || z >= VoxelWorld::kChunkSize || y < -16 || y > 48) {
+                    valid = false;
+                    break;
+                }
+                const BlockDefinition* block = FindBlockDefinition(parts[3]);
+                if (block == nullptr || (block->flags & BlockPlaceable) == 0u) {
+                    valid = false;
+                    break;
+                }
+                structure.blocks.push_back({
+                    static_cast<std::int8_t>(x), static_cast<std::int8_t>(y),
+                    static_cast<std::int8_t>(z), block->id
+                });
+            } catch (...) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid && !structure.blocks.empty())
+            modStructures_.push_back(std::move(structure));
+    }
+
+    std::sort(activeContentMods_.begin(), activeContentMods_.end());
+    world_.SetModBiomes(modBiomes_);
+    world_.SetModStructures(modStructures_);
+    entities_.SetModEntities(modEntities_);
+
+    // Resolve recipes only after every enabled pack has registered its items and blocks.
+    for (const std::string& line : pendingRecipeLines) {
+        const auto fields = splitFields(line, '|');
+        if (fields.size() < 7u || fields.size() > 15u || (fields.size() - 5u) % 2u != 0u ||
+            fields[0].rfind("mod:", 0u) != 0u)
+            continue;
+        const BlockDefinition* output = FindBlockDefinition(fields[2]);
+        if (output == nullptr) continue;
+        unsigned long amount = 0u;
+        if (!parseUnsigned(fields[3], 64u, amount) || amount == 0u) continue;
+        ModRecipe recipe;
+        recipe.id = fields[0].substr(4u);
+        recipe.label = fields[1];
+        recipe.outputId = static_cast<std::uint16_t>(output->id);
+        recipe.outputAmount = static_cast<std::uint16_t>(amount);
+        recipe.needsTable = fields[4] == "true";
+        bool valid = (fields[4] == "true" || fields[4] == "false") &&
+                     !recipe.id.empty() && recipe.id.size() <= 129u &&
+                     !recipe.label.empty() && recipe.label.size() <= 384u;
+        for (std::size_t i = 5u; valid && i + 1u < fields.size(); i += 2u) {
+            const BlockDefinition* ingredient = FindBlockDefinition(fields[i]);
+            unsigned long ingredientAmount = 0u;
+            if (ingredient == nullptr || !parseUnsigned(fields[i + 1u], 64u, ingredientAmount) ||
+                ingredientAmount == 0u || recipe.ingredientCount >= recipe.ingredients.size()) {
+                valid = false;
+                break;
+            }
+            recipe.ingredients[recipe.ingredientCount++] = {
+                static_cast<std::uint16_t>(ingredient->id),
+                static_cast<std::uint16_t>(ingredientAmount)
+            };
+        }
+        if (valid && recipe.ingredientCount > 0u &&
+            std::none_of(modRecipes_.begin(), modRecipes_.end(),
+                [&recipe](const ModRecipe& existing) { return existing.id == recipe.id; }))
+            modRecipes_.push_back(std::move(recipe));
+    }
+    ValidateLoadedWorldMods();
+
 }
+
+void Engine::ValidateLoadedWorldMods() {
+    modCompatibilityError_ = false;
+    if (multiplayerMode_) { modCompatibilityError_ = !activeContentMods_.empty(); return; }
+    if (storagePath_.empty()) return;
+    std::error_code error;
+    const bool saveExists = std::filesystem::exists(storagePath_, error) && !error;
+    if (!saveExists) return;
+    const std::string manifestPath = storagePath_ + ".mfmods";
+    error.clear();
+    const bool manifestExists = std::filesystem::exists(manifestPath, error) && !error;
+    if (!manifestExists) {
+        modCompatibilityError_ = !activeContentMods_.empty();
+        return;
+    }
+    std::ifstream manifest(manifestPath, std::ios::binary);
+    if (!manifest) {
+        modCompatibilityError_ = true;
+        return;
+    }
+    std::vector<std::string> savedMods;
+    std::string line;
+    while (std::getline(manifest, line)) {
+        if (line.size() > 160u || savedMods.size() >= 64u) {
+            modCompatibilityError_ = true;
+            return;
+        }
+        if (!line.empty()) savedMods.push_back(line);
+    }
+    std::sort(savedMods.begin(), savedMods.end());
+    modCompatibilityError_ = savedMods != activeContentMods_;
+}
+
 
 bool Engine::ConsumeExitRequest() {
     return exitRequested_.exchange(false, std::memory_order_acq_rel);
