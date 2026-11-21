@@ -547,6 +547,7 @@ public final class ModManager {
         Map<File, ArrayList<String>> biomeLines = new HashMap<>();
         Map<File, ArrayList<String>> structureLines = new HashMap<>();
         ArrayList<Bitmap> ownedBitmaps = new ArrayList<>();
+        int totalStructureCount = 0;
         try {
             List<ModInfo> mods = listMods();
             for (ModInfo mod : mods) {
@@ -640,6 +641,11 @@ public final class ModManager {
 
                 ArrayList<String> structureRecords = new ArrayList<>();
                 JSONArray structureArray = manifest.optJSONArray("structures");
+                if (structureArray != null) {
+                    totalStructureCount += structureArray.length();
+                    if (totalStructureCount > 32)
+                        throw new IOException("El conjunto activo supera 32 estructuras personalizadas.");
+                }
                 if (structureArray != null) for (int i = 0; i < structureArray.length(); i++) {
                     JSONObject structure = structureArray.getJSONObject(i);
                     StringBuilder record = new StringBuilder(mod.id).append(':')
