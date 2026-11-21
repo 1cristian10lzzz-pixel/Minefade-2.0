@@ -240,7 +240,8 @@ Recuperar el creador de mods desde el gestor y ampliarlo:
 | P0 | Mantener 2.2 (parámetros MFMod) validada | Amplía el control de jugabilidad existente sin reescribir el motor; CI pasó, faltan pruebas físicas. |
 | P1 | Unificar el esquema/validador y versionar el manifiesto | Evita que Java, C++, Python y las herramientas acepten formatos distintos. |
 | P1 | Integrar PR #4 y añadir paquetes por mundo | Restaura el formulario de creación, y evita que cada mundo dependa de la carpeta global. |
-| P1 | Diseñar MFMod v2, namespace y permisos | Define identidad estable, dependencias, recursos, orden de carga y capacidades. |\n| P2 | Registros dinámicos de bloques/objetos/recetas | Es la primera ampliación real de contenido jugable. |
+| P1 | Diseñar MFMod v2, namespace y permisos | Define identidad estable, dependencias, recursos, orden de carga y capacidades. |
+| P2 | Registros dinámicos de bloques/objetos/recetas | Es la primera ampliación real de contenido jugable. |
 | P2 | Texturas, modelos y sonidos externos | Hace visibles los nuevos contenidos y permite resource packs. |
 | P3 | Entidades, biomas, estructuras y loot | Añade nuevos sistemas y variedad de mundo. |
 | P3 | Bus de eventos estable | Permite cambiar reglas sin añadir una clave por cada caso. |
@@ -280,7 +281,12 @@ Recuperar el creador de mods desde el gestor y ampliarlo:
 
 - Manual oficial de Lua 5.4: https://www.lua.org/manual/5.4/manual.html
 - Historial oficial de Lua y versiones publicadas: https://www.lua.org/versions.html
-- Registros dinámicos con JSON y separación contenido/lógica (referencia de Fabric): https://docs.fabricmc.net/develop/registries/dynamic-registry\n- Versiones y notas oficiales de RmlUi: https://github.com/mikke89/RmlUi/releases\n- Minecraft Bedrock UI Screen (namespaces, herencia y variables): https://learn.microsoft.com/en-us/minecraft/creator/reference/content/jsonuireference/examples/jsonuicomponents/ui_screen?view=minecraft-bedrock-stable\n- Minecraft Bedrock Creator Docs (bloques, entidades, comandos y referencias de packs): https://learn.microsoft.com/en-us/minecraft/creator/?view=minecraft-bedrock-stable\n- Referencia comunitaria de la migración JSON UI → Ore UI: https://wiki.bedrock.dev/json-ui/json-ui-intro.html\n- Eventos como puntos de extensión compatibles (referencia de Fabric): https://docs.fabricmc.net/develop/events/
+- Registros dinámicos con JSON y separación contenido/lógica (referencia de Fabric): https://docs.fabricmc.net/develop/registries/dynamic-registry
+- Versiones y notas oficiales de RmlUi: https://github.com/mikke89/RmlUi/releases
+- Minecraft Bedrock UI Screen (namespaces, herencia y variables): https://learn.microsoft.com/en-us/minecraft/creator/reference/content/jsonuireference/examples/jsonuicomponents/ui_screen?view=minecraft-bedrock-stable
+- Minecraft Bedrock Creator Docs (bloques, entidades, comandos y referencias de packs): https://learn.microsoft.com/en-us/minecraft/creator/?view=minecraft-bedrock-stable
+- Referencia comunitaria de la migración JSON UI → Ore UI: https://wiki.bedrock.dev/json-ui/json-ui-intro.html
+- Eventos como puntos de extensión compatibles (referencia de Fabric): https://docs.fabricmc.net/develop/events/
 - Seguridad Android sobre carga dinámica de código: https://developer.android.com/privacy-and-security/risks/dynamic-code-loading
 - Lista de seguridad Android: https://developer.android.com/privacy-and-security/security-tips
 
