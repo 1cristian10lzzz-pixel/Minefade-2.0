@@ -58,6 +58,7 @@ def test_mod_dependencies_conflicts_and_cycles_are_validated():
     assert "hasDependencyCycle" in MOD
     assert "writeAtomically(info.file, previous);" in MOD
     assert "getLastValidationError" in MOD
+    assert "String.join(" not in MOD  # minSdk 24 compatibility
 
 
 def test_touch_layout_has_modes_and_hand_mirroring():
