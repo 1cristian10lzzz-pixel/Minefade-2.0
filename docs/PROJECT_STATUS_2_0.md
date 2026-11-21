@@ -1,3 +1,5 @@
+> **Nota de vigencia — 21 de noviembre de 2026:** este documento conserva la fotografía de una revisión antigua (Android 2.0.3 / versionCode 23). No representa el estado actual. La rama `main` ya integra 2.2.0 / versionCode 25 (commit `5c82fbb430fcffb99572803a9f3e7dba15ea4116`). El catálogo actual contiene 414 definiciones de bloques; la auditoría vigente de mods e interfaz está en [MODDING_SYSTEM_AUDIT_AND_ROADMAP.md](MODDING_SYSTEM_AUDIT_AND_ROADMAP.md). El PR #4 propone 2.2.1 / versionCode 26 y todavía debe pasar CI y revisión física.
+
 # Estado técnico verificado — Minefade 2.0
 
 Fecha de auditoría: 19 de noviembre de 2026.
