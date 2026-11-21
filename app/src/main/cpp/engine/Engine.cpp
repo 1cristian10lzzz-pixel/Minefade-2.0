@@ -2220,6 +2220,8 @@ void Engine::SetModsDirectory(std::string path) {
 void Engine::LoadEnabledMods() {
     ClearModBlockDefinitions();
     modRecipes_.clear();
+    activeContentMods_.clear();
+    modCompatibilityError_ = false;
     modSheepSpawns_ = modCowSpawns_ = modBirdSpawns_ = modPigSpawns_ = 0;
     modRabbitSpawns_ = modZombieSpawns_ = modSkeletonSpawns_ = 0;
     modPlayerSpeed_ = 1.0f;
@@ -2240,10 +2242,10 @@ void Engine::LoadEnabledMods() {
     modSpawnInterval_ = 0.0f;
     modSpawnDistance_ = 18.0f;
     modPassiveEntityCap_ = 24;
-    if (modsDirectory_.empty()) return;
+    if (modsDirectory_.empty()) { ValidateLoadedWorldMods(); return; }
 
     std::error_code error;
-    if (!std::filesystem::is_directory(modsDirectory_, error) || error) return;
+    if (!std::filesystem::is_directory(modsDirectory_, error) || error) { ValidateLoadedWorldMods(); return; }
 
     std::vector<std::filesystem::path> packs;
     for (const auto& entry : std::filesystem::directory_iterator(modsDirectory_, error)) {
@@ -2494,6 +2496,8 @@ void Engine::LoadEnabledMods() {
         std::ifstream manifest(manifestPath, std::ios::binary);
         if (!manifest) continue;
         bool enabled = false;
+        std::string packId;
+        std::string packVersion;
         std::string metaLine;
         std::size_t metaLines = 0u;
         while (std::getline(manifest, metaLine) && ++metaLines <= 16u) {
@@ -2502,8 +2506,12 @@ void Engine::LoadEnabledMods() {
             const std::string key = metaLine.substr(0u, equals);
             const std::string value = metaLine.substr(equals + 1u);
             if (key == "enabled" && value == "true") enabled = true;
+            else if (key == "id") packId = value;
+            else if (key == "version") packVersion = value;
         }
         if (!enabled) continue;
+        if (!packId.empty() && !packVersion.empty())
+            activeContentMods_.push_back(packId + "@" + packVersion);
 
         std::ifstream blocksFile(directory / "blocks.mfdata", std::ios::binary);
         std::string blockLine;
@@ -2563,6 +2571,8 @@ void Engine::LoadEnabledMods() {
         }
     }
 
+    std::sort(activeContentMods_.begin(), activeContentMods_.end());
+
     // Resolve recipes only after every enabled pack has registered its items and blocks.
     for (const std::string& line : pendingRecipeLines) {
         const auto fields = splitFields(line, '|');
@@ -2599,6 +2609,7 @@ void Engine::LoadEnabledMods() {
                 [&recipe](const ModRecipe& existing) { return existing.id == recipe.id; }))
             modRecipes_.push_back(std::move(recipe));
     }
+    ValidateLoadedWorldMods();
 
 }
 
