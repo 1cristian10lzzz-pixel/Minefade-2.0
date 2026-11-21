@@ -147,6 +147,10 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
 
 Se admiten sonidos de bloque de la lista integrada: `stone`, `wood`, `gravel`, `sand`, `grass`, `glass` y `metal`. Las formas de bloque admitidas son las formas ya implementadas por el motor: cubo, losa, escalera, planta cruzada, panel fino, cristal, valla, puerta, trampilla, fluido y andamio.
 
+## Integración del candidato Android 2.x
+
+La rama incluye primero los cambios de la base de jugabilidad 2.2 y añade encima la extensión de contenido MFMod v2. La validación CI del pull request debe reconstruir el catálogo determinista y compilar ambas ABI Android antes de distribuir el APK.
+
 ## Qué aplica actualmente el motor
 
 - Bloques personalizados con nombre, dureza, resistencia, forma, herramienta preferida, nivel de luz y tres caras de textura.
