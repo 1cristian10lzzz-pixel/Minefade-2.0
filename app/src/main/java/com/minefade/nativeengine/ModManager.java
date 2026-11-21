@@ -494,7 +494,7 @@ public final class ModManager {
                     String key = mod.id + ":" + item.getString("id");
                     String line = registryLine(key, item.getString("name"), 0.0f,
                             tile, tile + 1, tile + 2, "", item.optInt("stack", 64),
-                            0, 0, "none", "none");
+                            0, 128, "none", "none");
                     entries.add(new AtlasEntry(faces, line));
                     lines.add(line);
                 }
