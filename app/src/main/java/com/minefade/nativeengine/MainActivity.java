@@ -106,7 +106,6 @@ public final class MainActivity extends Activity {
     }
 
     private void showHome() {
-        if (soundEffects != null) soundEffects.loadModOverrides(null);
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
         if (surfaceView != null) {
@@ -120,6 +119,7 @@ public final class MainActivity extends Activity {
         engineReady = false;
         loadingOverlay = null;
         surfaceView = null;
+        if (soundEffects != null) soundEffects.loadModOverrides(null);
         gameContainer = null;
         fallbackOverlay = null;
         root.removeAllViews();
