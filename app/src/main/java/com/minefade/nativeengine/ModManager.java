@@ -296,12 +296,15 @@ public final class ModManager {
         JSONArray recipes = manifest.optJSONArray("recipes");
         JSONArray biomes = manifest.optJSONArray("biomes");
         JSONArray structures = manifest.optJSONArray("structures");
+        JSONArray entities = manifest.optJSONArray("entities");
         int blockCount = blocks == null ? 0 : blocks.length();
         int itemCount = items == null ? 0 : items.length();
         int recipeCount = recipes == null ? 0 : recipes.length();
         int biomeCount = biomes == null ? 0 : biomes.length();
         int structureCount = structures == null ? 0 : structures.length();
-        if (blockCount + itemCount > 128 || recipeCount > 128 || biomeCount > 32 || structureCount > 16)
+        int entityCount = entities == null ? 0 : entities.length();
+        if (blockCount + itemCount > 128 || recipeCount > 128 || biomeCount > 32 ||
+                structureCount > 16 || entityCount > 16)
             throw new IOException("El mod supera el número permitido de bloques, objetos o recetas.");
 
         Set<String> ids = new HashSet<>();
@@ -369,6 +372,41 @@ public final class ModManager {
                 integerRange(placement.getInt("y"), -16, 48);
                 integerRange(placement.getInt("z"), 0, 15);
                 validateReference(placement.optString("id", ""), id);
+            }
+        }
+        if (entities != null) for (int i = 0; i < entities.length(); i++) {
+            JSONObject entity = entities.getJSONObject(i);
+            String localId = requireLocalId(entity.optString("id", ""));
+            if (id.length() + 1 + localId.length() > 129) throw new IOException("ID de criatura demasiado largo.");
+            if (!ids.add("entity:" + localId)) throw new IOException("ID de criatura duplicado.");
+            validateLabel(entity.optString("name", ""));
+            Object hostileValue = entity.get("hostile");
+            if (!(hostileValue instanceof Boolean)) throw new IOException("El campo hostile debe ser booleano.");
+            finiteRange(entity.getDouble("speed"), 0.05, 2.0);
+            finiteRange(entity.optDouble("spawnChance", 0.1), 0.0, 1.0);
+            String behavior = entity.optString("behavior", "wander");
+            if (!oneOf(behavior, "wander", "flee", "graze", "pursue") ||
+                    (Boolean) hostileValue && "graze".equals(behavior) ||
+                    !(Boolean) hostileValue && "pursue".equals(behavior))
+                throw new IOException("Comportamiento de criatura inválido.");
+            JSONArray model = entity.getJSONArray("model");
+            if (model.length() < 1 || model.length() > 24)
+                throw new IOException("El modelo necesita entre 1 y 24 piezas.");
+            for (int k = 0; k < model.length(); k++) {
+                JSONObject part = model.getJSONObject(k);
+                JSONArray center = part.getJSONArray("center");
+                JSONArray size = part.getJSONArray("size");
+                if (center.length() != 3 || size.length() != 3)
+                    throw new IOException("Cada pieza necesita center y size XYZ.");
+                finiteRange(center.getDouble(0), -2.0, 2.0);
+                finiteRange(center.getDouble(1), 0.0, 3.5);
+                finiteRange(center.getDouble(2), -2.0, 2.0);
+                finiteRange(size.getDouble(0), 0.04, 1.5);
+                finiteRange(size.getDouble(1), 0.04, 1.5);
+                finiteRange(size.getDouble(2), 0.04, 1.5);
+                String color = part.optString("color", "");
+                if (!color.matches("#[0-9a-fA-F]{6}"))
+                    throw new IOException("Color de modelo inválido; usa #RRGGBB.");
             }
         }
         if (recipes != null) for (int i = 0; i < recipes.length(); i++) {
@@ -546,8 +584,10 @@ public final class ModManager {
         Map<File, ArrayList<String>> recipeLines = new HashMap<>();
         Map<File, ArrayList<String>> biomeLines = new HashMap<>();
         Map<File, ArrayList<String>> structureLines = new HashMap<>();
+        Map<File, ArrayList<String>> entityLines = new HashMap<>();
         ArrayList<Bitmap> ownedBitmaps = new ArrayList<>();
         int totalStructureCount = 0;
+        int totalEntityCount = 0;
         try {
             List<ModInfo> mods = listMods();
             for (ModInfo mod : mods) {
@@ -639,6 +679,39 @@ public final class ModManager {
                 }
                 biomeLines.put(root, biomeRecords);
 
+                ArrayList<String> entityRecords = new ArrayList<>();
+                JSONArray entityArray = manifest.optJSONArray("entities");
+                if (entityArray != null) {
+                    totalEntityCount += entityArray.length();
+                    if (totalEntityCount > 32)
+                        throw new IOException("El conjunto activo supera 32 tipos de criatura.");
+                }
+                if (entityArray != null) for (int i = 0; i < entityArray.length(); i++) {
+                    JSONObject entity = entityArray.getJSONObject(i);
+                    StringBuilder record = new StringBuilder(mod.id).append(':')
+                            .append(entity.getString("id")).append('|')
+                            .append(entity.getBoolean("hostile")).append('|')
+                            .append(entity.getDouble("speed")).append('|')
+                            .append(entity.optDouble("spawnChance", 0.1)).append('|')
+                            .append(entity.optString("behavior", "wander")).append('|');
+                    JSONArray model = entity.getJSONArray("model");
+                    for (int k = 0; k < model.length(); k++) {
+                        JSONObject part = model.getJSONObject(k);
+                        JSONArray center = part.getJSONArray("center");
+                        JSONArray size = part.getJSONArray("size");
+                        if (k > 0) record.append(';');
+                        record.append(center.getDouble(0)).append(',')
+                                .append(center.getDouble(1)).append(',')
+                                .append(center.getDouble(2)).append(',')
+                                .append(size.getDouble(0)).append(',')
+                                .append(size.getDouble(1)).append(',')
+                                .append(size.getDouble(2)).append(',')
+                                .append(part.getString("color"));
+                    }
+                    entityRecords.add(record.toString());
+                }
+                entityLines.put(root, entityRecords);
+
                 ArrayList<String> structureRecords = new ArrayList<>();
                 JSONArray structureArray = manifest.optJSONArray("structures");
                 if (structureArray != null) {
@@ -679,6 +752,9 @@ public final class ModManager {
             for (Map.Entry<File, ArrayList<String>> entry : structureLines.entrySet())
                 writeAtomically(new File(entry.getKey(), "structures.mfdata"),
                         joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
+            for (Map.Entry<File, ArrayList<String>> entry : entityLines.entrySet())
+                writeAtomically(new File(entry.getKey(), "entities.mfdata"),
+                        joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
 
             int totalTiles = ATLAS_TILE_COUNT + entries.size() * 3;
             int rows = (totalTiles + 31) / 32;
@@ -700,6 +776,7 @@ public final class ModManager {
                 writeAtomically(new File(root, "recipes.mfdata"), new byte[0]);
                 writeAtomically(new File(root, "biomes.mfdata"), new byte[0]);
                 writeAtomically(new File(root, "structures.mfdata"), new byte[0]);
+                writeAtomically(new File(root, "entities.mfdata"), new byte[0]);
             }
             return new AtlasData(baseAtlas, width, height);
         } finally {
