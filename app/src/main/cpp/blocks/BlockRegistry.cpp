@@ -444,7 +444,7 @@ bool RegisterModBlockDefinition(std::string_view key, std::string_view nameEs,
                                 std::uint8_t lightLevel, std::uint16_t flags,
                                 BlockShape shape, BlockTool preferredTool) noexcept {
     try {
-        if (key.size() < 3u || key.size() > 128u || nameEs.empty() || nameEs.size() > 96u ||
+        if (key.size() < 3u || key.size() > 129u || nameEs.empty() || nameEs.size() > 384u ||
             sound.size() > 24u || !std::isfinite(hardness) || hardness < 0.0f ||
             hardness > 100.0f || stackLimit == 0u || stackLimit > 64u || lightLevel > 15u)
             return false;
