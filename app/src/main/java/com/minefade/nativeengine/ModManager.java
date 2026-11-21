@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
 
 /** Data-only .mfmod packs. No native code or executable scripts are loaded. */
 public final class ModManager {
@@ -221,6 +224,7 @@ public final class ModManager {
             metadata.put("name", manifest.getString("name"));
             metadata.put("version", manifest.getString("version"));
             metadata.put("description", manifest.optString("description", ""));
+            metadata.put("hash", computeContentHash(staging));
             metadata.put("enabled", "false");
             StringBuilder ini = new StringBuilder("# Minefade content mod v2\n");
             for (Map.Entry<String,String> item : metadata.entrySet())
@@ -440,6 +444,51 @@ public final class ModManager {
         if (value < minimum || value > maximum) throw new IOException("Valor entero fuera de rango.");
     }
 
+    private static String computeContentHash(File root) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            ArrayList<File> files = new ArrayList<>();
+            collectContentFiles(root, files);
+            Collections.sort(files, (left, right) -> relativeContentPath(root, left)
+                    .compareTo(relativeContentPath(root, right)));
+            byte[] buffer = new byte[8192];
+            for (File file : files) {
+                String relative = relativeContentPath(root, file);
+                digest.update(relative.getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+                try (InputStream input = new FileInputStream(file)) {
+                    int count;
+                    while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+                }
+            }
+            StringBuilder hex = new StringBuilder(64);
+            for (byte value : digest.digest())
+                hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+            return hex.toString();
+        } catch (NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 no está disponible.", error);
+        }
+    }
+
+    private static void collectContentFiles(File directory, List<File> output) throws IOException {
+        File[] children = directory.listFiles();
+        if (children == null) throw new IOException("No se pudieron enumerar los recursos del mod.");
+        for (File child : children) {
+            if (child.isDirectory()) collectContentFiles(child, output);
+            else if (child.isFile() && !"manifest.ini".equals(child.getName())) output.add(child);
+        }
+    }
+
+    private static String relativeContentPath(File root, File file) {
+        try {
+            String base = root.getCanonicalPath() + File.separator;
+            String path = file.getCanonicalPath();
+            return path.startsWith(base) ? path.substring(base.length()).replace(File.separatorChar, '/') : path;
+        } catch (IOException error) {
+            return file.getName();
+        }
+    }
+
     private ModInfo readContentManifest(File file) {
         if (file == null || !file.isFile() || file.length() <= 0L || file.length() > 4096L) return null;
         Map<String,String> values = new LinkedHashMap<>();
@@ -453,7 +502,7 @@ public final class ModManager {
                 if (split <= 0) continue;
                 String key = line.substring(0, split).trim();
                 String value = line.substring(split + 1).trim();
-                if (!oneOf(key, "format", "id", "name", "version", "description", "enabled") ||
+                if (!oneOf(key, "format", "id", "name", "version", "description", "hash", "enabled") ||
                         value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.length() > 512 ||
                         values.containsKey(key)) return null;
                 values.put(key, value);
@@ -461,6 +510,8 @@ public final class ModManager {
             if (!"2".equals(values.get("format")) ||
                     !values.getOrDefault("id", "").matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
                     values.getOrDefault("name", "").trim().isEmpty() ||
+                    !values.getOrDefault("version", "").matches("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?") ||
+                    !values.getOrDefault("hash", "").matches("[a-f0-9]{64}") ||
                     !"true".equals(values.get("enabled")) && !"false".equals(values.get("enabled")))
                 return null;
             return new ModInfo(file, values);
