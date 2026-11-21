@@ -619,6 +619,12 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         return failInitialisation(std::string("Error al reservar buffers OpenGL: ") + code);
     }
 
+    // Load content registries before reading a save: stored numeric block IDs may
+    // refer to mod resources and must never be mistaken for air during deserialisation.
+    LoadEnabledMods();
+    if (modCompatibilityError_)
+        return failInitialisation("Este mundo necesita los mismos mods de contenido y versiones con los que fue guardado. Activa los mods requeridos o desactívalos para abrir otro mundo.");
+
     starterChestOpen_ = false;
     starterChestContents_ = {{1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u}};
     bool loadedExistingWorld = false;
@@ -709,7 +715,6 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     footstepElapsed_ = 0.0f;
     lastChunkX_ = static_cast<int>(std::floor(player_.position.x / 16.0f));
     lastChunkZ_ = static_cast<int>(std::floor(player_.position.z / 16.0f));
-    LoadEnabledMods();
     player_.SetSpeedMultiplier(modPlayerSpeed_);
     player_.SetJumpMultiplier(modPlayerJump_);
     player_.crouchSpeedMultiplier = modCrouchSpeed_;
