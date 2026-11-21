@@ -706,7 +706,7 @@ public final class ModManager {
     }
 
     private ModInfo readContentManifest(File file) {
-        if (file == null || !file.isFile() || file.length() <= 0L || file.length() > 4096L) return null;
+        if (file == null || !file.isFile() || file.length() <= 0L || file.length() > 8192L) return null;
         Map<String,String> values = new LinkedHashMap<>();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 new FileInputStream(file), StandardCharsets.UTF_8))) {
@@ -718,10 +718,11 @@ public final class ModManager {
                 if (split <= 0) continue;
                 String key = line.substring(0, split).trim();
                 String value = line.substring(split + 1).trim();
+                int maximumValueLength = oneOf(key, "requires", "conflicts") ? 4096 : 512;
                 if (!oneOf(key, "format", "id", "name", "version", "description", "hash",
                         "requires", "conflicts", "enabled") ||
-                        value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.length() > 512 ||
-                        values.containsKey(key)) return null;
+                        value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 ||
+                        value.length() > maximumValueLength || values.containsKey(key)) return null;
                 values.put(key, value);
             }
             if (!"2".equals(values.get("format")) ||
@@ -731,8 +732,8 @@ public final class ModManager {
                     !values.getOrDefault("hash", "").matches("[a-f0-9]{64}") ||
                     !"true".equals(values.get("enabled")) && !"false".equals(values.get("enabled")))
                 return null;
-            if (values.getOrDefault("requires", "").length() > 2048 ||
-                    values.getOrDefault("conflicts", "").length() > 2048) return null;
+            if (values.getOrDefault("requires", "").length() > 4096 ||
+                    values.getOrDefault("conflicts", "").length() > 4096) return null;
             return new ModInfo(file, values);
         } catch (Exception ignored) { return null; }
     }
@@ -1143,7 +1144,7 @@ public final class ModManager {
                 if (key.matches("[a-zA-Z0-9_.-]{1,64}") && value.indexOf('\n') < 0 && value.indexOf('\r') < 0)
                     data.append(key).append('=').append(value).append('\n');
             }
-            byte[] previous = readAll(info.file, info.contentPack ? 4096 : 32768);
+            byte[] previous = readAll(info.file, info.contentPack ? 8192 : 32768);
             if (!writeAtomically(info.file, data.toString().getBytes(StandardCharsets.UTF_8))) {
                 lastValidationError = "No se pudo guardar el estado del mod.";
                 return false;
