@@ -2261,6 +2261,7 @@ void Engine::LoadEnabledMods() {
     ClearModBlockDefinitions();
     modRecipes_.clear();
     modBiomes_.clear();
+    modStructures_.clear();
     activeContentMods_.clear();
     modCompatibilityError_ = false;
     modSheepSpawns_ = modCowSpawns_ = modBirdSpawns_ = modPigSpawns_ = 0;
@@ -2660,10 +2661,60 @@ void Engine::LoadEnabledMods() {
                 modBiomes_.push_back(std::move(biome));
             } catch (...) { continue; }
         }
+
+        std::ifstream structuresFile(directory / "structures.mfdata", std::ios::binary);
+        std::string structureLine;
+        std::size_t structureLines = 0u;
+        while (structuresFile && std::getline(structuresFile, structureLine) &&
+               ++structureLines <= 32u && modStructures_.size() < 32u) {
+            if (structureLine.empty() || structureLine.size() > 8192u) continue;
+            const auto fields = splitFields(structureLine, '|');
+            if (fields.size() != 3u || fields[0].empty()) continue;
+            float chance = 0.0f;
+            if (!parseFiniteNumber(fields[1], chance) || chance <= 0.0f || chance > 1.0f)
+                continue;
+            const auto placements = splitFields(fields[2], ';');
+            if (placements.empty() || placements.size() > 128u) continue;
+            ModStructureDefinition structure;
+            structure.key = fields[0];
+            structure.chancePerChunk = chance;
+            bool valid = true;
+            for (const std::string& placementText : placements) {
+                const auto parts = splitFields(placementText, ',');
+                if (parts.size() != 4u) { valid = false; break; }
+                try {
+                    std::size_t usedX = 0u, usedY = 0u, usedZ = 0u;
+                    const int x = std::stoi(parts[0], &usedX);
+                    const int y = std::stoi(parts[1], &usedY);
+                    const int z = std::stoi(parts[2], &usedZ);
+                    if (usedX != parts[0].size() || usedY != parts[1].size() ||
+                        usedZ != parts[2].size() || x < 0 || x >= VoxelWorld::kChunkSize ||
+                        z < 0 || z >= VoxelWorld::kChunkSize || y < -16 || y > 48) {
+                        valid = false;
+                        break;
+                    }
+                    const BlockDefinition* block = FindBlockDefinition(parts[3]);
+                    if (block == nullptr || (block->flags & BlockPlaceable) == 0u) {
+                        valid = false;
+                        break;
+                    }
+                    structure.blocks.push_back({
+                        static_cast<std::int8_t>(x), static_cast<std::int8_t>(y),
+                        static_cast<std::int8_t>(z), block->id
+                    });
+                } catch (...) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid && !structure.blocks.empty())
+                modStructures_.push_back(std::move(structure));
+        }
     }
 
     std::sort(activeContentMods_.begin(), activeContentMods_.end());
     world_.SetModBiomes(modBiomes_);
+    world_.SetModStructures(modStructures_);
 
     // Resolve recipes only after every enabled pack has registered its items and blocks.
     for (const std::string& line : pendingRecipeLines) {
