@@ -37,6 +37,18 @@ def test_lan_protocol_checks_bounds_and_cleans_up():
     assert "io.shutdownNow();" in LAN
 
 
+def test_lan_negotiates_enabled_mod_fingerprints_before_joining():
+    assert "private static final int PROTOCOL_VERSION = 3;" in LAN
+    assert 'service.setAttribute("mods_hash"' in LAN
+    assert 'attributes.get("mods_hash")' in LAN
+    assert 'writer.write("HELLO|" + PROTOCOL_VERSION + "|" + playerName + "|" + sessionModsFingerprint);' in LAN
+    assert 'fields.length == 5' in LAN and 'sessionModsFingerprint.equals(fields[4])' in LAN
+    assert 'writer.write("ERROR|MODS")' in LAN
+    assert 'getActiveModsFingerprint()' in (JAVA / "ModManager.java").read_text(encoding="utf-8")
+    assert "The Java LAN transport verifies a SHA-256 fingerprint" in ENGINE
+    assert "modCompatibilityError_ = false; return;" in ENGINE
+
+
 def test_touch_layout_has_modes_and_hand_mirroring():
     assert '"control_mode"' in HOME
     assert "controlMode_ == 1" in RML and "controlMode_ == 2" in RML
