@@ -59,6 +59,8 @@ def test_mod_dependencies_conflicts_and_cycles_are_validated():
     assert "writeAtomically(info.file, previous);" in MOD
     assert "getLastValidationError" in MOD
     assert "contentMetadataMatches" in MOD
+    assert "file.length() > 8192L" in MOD
+    assert "maximumValueLength = oneOf(key, \"requires\", \"conflicts\") ? 4096 : 512" in MOD
     assert "String.join(" not in MOD  # minSdk 24 compatibility
     assert "Verificando los mods instalados" in LAN
     assert ("if (attributes == null) return null;" in LAN or
