@@ -163,8 +163,18 @@ La rama incluye primero los cambios de la base de jugabilidad 2.2 y añade encim
 - Atlas RGBA extendido compartido por el mundo y los iconos del inventario.
 - Mods v1 y sus ajustes de jugabilidad continúan importándose.
 
-El mundo guarda un manifiesto lateral con la lista de mods de contenido, sus versiones y una huella SHA-256 de todos sus archivos de definición/texturas. El motor bloquea una carga incompatible para evitar interpretar IDs guardados como bloques distintos. El multijugador con mods de contenido permanece bloqueado hasta que exista una negociación de hashes y versiones entre anfitrión y clientes.
+El mundo guarda un manifiesto lateral con la lista de mods de contenido, sus versiones y una huella SHA-256 de todos sus archivos de definición/texturas. El motor bloquea una carga incompatible para evitar interpretar IDs guardados como bloques distintos. Desde la versión 2.4.0, el protocolo LAN v3 anuncia y compara una huella SHA-256 del conjunto completo de mods activos (MFMod v1 y v2) en el descubrimiento NSD y vuelve a verificarla en el saludo TCP antes de aceptar al cliente. Los clientes con una huella diferente se rechazan antes de iniciar el mundo. Esta comparación garantiza compatibilidad de versiones/contenido, pero no es un sistema anti-trampas ni cifra/autentica el tráfico.
 
 ## Lo que todavía no ofrece MFMod v2
 
 Las criaturas personalizadas actuales usan modelos de cajas voxel y una IA local básica; aún no ofrecen esqueletos articulados, animaciones de huesos, salud/combate, rutas avanzadas ni monturas. Los sonidos personalizados sustituyen eventos existentes; todavía no se pueden registrar nuevos canales de audio o bandas sonoras. Las pantallas/UI y los logros personalizados tampoco forman parte de esta versión. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
+
+
+## LAN con paquetes de mods — protocolo 3
+
+- El anfitrión publica el hash de los mods activos mediante un atributo NSD `mods_hash`.
+- El cliente descarta de la lista de partidas los hosts cuyo hash no coincide con el suyo.
+- El saludo TCP `HELLO` vuelve a enviar la huella; el anfitrión la valida antes de asignar un jugador.
+- La respuesta `WELCOME` devuelve la huella del anfitrión y el cliente la vuelve a comparar antes de iniciar el mundo.
+- El hash incluye los paquetes v2 verificados y el contenido exacto de los archivos v1 activos. Si un archivo no se puede verificar, no se crea ni se busca partida.
+- Esta primera negociación no sincroniza inventarios, cofres, entidades ni paquetes desde el anfitrión; tampoco convierte el transporte TCP en una conexión cifrada o autenticada.
