@@ -443,35 +443,33 @@ bool RegisterModBlockDefinition(std::string_view key, std::string_view nameEs,
                                 float hardness, std::uint8_t stackLimit,
                                 std::uint8_t lightLevel, std::uint16_t flags,
                                 BlockShape shape, BlockTool preferredTool) noexcept {
-    if (key.size() < 3u || key.size() > 128u || nameEs.empty() || nameEs.size() > 96u ||
-        sound.size() > 24u || !std::isfinite(hardness) || hardness < 0.0f ||
-        hardness > 100.0f || stackLimit == 0u || stackLimit > 64u || lightLevel > 15u)
-        return false;
-    if (FindBlockDefinition(key) != nullptr) return false;
-    const std::size_t nextId = kBlocks.size() + gModBlocks.size();
-    if (nextId >= static_cast<std::size_t>(UINT16_MAX)) return false;
-
-    const std::uint16_t id = static_cast<std::uint16_t>(nextId);
-    const char* stableKey = StoreModString(key);
-    const char* stableName = StoreModString(nameEs);
-    const char* stableSound = StoreModString(sound);
-    // The texture names are metadata only; the atlas tile indices are the render source.
-    const char* stableTexture = StoreModString("mod_atlas");
-    BlockDefinition definition{
-        static_cast<BlockId>(id), stableKey, stableName, stableSound,
-        stableTexture, stableTexture, stableTexture,
-        tileTop, tileSide, tileBottom, hardness,
-        static_cast<std::uint16_t>((flags & BlockPlaceable) != 0u ? id : 0u),
-        stackLimit, lightLevel, flags, shape, preferredTool
-    };
     try {
+        if (key.size() < 3u || key.size() > 128u || nameEs.empty() || nameEs.size() > 96u ||
+            sound.size() > 24u || !std::isfinite(hardness) || hardness < 0.0f ||
+            hardness > 100.0f || stackLimit == 0u || stackLimit > 64u || lightLevel > 15u)
+            return false;
+        if (FindBlockDefinition(key) != nullptr) return false;
+        const std::size_t nextId = kBlocks.size() + gModBlocks.size();
+        if (nextId >= static_cast<std::size_t>(UINT16_MAX)) return false;
+
+        const std::uint16_t id = static_cast<std::uint16_t>(nextId);
+        const char* stableKey = StoreModString(key);
+        const char* stableName = StoreModString(nameEs);
+        const char* stableSound = StoreModString(sound);
+        const char* stableTexture = StoreModString("mod_atlas");
+        BlockDefinition definition{
+            static_cast<BlockId>(id), stableKey, stableName, stableSound,
+            stableTexture, stableTexture, stableTexture,
+            tileTop, tileSide, tileBottom, hardness,
+            static_cast<std::uint16_t>((flags & BlockPlaceable) != 0u ? id : 0u),
+            stackLimit, lightLevel, flags, shape, preferredTool
+        };
         gModBlocks.push_back(definition);
+        return true;
     } catch (...) {
         return false;
     }
-    return true;
 }
-
 const BlockDefinition* GetBlockDefinition(BlockId id) noexcept {
     const auto index = static_cast<std::size_t>(id);
     if (index < kBlocks.size()) return &kBlocks[index];
