@@ -655,11 +655,13 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 else ENGINE_LOGE("Could not preserve unreadable world: %s", backupError.message().c_str());
             }
             world_ = VoxelWorld(requestedWorldSeed_);
+            world_.SetModBiomes(modBiomes_);
             world_.GenerateAround(8, 8, 0);
             player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
         }
     } else {
         world_ = VoxelWorld(requestedWorldSeed_);
+        world_.SetModBiomes(modBiomes_);
         world_.GenerateAround(8, 8, 0);
         player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
     }
@@ -1981,6 +1983,19 @@ void Engine::UpdateMining(float deltaSeconds) {
 void Engine::RefreshInventoryUi() {
     std::string markup;
     markup.reserve(gameMode_ == 1 ? 42000u : 2400u);
+    const auto escapeMarkup = [](std::string_view input) {
+        std::string output;
+        output.reserve(input.size());
+        for (const char c : input) {
+            if (c == '&') output += "&amp;";
+            else if (c == '<') output += "&lt;";
+            else if (c == '>') output += "&gt;";
+            else if (c == '"') output += "&quot;";
+            else if (c == '\'') output += "&#39;";
+            else output.push_back(c);
+        }
+        return output;
+    };
     for(std::size_t i=0;i<inventory_.counts.size();++i) {
         const std::uint32_t encoded=inventory_.counts[i];
         const std::uint16_t itemId=static_cast<std::uint16_t>(encoded/1000u);
@@ -1995,7 +2010,7 @@ void Engine::RefreshInventoryUi() {
             icon="<span class='inventory-icon empty-icon'>—</span>";
         }
         markup+="<button class='inventory-row' id='inventory-slot-"+std::to_string(i)+"'>"+icon+"<span>";
-        markup+=name;
+        markup+=escapeMarkup(name);
         if(quantity>0u)markup+=" × "+std::to_string(quantity);
         markup+="</span></button>";
 
@@ -2013,9 +2028,10 @@ void Engine::RefreshInventoryUi() {
         for (std::size_t id = 1; id < GetBlockDefinitionCount(); ++id) {
             const auto blockId = static_cast<BlockId>(id);
             const BlockDefinition* definition = GetBlockDefinition(blockId);
-            if (definition == nullptr || !HasBlockFlag(blockId, BlockPlaceable)) continue;
+            if (definition == nullptr || (!HasBlockFlag(blockId, BlockPlaceable) &&
+                !HasBlockFlag(blockId, BlockInventoryOnly))) continue;
             markup += "<div class='inventory-row creative-row'><img class='inventory-icon' src='minefade://block/"
-                + std::to_string(id) + "'/><span class='creative-name'>" + definition->nameEs
+                + std::to_string(id) + "'/><span class='creative-name'>" + escapeMarkup(definition->nameEs)
                 + "</span><button id='creative-select-" + std::to_string(id)
                 + "' class='creative-add'>USAR</button></div>";
         }
@@ -2032,7 +2048,7 @@ void Engine::RefreshInventoryUi() {
         const BlockDefinition* item = GetBlockDefinition(static_cast<BlockId>(id));
         if (item == nullptr) continue;
         materialMarkup += "<div class='material-row'><img class='inventory-icon' src='minefade://block/" +
-            std::to_string(id) + "'/><span>" + std::string(item->nameEs) + " × " +
+            std::to_string(id) + "'/><span>" + escapeMarkup(item->nameEs) + " × " +
             std::to_string(quantity) + "</span></div>";
     }
     ui_.SetInventoryCatalogContents(materialMarkup);
@@ -2053,7 +2069,7 @@ void Engine::RefreshInventoryUi() {
         GetBlockDefinition(static_cast<BlockId>(selectedId));
     if (selectedDefinition != nullptr && selectedId > 0u) {
         ui_.SetSelectedItem("<img src='minefade://block/" + std::to_string(selectedId) +
-            "'/><span>" + selectedDefinition->nameEs + "</span>");
+            "'/><span>" + escapeMarkup(selectedDefinition->nameEs) + "</span>");
     } else {
         ui_.SetSelectedItem({});
     }
