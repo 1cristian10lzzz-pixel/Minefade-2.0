@@ -421,7 +421,9 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             } catch (LinkageError | RuntimeException error) {
                 nativeReady = false;
                 Log.e(TAG, "Native engine is unavailable", error);
-                notifyError("No se pudo cargar el motor nativo: " + error.getClass().getSimpleName());
+                String detail = error.getMessage();
+                notifyError("No se pudo preparar el mundo: " + error.getClass().getSimpleName() +
+                        (detail == null || detail.trim().isEmpty() ? "" : " · " + detail));
             }
         }
 
