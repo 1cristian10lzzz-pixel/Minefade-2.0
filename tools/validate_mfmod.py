@@ -217,9 +217,10 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
             blocks = manifest.get("blocks", [])
             items = manifest.get("items", [])
             recipes = manifest.get("recipes", [])
-            if not isinstance(blocks, list) or not isinstance(items, list) or not isinstance(recipes, list):
-                raise ValueError("blocks, items y recipes deben ser listas")
-            if len(blocks) + len(items) > 128 or len(recipes) > 128:
+            biomes = manifest.get("biomes", [])
+            if not all(isinstance(x, list) for x in (blocks, items, recipes, biomes)):
+                raise ValueError("blocks, items, recipes y biomes deben ser listas")
+            if len(blocks) + len(items) > 128 or len(recipes) > 128 or len(biomes) > 32:
                 raise ValueError("demasiados recursos definidos")
             ids: set[str] = set()
             for block in blocks:
@@ -261,6 +262,26 @@ def parse_mfmod_v2_zip(path: Path) -> dict[str, str]:
                     for face in ("top", "side", "bottom"):
                         texture(zf, textures.get(face))
                 integer(item.get("stack", 64), 1, 64, "stack")
+            for biome in biomes:
+                if not isinstance(biome, dict):
+                    raise ValueError("definición de bioma inválida")
+                rid = local_id(biome.get("id"))
+                if rid in ids:
+                    raise ValueError("ID duplicado")
+                ids.add(rid)
+                label(biome.get("name"))
+                for climate_key in ("temperature", "humidity", "continental"):
+                    climate = biome.get(climate_key)
+                    if not isinstance(climate, dict):
+                        raise ValueError("rango climático inválido")
+                    low, high = climate.get("min"), climate.get("max")
+                    if isinstance(low, bool) or isinstance(high, bool) or not isinstance(low, (int, float)) or not isinstance(high, (int, float)) or \
+                            not math.isfinite(low) or not math.isfinite(high) or not -1 <= low <= high <= 1:
+                        raise ValueError("rango climático fuera de límites")
+                reference(biome.get("topBlock"))
+                reference(biome.get("fillerBlock"))
+                integer(biome.get("priority", 0), -100, 100, "priority")
+                integer(biome.get("surfaceOffset", 0), -16, 16, "surfaceOffset")
             for recipe in recipes:
                 if not isinstance(recipe, dict):
                     raise ValueError("receta inválida")
