@@ -14,6 +14,7 @@
 #include <map>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace minefade {
@@ -50,6 +51,15 @@ public:
     std::vector<int> ConsumeLocalBlockEdits();
 
 private:
+    struct ModRecipe {
+        std::string id;
+        std::string label;
+        std::uint16_t outputId{0};
+        std::uint16_t outputAmount{1};
+        bool needsTable{false};
+        std::array<std::pair<std::uint16_t, std::uint16_t>, 5> ingredients{};
+        std::size_t ingredientCount{0};
+    };
     struct Mat4 { std::array<float, 16> v{}; };
     struct TouchState {
         float startX{0.0f};
@@ -79,6 +89,7 @@ private:
     void HandleUiAction(const std::string& action);
     void SaveWorld();
     void LoadEnabledMods();
+    void ValidateLoadedWorldMods();
     void OpenStarterChest();
     void TakeStarterChestContents();
     void RefreshInventoryUi();
@@ -169,6 +180,12 @@ private:
     Vec3 starterChestPosition_{};
     std::uint32_t requestedWorldSeed_{0x4D464445u};
     std::string modsDirectory_;
+    std::vector<ModRecipe> modRecipes_;
+    std::vector<ModBiomeDefinition> modBiomes_;
+    std::vector<ModStructureDefinition> modStructures_;
+    std::vector<ModEntityDefinition> modEntities_;
+    std::vector<std::string> activeContentMods_;
+    bool modCompatibilityError_{false};
     int modSheepSpawns_{0};
     int modCowSpawns_{0};
     int modBirdSpawns_{0};
