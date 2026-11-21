@@ -3,6 +3,7 @@
 ## Versión candidata 2.4.0 — compatibilidad LAN con mods
 - Cambia el protocolo LAN a v3 y negocia una huella SHA-256 de todos los mods activos en NSD y TCP.
 - Rechaza a los clientes con paquetes/ajustes distintos antes de iniciar el mundo; incluye los mods v1 y los paquetes v2.
+- Añade dependencias requeridas/opcionales, rangos de versión, conflictos declarados y detección de ciclos; revierte la activación si el conjunto no es válido.
 - Mantiene la protección por manifiesto de cada mundo y los IDs dinámicos cargados de forma determinista.
 - Android versionCode 27 / versionName 2.4.0; pendiente de compilación CI y pruebas en dos teléfonos reales.
 
