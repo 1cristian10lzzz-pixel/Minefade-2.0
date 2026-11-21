@@ -1,10 +1,16 @@
 # Registro de cambios — Minefade 2.0
 
+## Versión candidata 2.4.0 — compatibilidad LAN con mods
+- Cambia el protocolo LAN a v3 y negocia una huella SHA-256 de todos los mods activos en NSD y TCP.
+- Rechaza a los clientes con paquetes/ajustes distintos antes de iniciar el mundo; incluye los mods v1 y los paquetes v2.
+- Mantiene la protección por manifiesto de cada mundo y los IDs dinámicos cargados de forma determinista.
+- Android versionCode 27 / versionName 2.4.0; pendiente de compilación CI y pruebas en dos teléfonos reales.
+
 ## Versión candidata 2.3.0 — MFMod v2
 - Añade paquetes `.mfmod` ZIP con bloques y objetos personalizados, texturas PNG, recetas, biomas, estructuras y criaturas voxel definidas por datos.
 - Permite sustituir eventos de audio existentes con archivos OGG/WAV validados.
 - Fija la compatibilidad de las partidas a la huella SHA-256 del contenido instalado y conserva la carga de mods v1.
-- El multijugador con mods de contenido queda bloqueado hasta disponer de negociación de hashes entre clientes.
+- La compatibilidad LAN con mods se incorpora en 2.4.0; en 2.3.0 se bloqueaba hasta contar con negociación de hashes.
 - Versión Android candidata: versionCode 26 / versionName 2.3.0. Requiere superar la compilación y pruebas CI antes de distribuirse.
 
 ## Actualización 2.2 — sistema de mods de datos ampliado
