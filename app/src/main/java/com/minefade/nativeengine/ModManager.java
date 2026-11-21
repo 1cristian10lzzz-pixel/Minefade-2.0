@@ -295,11 +295,13 @@ public final class ModManager {
         JSONArray items = manifest.optJSONArray("items");
         JSONArray recipes = manifest.optJSONArray("recipes");
         JSONArray biomes = manifest.optJSONArray("biomes");
+        JSONArray structures = manifest.optJSONArray("structures");
         int blockCount = blocks == null ? 0 : blocks.length();
         int itemCount = items == null ? 0 : items.length();
         int recipeCount = recipes == null ? 0 : recipes.length();
         int biomeCount = biomes == null ? 0 : biomes.length();
-        if (blockCount + itemCount > 128 || recipeCount > 128 || biomeCount > 32)
+        int structureCount = structures == null ? 0 : structures.length();
+        if (blockCount + itemCount > 128 || recipeCount > 128 || biomeCount > 32 || structureCount > 16)
             throw new IOException("El mod supera el número permitido de bloques, objetos o recetas.");
 
         Set<String> ids = new HashSet<>();
@@ -350,6 +352,24 @@ public final class ModManager {
             validateReference(biome.optString("fillerBlock", ""), id);
             integerRange(biome.optInt("priority", 0), -100, 100);
             integerRange(biome.optInt("surfaceOffset", 0), -16, 16);
+        }
+        if (structures != null) for (int i = 0; i < structures.length(); i++) {
+            JSONObject structure = structures.getJSONObject(i);
+            String localId = requireLocalId(structure.optString("id", ""));
+            if (id.length() + 1 + localId.length() > 129) throw new IOException("ID de estructura demasiado largo.");
+            if (!ids.add("structure:" + localId)) throw new IOException("ID de estructura duplicado.");
+            validateLabel(structure.optString("name", ""));
+            finiteRange(structure.optDouble("chance", 0.02), 0.0001, 1.0);
+            JSONArray placements = structure.getJSONArray("blocks");
+            if (placements.length() < 1 || placements.length() > 128)
+                throw new IOException("Una estructura necesita entre 1 y 128 bloques.");
+            for (int k = 0; k < placements.length(); k++) {
+                JSONObject placement = placements.getJSONObject(k);
+                integerRange(placement.getInt("x"), 0, 15);
+                integerRange(placement.getInt("y"), -16, 48);
+                integerRange(placement.getInt("z"), 0, 15);
+                validateReference(placement.optString("id", ""), id);
+            }
         }
         if (recipes != null) for (int i = 0; i < recipes.length(); i++) {
             JSONObject recipe = recipes.getJSONObject(i);
@@ -525,6 +545,7 @@ public final class ModManager {
         Map<File, ArrayList<String>> blockLines = new HashMap<>();
         Map<File, ArrayList<String>> recipeLines = new HashMap<>();
         Map<File, ArrayList<String>> biomeLines = new HashMap<>();
+        Map<File, ArrayList<String>> structureLines = new HashMap<>();
         ArrayList<Bitmap> ownedBitmaps = new ArrayList<>();
         try {
             List<ModInfo> mods = listMods();
@@ -616,6 +637,26 @@ public final class ModManager {
                     biomeRecords.add(record);
                 }
                 biomeLines.put(root, biomeRecords);
+
+                ArrayList<String> structureRecords = new ArrayList<>();
+                JSONArray structureArray = manifest.optJSONArray("structures");
+                if (structureArray != null) for (int i = 0; i < structureArray.length(); i++) {
+                    JSONObject structure = structureArray.getJSONObject(i);
+                    StringBuilder record = new StringBuilder(mod.id).append(':')
+                            .append(structure.getString("id")).append('|')
+                            .append(structure.optDouble("chance", 0.02)).append('|');
+                    JSONArray placements = structure.getJSONArray("blocks");
+                    for (int k = 0; k < placements.length(); k++) {
+                        JSONObject placement = placements.getJSONObject(k);
+                        if (k > 0) record.append(';');
+                        record.append(placement.getInt("x")).append(',')
+                                .append(placement.getInt("y")).append(',')
+                                .append(placement.getInt("z")).append(',')
+                                .append(normalizeReference(placement.getString("id"), mod.id));
+                    }
+                    structureRecords.add(record.toString());
+                }
+                structureLines.put(root, structureRecords);
             }
 
             if (entries.size() > MAX_CONTENT_DEFINITIONS)
@@ -628,6 +669,9 @@ public final class ModManager {
                         joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
             for (Map.Entry<File, ArrayList<String>> entry : biomeLines.entrySet())
                 writeAtomically(new File(entry.getKey(), "biomes.mfdata"),
+                        joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
+            for (Map.Entry<File, ArrayList<String>> entry : structureLines.entrySet())
+                writeAtomically(new File(entry.getKey(), "structures.mfdata"),
                         joinLines(entry.getValue()).getBytes(StandardCharsets.UTF_8));
 
             int totalTiles = ATLAS_TILE_COUNT + entries.size() * 3;
@@ -649,6 +693,7 @@ public final class ModManager {
                 writeAtomically(new File(root, "blocks.mfdata"), new byte[0]);
                 writeAtomically(new File(root, "recipes.mfdata"), new byte[0]);
                 writeAtomically(new File(root, "biomes.mfdata"), new byte[0]);
+                writeAtomically(new File(root, "structures.mfdata"), new byte[0]);
             }
             return new AtlasData(baseAtlas, width, height);
         } finally {
