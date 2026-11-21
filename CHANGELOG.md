@@ -1,5 +1,12 @@
 # Registro de cambios — Minefade 2.0
 
+## Versión candidata 2.3.0 — MFMod v2
+- Añade paquetes `.mfmod` ZIP con bloques y objetos personalizados, texturas PNG, recetas, biomas, estructuras y criaturas voxel definidas por datos.
+- Permite sustituir eventos de audio existentes con archivos OGG/WAV validados.
+- Fija la compatibilidad de las partidas a la huella SHA-256 del contenido instalado y conserva la carga de mods v1.
+- El multijugador con mods de contenido queda bloqueado hasta disponer de negociación de hashes entre clientes.
+- Versión Android candidata: versionCode 26 / versionName 2.3.0. Requiere superar la compilación y pruebas CI antes de distribuirse.
+
 ## Actualización 2.2 — sistema de mods de datos ampliado
 - Se incorporan propiedades compatibles para velocidad agachada, velocidad pasiva/hostil, radios de huida y alerta, radio de aparición y límite de entidades.
 - Se añade aparición periódica y limitada de fauna pasiva a una distancia configurable del jugador; permanece desactivada en mods antiguos que no indiquen intervalo.
