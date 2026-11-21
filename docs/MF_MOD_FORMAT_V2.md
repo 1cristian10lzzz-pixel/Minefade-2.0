@@ -78,6 +78,11 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
       "surfaceOffset": 1
     }
   ],
+  "sounds": {
+    "block_break": "audio/ruby_break.ogg",
+    "water": "audio/water_splash.wav",
+    "zombie": "audio/crystal_golem.ogg"
+  },
   "entities": [
     {
       "id": "crystal_golem",
@@ -133,6 +138,8 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
 | Criaturas por mod | 16 |
 | Criaturas por mundo (total) | 32 |
 | Piezas por modelo de criatura | 24 |
+| Sonidos sustituibles por mod | 20 |
+| Archivo de audio | 4 MB |
 | Bloques por estructura | 128 |
 | Ingredientes por receta | 5 |
 | Salida de receta | 1–64 |
@@ -148,6 +155,7 @@ Se admiten sonidos de bloque de la lista integrada: `stone`, `wood`, `gravel`, `
 - Biomas definidos por rangos de temperatura, humedad y continentalidad; permiten escoger un bloque de superficie, uno de relleno, prioridad y pequeño ajuste de altura.
 - Estructuras por plantillas de bloques con coordenadas relativas al chunk, probabilidad determinista por chunk y límite de 128 bloques por plantilla.
 - Criaturas definidas por modelos de cajas 3D de colores, con velocidad, aparición determinista y comportamiento básico de paseo, huida, pastoreo o persecución.
+- Sustitución de 20 eventos de sonido del juego con archivos OGG/WAV validados.
 - Atlas RGBA extendido compartido por el mundo y los iconos del inventario.
 - Mods v1 y sus ajustes de jugabilidad continúan importándose.
 
@@ -155,4 +163,4 @@ El mundo guarda un manifiesto lateral con la lista de mods de contenido, sus ver
 
 ## Lo que todavía no ofrece MFMod v2
 
-Las criaturas personalizadas actuales usan modelos de cajas voxel y una IA local básica; aún no ofrecen esqueletos articulados, animaciones de huesos, salud/combate, rutas avanzadas ni monturas. El audio personalizado, pantallas/UI y logros personalizados tampoco forman parte de esta versión. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
+Las criaturas personalizadas actuales usan modelos de cajas voxel y una IA local básica; aún no ofrecen esqueletos articulados, animaciones de huesos, salud/combate, rutas avanzadas ni monturas. Los sonidos personalizados sustituyen eventos existentes; todavía no se pueden registrar nuevos canales de audio o bandas sonoras. Las pantallas/UI y los logros personalizados tampoco forman parte de esta versión. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
