@@ -2613,6 +2613,38 @@ void Engine::LoadEnabledMods() {
 
 }
 
+void Engine::ValidateLoadedWorldMods() {
+    modCompatibilityError_ = false;
+    if (multiplayerMode_ || storagePath_.empty()) return;
+    std::error_code error;
+    const bool saveExists = std::filesystem::exists(storagePath_, error) && !error;
+    if (!saveExists) return;
+    const std::string manifestPath = storagePath_ + ".mfmods";
+    error.clear();
+    const bool manifestExists = std::filesystem::exists(manifestPath, error) && !error;
+    if (!manifestExists) {
+        modCompatibilityError_ = !activeContentMods_.empty();
+        return;
+    }
+    std::ifstream manifest(manifestPath, std::ios::binary);
+    if (!manifest) {
+        modCompatibilityError_ = true;
+        return;
+    }
+    std::vector<std::string> savedMods;
+    std::string line;
+    while (std::getline(manifest, line)) {
+        if (line.size() > 160u || savedMods.size() >= 64u) {
+            modCompatibilityError_ = true;
+            return;
+        }
+        if (!line.empty()) savedMods.push_back(line);
+    }
+    std::sort(savedMods.begin(), savedMods.end());
+    modCompatibilityError_ = savedMods != activeContentMods_;
+}
+
+
 bool Engine::ConsumeExitRequest() {
     return exitRequested_.exchange(false, std::memory_order_acq_rel);
 }
