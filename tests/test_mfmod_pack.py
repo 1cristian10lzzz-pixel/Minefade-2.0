@@ -76,6 +76,17 @@ class ModPackTests(unittest.TestCase):
         self.assertEqual(values["world.spawn_interval"], "90")
         self.assertEqual(values["mining.speed"], "1.25")
 
+    def test_extended_adventure_plus_profile_is_valid(self):
+        values = parse_mod(
+            ROOT / "examples" / "Minefade_Aventura_Plus_Extendido_2_0.mfmod"
+        )
+        self.assertEqual(values["id"], "minefade_aventura_plus_extendido_20")
+        self.assertEqual(values["enabled"], "false")
+        self.assertEqual(values["world.entity_cap"], "96")
+        self.assertEqual(values["world.passive_cap"], "48")
+        self.assertEqual(values["world.spawn_interval"], "75")
+        self.assertEqual(values["mining.speed"], "1.60")
+
     def test_phase_2_3_gameplay_settings_are_supported(self):
         content = (
             "id=expanded_mod\nname=Expanded\nversion=1.0\nenabled=true\n"
