@@ -258,7 +258,7 @@ public final class LanMultiplayerService implements Closeable {
                 service.setServiceType(SERVICE_TYPE);
                 service.setPort(server.getLocalPort());
                 service.setAttribute("protocol", String.valueOf(PROTOCOL_VERSION));
-                service.setAttribute("mods_hash", sessionModsFingerprint.getBytes(StandardCharsets.UTF_8));
+                service.setAttribute("mods_hash", sessionModsFingerprint);
                 NsdManager.RegistrationListener registration = new NsdManager.RegistrationListener() {
                     @Override public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
                         Log.e(TAG, "NSD registration failed: " + errorCode);
