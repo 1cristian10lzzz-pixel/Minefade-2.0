@@ -69,7 +69,8 @@ Límites observados: 32 KiB, 128 líneas, claves únicas, propiedades incluidas 
 - El repositorio 2.0 fija RmlUi 6.3 y FreeType 2.13.3, con un renderer OpenGL ES propio. La página oficial de releases de RmlUi sigue marcando 6.3 como *Latest* al 21-11-2026. 6.3 aporta propiedades/variables RCSS reutilizables, media queries y mejoras de navegación, tipografía y correcciones; es una base vigente y compatible con la arquitectura actual.
 - La integración de Minefade carga el HUD desde memoria mediante `LoadDocumentFromMemory` y usa un `MemoryOnlyFileInterface` que no lee archivos externos. Por eso el formato de mod no puede instalar hoy documentos RML/RCSS ni recursos UI de forma aislada. No es un problema que se arregle reemplazando el motor de interfaz: falta un cargador controlado de recursos y pantallas.
 - Minecraft Bedrock aporta referencias útiles: sus definiciones `minecraft:ui_screen` organizan pantallas por namespace, elementos reutilizables y variables heredables. Su documentación oficial también separa contenido en resource/behavior packs y ofrece referencias JSON de bloques, ítems, recetas y entidades.
-- No se recomienda copiar Ore UI como sistema de mods. La documentación comunitaria de Bedrock indica que la transición a Ore UI deja JSON UI obsoleto y que Ore UI es hardcoded y no puede modificarse mediante resource packs. Eso es contrario al objetivo de que cada mod pueda aportar o sobrescribir pantallas.
+- Ore UI sí tiene un repositorio público de Mojang, pero el README lo describe como un metarrepositorio con infraestructura interna compartida: solo declara un paquete de código abierto (`@react-facet`), basado en React/TypeScript y orientado al estado de la UI, no un motor C++/OpenGL intercambiable por RmlUi. Por tanto, no es una sustitución directa para Minefade.
+- Además, la documentación comunitaria de Bedrock describe que la transición a Ore UI deja JSON UI obsoleto y que las pantallas de Ore UI no pueden modificarse mediante resource packs. Eso es contrario al objetivo de que cada mod pueda aportar o sobrescribir pantallas.
 
 **Trabajo concreto pendiente en Minefade:**
 
@@ -282,7 +283,7 @@ Recuperar el creador de mods desde el gestor y ampliarlo:
 - Manual oficial de Lua 5.4: https://www.lua.org/manual/5.4/manual.html
 - Historial oficial de Lua y versiones publicadas: https://www.lua.org/versions.html
 - Registros dinámicos con JSON y separación contenido/lógica (referencia de Fabric): https://docs.fabricmc.net/develop/registries/dynamic-registry
-- Versiones y notas oficiales de RmlUi: https://github.com/mikke89/RmlUi/releases
+- Versiones y notas oficiales de RmlUi: https://github.com/mikke89/RmlUi/releases\n- Metarrepositorio público Ore UI de Mojang (solo `@react-facet` aparece como paquete abierto): https://github.com/Mojang/ore-ui
 - Minecraft Bedrock UI Screen (namespaces, herencia y variables): https://learn.microsoft.com/en-us/minecraft/creator/reference/content/jsonuireference/examples/jsonuicomponents/ui_screen?view=minecraft-bedrock-stable
 - Minecraft Bedrock Creator Docs (bloques, entidades, comandos y referencias de packs): https://learn.microsoft.com/en-us/minecraft/creator/?view=minecraft-bedrock-stable
 - Referencia comunitaria de la migración JSON UI → Ore UI: https://wiki.bedrock.dev/json-ui/json-ui-intro.html
