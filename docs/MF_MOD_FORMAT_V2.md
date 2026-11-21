@@ -77,6 +77,18 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
       "priority": 10,
       "surfaceOffset": 1
     }
+  ],
+  "structures": [
+    {
+      "id": "ruined_shrine",
+      "name": "Santuario en ruinas",
+      "chance": 0.025,
+      "blocks": [
+        { "x": 7, "y": 0, "z": 7, "id": "minecraft:stonebrick" },
+        { "x": 7, "y": 1, "z": 7, "id": "ruby_pack:ruby_ore" },
+        { "x": 8, "y": 0, "z": 7, "id": "minecraft:mossy_cobblestone" }
+      ]
+    }
   ]
 }
 ```
@@ -100,6 +112,9 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
 | Bloques + objetos por mod | 128 |
 | Recetas por mod | 128 |
 | Biomas por mod | 32 |
+| Estructuras por mod | 16 |
+| Estructuras por mundo (total) | 32 |
+| Bloques por estructura | 128 |
 | Ingredientes por receta | 5 |
 | Salida de receta | 1–64 |
 | Ingrediente | 1–64 |
@@ -112,11 +127,12 @@ Se admiten sonidos de bloque de la lista integrada: `stone`, `wood`, `gravel`, `
 - Objetos personalizados con textura y límite de pila. En esta primera integración se representan como recursos de inventario y no como armas/armaduras con comportamiento propio.
 - Recetas personalizadas visibles en la mesa de fabricación, con verificación y consumo de ingredientes.
 - Biomas definidos por rangos de temperatura, humedad y continentalidad; permiten escoger un bloque de superficie, uno de relleno, prioridad y pequeño ajuste de altura.
+- Estructuras por plantillas de bloques con coordenadas relativas al chunk, probabilidad determinista por chunk y límite de 128 bloques por plantilla.
 - Atlas RGBA extendido compartido por el mundo y los iconos del inventario.
 - Mods v1 y sus ajustes de jugabilidad continúan importándose.
 
-El mundo guarda un manifiesto lateral con la lista de mods de contenido y sus versiones. El motor bloquea una carga incompatible para evitar interpretar IDs guardados como bloques distintos. El multijugador con mods de contenido permanece bloqueado hasta que exista una negociación de hashes y versiones entre anfitrión y clientes.
+El mundo guarda un manifiesto lateral con la lista de mods de contenido, sus versiones y una huella SHA-256 de todos sus archivos de definición/texturas. El motor bloquea una carga incompatible para evitar interpretar IDs guardados como bloques distintos. El multijugador con mods de contenido permanece bloqueado hasta que exista una negociación de hashes y versiones entre anfitrión y clientes.
 
 ## Lo que todavía no ofrece MFMod v2
 
-El soporte de estructuras, entidades/modelos/IA, audio personalizado, pantallas/UI y logros personalizados aún no forma parte de la API ejecutable descrita arriba. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
+El soporte de entidades/modelos/IA personalizados, audio personalizado, pantallas/UI y logros personalizados aún no forma parte de la API ejecutable descrita arriba. No se deben anunciar como funciones disponibles. La carga de código nativo o scripts de terceros queda fuera del formato por seguridad; un futuro sistema de eventos deberá usar una API de capacidades limitada y un sandbox con presupuesto de ejecución.
