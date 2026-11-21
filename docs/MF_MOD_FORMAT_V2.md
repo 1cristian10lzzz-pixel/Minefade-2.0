@@ -28,6 +28,10 @@ El importador rechaza rutas absolutas, `..`, barras invertidas, archivos duplica
   "name": "Ruby Pack",
   "version": "1.0.0",
   "description": "Añade mena de rubí y rubíes",
+  "dependencies": [
+    { "id": "minefade_core_library", "version": ">=1.0.0", "optional": false }
+  ],
+  "conflicts": ["legacy_ruby_overhaul"],
   "blocks": [
     {
       "id": "ruby_ore",
@@ -178,3 +182,15 @@ Las criaturas personalizadas actuales usan modelos de cajas voxel y una IA local
 - La respuesta `WELCOME` devuelve la huella del anfitrión y el cliente la vuelve a comparar antes de iniciar el mundo.
 - El hash incluye los paquetes v2 verificados y el contenido exacto de los archivos v1 activos. Si un archivo no se puede verificar, no se crea ni se busca partida.
 - Esta primera negociación no sincroniza inventarios, cofres, entidades ni paquetes desde el anfitrión; tampoco convierte el transporte TCP en una conexión cifrada o autenticada.
+
+
+## Dependencias y conflictos
+
+MFMod v2 admite metadatos de compatibilidad en el manifiesto:
+
+- `dependencies`: lista de objetos con `id`, `version` y `optional`. La versión admite `*`, una versión exacta como `1.2.0`, o un mínimo como `>=1.2.0`.
+- `optional: false` (por defecto) exige que el paquete requerido esté instalado, activo y cumpla el requisito de versión.
+- `optional: true` permite que el mod se active sin ese paquete; si el paquete está activo y no cumple el mínimo, se informa del error.
+- `conflicts`: lista de IDs de mods incompatibles que no pueden estar activos simultáneamente.
+- Se rechazan IDs duplicados, referencias propias, rangos inválidos, dependencias requeridas ausentes/desactivadas, conflictos activos y ciclos de dependencia.
+- Al cambiar el interruptor de un mod, Minefade valida el conjunto completo; si rompe una relación, revierte el cambio y muestra el motivo. Los recursos se siguen cargando en orden estable por ID, y las referencias cruzadas se resuelven después de registrar los bloques.
