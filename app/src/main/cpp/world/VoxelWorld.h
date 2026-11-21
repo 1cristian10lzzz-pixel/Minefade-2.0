@@ -24,6 +24,17 @@ struct ModBiomeDefinition {
     int surfaceOffset{0};
 };
 
+struct ModStructureBlockPlacement {
+    std::int8_t x{0}, y{0}, z{0};
+    BlockId block{BlockId::Stone};
+};
+
+struct ModStructureDefinition {
+    std::string key;
+    float chancePerChunk{0.02f};
+    std::vector<ModStructureBlockPlacement> blocks;
+};
+
 
 struct Vec3 {
     float x{0.0f};
@@ -130,6 +141,7 @@ public:
     std::size_t ChunkCount() const { return chunks_.size(); }
     std::size_t CountNonAirBlocks() const;
     void SetModBiomes(std::vector<ModBiomeDefinition> biomes);
+    void SetModStructures(std::vector<ModStructureDefinition> structures);
 
 private:
     struct Chunk {
@@ -171,6 +183,7 @@ private:
 
     std::uint32_t seed_;
     std::vector<ModBiomeDefinition> modBiomes_;
+    std::vector<ModStructureDefinition> modStructures_;
     std::map<std::pair<int, int>, Chunk> chunks_;
     mutable std::map<std::pair<int, int>, ChunkMeshCache> chunkMeshCache_;
     mutable std::set<std::pair<int, int>> dirtyChunkMeshes_;
