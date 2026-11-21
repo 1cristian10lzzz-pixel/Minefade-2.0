@@ -734,8 +734,31 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             }
             entity.phase = std::fmod(entity.phase + dt * speed * 7.0f, 4096.0f);
         } else if (entity.behavior == 2) {
-            // Eating animals hold position and keep a slow animation clock.
+            // Grazing creatures pause and keep a slow idle animation clock.
             entity.phase = std::fmod(entity.phase + dt * 0.55f, 4096.0f);
+        } else if (customDefinition != nullptr) {
+            // Custom creature kinds never cross the legacy Rust ABI enum. Their
+            // bounded wander behavior is evaluated directly by the native host.
+            entity.behaviorTimer -= dt;
+            if (entity.behaviorTimer <= 0.0f) {
+                entity.behaviorTimer = 1.2f +
+                    std::fmod(std::abs(std::sin(entity.phase * 1.17f)) * 4.0f, 3.8f);
+                entity.phase += 1.731f;
+            }
+            const float angle = entity.phase + std::sin(animationTime_ + entity.phase) * 0.18f;
+            const float step = std::min(entity.speed * speedMultiplier_ * dt * 0.45f, 0.08f);
+            const float nextX = entity.position.x + std::cos(angle) * step;
+            const float nextZ = entity.position.z + std::sin(angle) * step;
+            if (!world.IsSolid(FloorToInt(nextX), FloorToInt(entity.position.y + 0.25f),
+                               FloorToInt(nextZ))) {
+                entity.position.x = nextX;
+                entity.position.z = nextZ;
+                entity.position.y = static_cast<float>(world.GetSurfaceHeight(
+                    FloorToInt(nextX), FloorToInt(nextZ))) + 1.0f;
+            } else {
+                entity.phase += 1.731f;
+            }
+            entity.phase = std::fmod(entity.phase + dt * entity.speed * 1.8f, 4096.0f);
         } else {
             MfEntityState state{entity.position.x, entity.position.y, entity.position.z,
                                 entity.phase, std::clamp(entity.speed * speedMultiplier_ *
@@ -751,7 +774,11 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         if (ambientSpawnElapsed_ >= ambientSpawnInterval_) {
             ambientSpawnElapsed_ = std::fmod(ambientSpawnElapsed_, ambientSpawnInterval_);
             const std::size_t passiveCount = static_cast<std::size_t>(std::count_if(
-                entities_.begin(), entities_.end(), [](const Entity& entity) {
+                entities_.begin(), entities_.end(), [this](const Entity& entity) {
+                    if (entity.kind > 6) {
+                        const std::size_t index = static_cast<std::size_t>(entity.kind - 7);
+                        return index < modEntities_.size() && !modEntities_[index].hostile;
+                    }
                     return entity.kind != 4 && entity.kind != 5;
                 }));
             if (passiveCount < static_cast<std::size_t>(passiveEntityCap_)) {
