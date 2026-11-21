@@ -1521,6 +1521,45 @@ bool Engine::HasNearbyCraftingTable() const {
 }
 
 bool Engine::CraftRecipe(const std::string& recipe) {
+    if (recipe.rfind("mod:", 0u) == 0u) {
+        const std::string id = recipe.substr(4u);
+        const auto found = std::find_if(modRecipes_.begin(), modRecipes_.end(),
+            [&id](const ModRecipe& candidate) { return candidate.id == id; });
+        if (found == modRecipes_.end()) return false;
+        if (!inventory_.CanAdd(found->outputId, found->outputAmount)) {
+            ui_.SetChatMessage("No hay espacio suficiente para el objeto del mod.");
+            return false;
+        }
+        if (found->needsTable && !HasNearbyCraftingTable()) {
+            ui_.SetChatMessage("Necesitas una mesa de trabajo cerca para esta receta.");
+            return false;
+        }
+        for (std::size_t i = 0u; i < found->ingredientCount; ++i) {
+            const auto& ingredient = found->ingredients[i];
+            if (inventory_.CountItem(ingredient.first) < ingredient.second) {
+                ui_.SetChatMessage("Faltan materiales para fabricar este objeto.");
+                return false;
+            }
+        }
+        for (std::size_t i = 0u; i < found->ingredientCount; ++i) {
+            const auto& ingredient = found->ingredients[i];
+            if (!inventory_.ConsumeItem(ingredient.first, ingredient.second)) {
+                ui_.SetChatMessage("No se pudo completar la receta del mod.");
+                RefreshInventoryUi();
+                return false;
+            }
+        }
+        if (!inventory_.Add(found->outputId, found->outputAmount)) {
+            ui_.SetChatMessage("No se pudo guardar el objeto fabricado.");
+            RefreshInventoryUi();
+            return false;
+        }
+        const BlockDefinition* output = GetBlockDefinition(static_cast<BlockId>(found->outputId));
+        ui_.SetChatMessage(output != nullptr ? std::string("Fabricado: ") + output->nameEs
+                                             : "Objeto del mod fabricado.");
+        RefreshInventoryUi();
+        return true;
+    }
     struct Ingredient { std::uint16_t id; std::uint16_t amount; };
     std::array<Ingredient, 3> ingredients{};
     std::size_t ingredientCount = 0u;
@@ -2044,6 +2083,21 @@ void Engine::RefreshCraftingUi() {
             addRecipe(std::string(tier.first) + "_" + item.first, label);
         }
     }
+    const auto escapeLabel = [](const std::string& input) {
+        std::string output;
+        output.reserve(input.size());
+        for (const char c : input) {
+            if (c == '&') output += "&amp;";
+            else if (c == '<') output += "&lt;";
+            else if (c == '>') output += "&gt;";
+            else if (c == '"') output += "&quot;";
+            else if (c == '\'') output += "&#39;";
+            else output.push_back(c);
+        }
+        return output;
+    };
+    for (const ModRecipe& recipe : modRecipes_)
+        addRecipe("mod:" + recipe.id, escapeLabel(recipe.label));
     ui_.SetCraftingContents(markup);
 }
 
