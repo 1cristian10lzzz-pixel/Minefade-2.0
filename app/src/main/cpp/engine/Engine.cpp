@@ -2539,6 +2539,7 @@ void Engine::LoadEnabledMods() {
         bool enabled = false;
         std::string packId;
         std::string packVersion;
+        std::string packHash;
         std::string metaLine;
         std::size_t metaLines = 0u;
         while (std::getline(manifest, metaLine) && ++metaLines <= 16u) {
@@ -2549,10 +2550,11 @@ void Engine::LoadEnabledMods() {
             if (key == "enabled" && value == "true") enabled = true;
             else if (key == "id") packId = value;
             else if (key == "version") packVersion = value;
+            else if (key == "hash") packHash = value;
         }
         if (!enabled) continue;
-        if (!packId.empty() && !packVersion.empty())
-            activeContentMods_.push_back(packId + "@" + packVersion);
+        if (!packId.empty() && !packVersion.empty() && packHash.size() == 64u)
+            activeContentMods_.push_back(packId + "@" + packVersion + "#" + packHash);
 
         std::ifstream blocksFile(directory / "blocks.mfdata", std::ios::binary);
         std::string blockLine;
