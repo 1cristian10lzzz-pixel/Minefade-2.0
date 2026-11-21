@@ -489,7 +489,7 @@ public final class ModManager {
                         faces = loadFaces(root, textures.getString("top"),
                                 textures.getString("side"), textures.getString("bottom"));
                     }
-                    ownedBitmaps.addAll(List.of(faces));
+                    for (Bitmap face : faces) ownedBitmaps.add(face);
                     int tile = ATLAS_TILE_COUNT + entries.size() * 3;
                     String key = mod.id + ":" + item.getString("id");
                     String line = registryLine(key, item.getString("name"), 0.0f,
