@@ -1,5 +1,13 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.2.1 — herramientas para crear mods
+- Se recupera el creador de paquetes .mfmod desde MODS, perdido respecto a la rama histórica 1.1.
+- Se puede asignar nombre, descripción e icono/categoría al paquete; también crear una plantilla de fauna manualmente.
+- Los paquetes creados empiezan desactivados y no se instalan ejemplos automáticamente.
+- Java, C++ y Python validan el campo de icono con una lista permitida.
+- Android versionCode 26 / versionName 2.2.1. La compilación sigue siendo de validación hasta probarse en teléfonos reales.
+
+
 ## Actualización 2.2 — sistema de mods de datos ampliado
 - Se incorporan propiedades compatibles para velocidad agachada, velocidad pasiva/hostil, radios de huida y alerta, radio de aparición y límite de entidades.
 - Se añade aparición periódica y limitada de fauna pasiva a una distancia configurable del jugador; permanece desactivada en mods antiguos que no indiquen intervalo.
