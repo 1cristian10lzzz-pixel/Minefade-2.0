@@ -134,10 +134,11 @@ public final class SoundEffects {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     new FileInputStream(manifestIni), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = reader.readLine()) != null)
+                while ((line = reader.readLine()) != null) {
                     String trimmed = line.trim();
                     if ("enabled=true".equals(trimmed)) enabled = true;
                     else if (trimmed.startsWith("hash=")) expectedHash = trimmed.substring(5);
+                }
             } catch (Exception ignored) { continue; }
             if (!enabled || !ModManager.verifyContentHash(pack, expectedHash)) continue;
             try {
