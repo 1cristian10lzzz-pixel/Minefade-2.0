@@ -185,7 +185,7 @@ public final class ModManager {
                         continue;
                     }
                     if (entry.isDirectory() || name == null || name.startsWith("/") ||
-                            name.indexOf('\\\\') >= 0 || name.indexOf(':') >= 0 ||
+                            name.indexOf('\\') >= 0 || name.indexOf(':') >= 0 ||
                             name.contains("../") || name.equals("..") ||
                             !(name.equals("manifest.json") || name.equals("data/gameplay.mfmod")) ||
                             !seen.add(name)) {
@@ -293,8 +293,8 @@ public final class ModManager {
 
     private static int compareVersions(String left, String right) {
         try {
-            String[] a = left.split("\\\\.");
-            String[] b = right.split("\\\\.");
+            String[] a = left.split("\\.");
+            String[] b = right.split("\\.");
             for (int i = 0; i < 3; i++) {
                 int difference = Integer.compare(Integer.parseInt(a[i]), Integer.parseInt(b[i]));
                 if (difference != 0) return difference;
