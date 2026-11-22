@@ -145,7 +145,7 @@ def test_loaded_tool_durability_is_clamped_to_its_material_maximum():
 
 def test_installed_mfmod2_packages_are_revalidated_during_library_scan():
     assert "isValidInstalledV2Package(file, values)" in MODS
-    assert "compareVersions(minimum, BuildConfig.VERSION_NAME) > 0" in MODS
+    assert "compareVersions(minimum, currentEngineVersion()) > 0" in MODS
     assert "expected.equals(sha256(payload))" in MODS
 
 def test_mod_toggle_writes_valid_java_line_endings():
