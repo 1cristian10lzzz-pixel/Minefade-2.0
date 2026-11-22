@@ -18,7 +18,8 @@ std::atomic_bool gEngineFailure{false};
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jfloat density,
                                                            jbyteArray atlas, jint width, jint height,
-                                                           jbyteArray sheepModel) {
+                                                           jbyteArray sheepModel,
+                                                           jbyteArray sheepTexture) {
     auto& engine = minefade::GetEngine();
     if (atlas == nullptr || width <= 0 || height <= 0) {
         engine.SetLastInitError("El atlas de bloques llegó vacío o con dimensiones no válidas desde Android.");
@@ -59,10 +60,32 @@ Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jflo
                     "Optional MAES sheep model exceeds 8 MiB; legacy model remains active");
             }
         }
+        std::vector<std::uint8_t> sheepTextureBytes;
+        if (sheepTexture != nullptr) {
+            const jsize textureLength = env->GetArrayLength(sheepTexture);
+            constexpr jsize expectedTextureBytes = 64 * 32 * 4;
+            if (textureLength == expectedTextureBytes) {
+                sheepTextureBytes.resize(static_cast<std::size_t>(textureLength));
+                env->GetByteArrayRegion(sheepTexture, 0, textureLength,
+                    reinterpret_cast<jbyte*>(sheepTextureBytes.data()));
+                if (env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    sheepTextureBytes.clear();
+                    __android_log_print(ANDROID_LOG_WARN, kTag,
+                        "Optional MAES sheep texture could not be copied; baked face colours remain active");
+                }
+            } else if (textureLength != 0) {
+                __android_log_print(ANDROID_LOG_WARN, kTag,
+                    "Optional MAES sheep texture has invalid byte count: %d", textureLength);
+            }
+        }
         const bool result = engine.Initialise(static_cast<float>(density), pixels.data(), pixels.size(),
                                                static_cast<int>(width), static_cast<int>(height),
                                                sheepModelBytes.empty() ? nullptr : sheepModelBytes.data(),
-                                               sheepModelBytes.size());
+                                               sheepModelBytes.size(),
+                                               sheepTextureBytes.empty() ? nullptr : sheepTextureBytes.data(),
+                                               sheepTextureBytes.size());
         __android_log_print(result ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, kTag,
                             "Engine initialisation %s", result ? "succeeded" : "failed");
         return result ? JNI_TRUE : JNI_FALSE;
