@@ -703,6 +703,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     starvationTimer_ = 0.0f;
     regenerationTimer_ = 0.0f;
     hostileDamageCooldown_ = 0.0f;
+    hostileSpawnTimer_ = 0.0f;
+    hostileSpawnSequence_ = 0u;
     exitRequested_.store(false, std::memory_order_release);
     soundEvents_.store(0u, std::memory_order_release);
 
@@ -1414,6 +1416,34 @@ void Engine::Render() {
                     soundEvents_.fetch_or(16u, std::memory_order_release);
                 }
             }
+        }
+        // Survival worlds spawn a limited number of hostiles after dusk.
+        // Spawn anchors are placed away from the player so enemies approach
+        // through their normal pursuit steering instead of appearing at contact range.
+        if (gameMode_ != 1 && environment_.Daylight() < 0.22f) {
+            hostileSpawnTimer_ += safeDelta;
+            if (hostileSpawnTimer_ >= 48.0f) {
+                const auto& currentEntities = entities_.Entities();
+                const std::size_t hostileCount = static_cast<std::size_t>(std::count_if(
+                    currentEntities.begin(), currentEntities.end(), [](const Entity& entity) {
+                        return entity.kind == 4 || entity.kind == 5;
+                    }));
+                if (hostileCount < 4u && currentEntities.size() < 128u) {
+                    const float angle = static_cast<float>(hostileSpawnSequence_++) * 2.39996323f;
+                    const Vec3 anchor{
+                        player_.position.x + std::cos(angle) * 12.0f,
+                        player_.position.y,
+                        player_.position.z + std::sin(angle) * 12.0f
+                    };
+                    const int kind = (hostileSpawnSequence_ % 3u == 0u) ? 5 : 4;
+                    if (entities_.SpawnEntity(anchor, kind, world_)) {
+                        ENGINE_LOGI("Night hostile spawned: kind=%d count=%zu", kind, hostileCount + 1u);
+                    }
+                }
+                hostileSpawnTimer_ = 0.0f;
+            }
+        } else {
+            hostileSpawnTimer_ = 0.0f;
         }
         entities_.Update(world_, player_, safeDelta);
         minimapAccumulator_ += safeDelta;
