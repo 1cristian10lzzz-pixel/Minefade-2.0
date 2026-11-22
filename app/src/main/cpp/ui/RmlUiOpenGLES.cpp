@@ -391,14 +391,28 @@ Rml::TextureHandle RmlUiOpenGLES::CreateTexture(
     const std::size_t expected = width * height * 4u;
     if (source.size() < expected) return 0;
 
+    GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTexture = 0;
     GLint previousUnpackAlignment = 4;
+    GLint previousPixelUnpackBuffer = 0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
     glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousPixelUnpackBuffer);
 
+    // RmlUi supplies a CPU pointer. A stale pixel-unpack buffer would make GLES
+    // interpret that pointer as an offset into the buffer instead.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     GLuint texture = 0;
     glGenTextures(1, &texture);
-    if (texture == 0) return 0;
+    if (texture == 0) {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousPixelUnpackBuffer));
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+        glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+        return 0;
+    }
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
@@ -407,8 +421,17 @@ Rml::TextureHandle RmlUiOpenGLES::CreateTexture(
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sourceDimensions.x, sourceDimensions.y,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, source.data());
+    const GLenum uploadError = glGetError();
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousPixelUnpackBuffer));
     glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+    if (uploadError != GL_NO_ERROR) {
+        UI_LOGE("RmlUi texture upload failed with GLES error 0x%04X",
+                static_cast<unsigned int>(uploadError));
+        glDeleteTextures(1, &texture);
+        return 0;
+    }
 
     const std::uintptr_t id = nextTexture_++;
     textures_.emplace(id, TextureResource{texture, 1u, {}});
