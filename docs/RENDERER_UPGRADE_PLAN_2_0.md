@@ -168,8 +168,8 @@ No publicar porcentajes de mejora ni FPS hasta medirlos en teléfonos reales de 
    - En resize se vuelve a enlazar el framebuffer de ventana y se registra un estado incompleto.
 
 2. **Snapshots de bloques para meshing**
-   - Se copian los chunks seleccionados a snapshots independientes antes de lanzar los workers.
-   - Las consultas de bloques vecinos se resuelven desde los snapshots, no consultando los contenedores mutables de VoxelWorld desde el worker.
+   - Se copian solo los chunks con malla pendiente y su halo cardinal de vecinos, no todos los chunks cargados en cada pasada.
+   - Las consultas de bloques vecinos se resuelven desde ese conjunto de snapshots, no consultando los contenedores mutables de VoxelWorld desde el worker.
    - Cada chunk lleva una revisión de ejecución. Un cambio real de bloque la incrementa; escribir el mismo bloque no invalida innecesariamente la malla.
    - Antes de publicar una malla se compara la revisión viva con la revisión capturada. Si no coincide, se descarta el resultado y se vuelve a marcar el chunk como dirty.
    - La revisión y las métricas son datos de ejecución: no se escriben al archivo del mundo.
