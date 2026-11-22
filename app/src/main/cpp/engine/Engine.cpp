@@ -103,6 +103,8 @@ flat in highp int vAtlasTile;
 in mediump float vFogDistanceSquared;
 uniform sampler2D uBlockAtlas;
 uniform int uUseAtlas;
+uniform sampler2D uEntityTexture;
+uniform int uUseEntityTexture;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -118,7 +120,9 @@ vec2 AtlasUv(vec2 localUv, int tile) {
     return vec2(pixel.x / atlasSize.x, pixel.y / atlasSize.y);
 }
 void main() {
-    vec4 texel = (uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0);
+    vec4 texel = (uUseEntityTexture == 1)
+        ? texture(uEntityTexture, vTexCoord)
+        : ((uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0));
     vec3 litColor = texel.rgb * vColor;
     float fogNearSquared = uFogNear * uFogNear;
     float fogFarSquared = uFogFar * uFogFar;
@@ -419,6 +423,8 @@ in mediump vec2 vTexCoord;
 flat in highp int vAtlasTile;
 uniform sampler2D uBlockAtlas;
 uniform int uUseAtlas;
+uniform sampler2D uEntityTexture;
+uniform int uUseEntityTexture;
 out vec4 outColor;
 vec2 AtlasUv(vec2 localUv, int tile) {
     vec2 atlasSize = vec2(textureSize(uBlockAtlas, 0));
@@ -431,7 +437,9 @@ vec2 AtlasUv(vec2 localUv, int tile) {
     return vec2(pixel.x / atlasSize.x, pixel.y / atlasSize.y);
 }
 void main() {
-    vec4 texel = (uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0);
+    vec4 texel = (uUseEntityTexture == 1)
+        ? texture(uEntityTexture, vTexCoord)
+        : ((uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0));
     vec3 material = vColor;
     // Fluid tags are encoded in the red component by the mesh builder. The
     // conservative shader must decode them too; multiplying the negative tag
