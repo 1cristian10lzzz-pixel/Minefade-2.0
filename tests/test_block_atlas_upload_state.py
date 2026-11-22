@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression checks for safe block-atlas uploads on shared GLES contexts."""
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "app/src/main/cpp/engine/Engine.cpp").read_text(encoding="utf-8")
@@ -10,7 +11,7 @@ def test_block_atlas_upload_isolates_pixel_unpack_buffer():
     upload = SOURCE[SOURCE.index("bool Engine::UploadBlockAtlas"):SOURCE.index("bool Engine::UploadSheepTexture")]
     assert "GL_PIXEL_UNPACK_BUFFER_BINDING" in upload
     assert "glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0)" in upload
-    assert "glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousPixelUnpackBuffer))" in upload
+    assert re.search(r"glBindBuffer\\(GL_PIXEL_UNPACK_BUFFER,\\s*static_cast<GLuint>\\(previousPixelUnpackBuffer\\)\\)", upload)
 
 
 def test_block_atlas_upload_restores_texture_unit_and_binding():
