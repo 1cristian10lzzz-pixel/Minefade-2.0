@@ -503,20 +503,48 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
         ENGINE_LOGE("Atlas byte count mismatch: got %zu expected %zu", bytes, expected);
         return false;
     }
-    glGenTextures(1, &blockAtlasTexture_);
-    if (blockAtlasTexture_ == 0) return false;
+
+    // This renderer shares one GLES context with entity/UI texture uploads.
+    // A bound PBO changes the pixels argument from a CPU address into a byte
+    // offset, and a texture upload must not replace another subsystem's unit
+    // zero binding. Save and restore all upload state on every exit path.
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousTextureBinding = 0;
     GLint previousUnpackAlignment = 4;
+    GLint previousPixelUnpackBuffer = 0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
     glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousPixelUnpackBuffer);
+
+    const auto restoreUploadState = [&]() {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER,
+                     static_cast<GLuint>(previousPixelUnpackBuffer));
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+        glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+    };
+
+    // glTexImage2D interprets its pointer as a PBO offset while a pixel
+    // unpack buffer is bound. Explicitly select client-memory upload mode.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glGenTextures(1, &blockAtlasTexture_);
+    if (blockAtlasTexture_ == 0) {
+        restoreUploadState();
+        return false;
+    }
     glBindTexture(GL_TEXTURE_2D, blockAtlasTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     const GLenum error = glGetError();
+    restoreUploadState();
+
     if (error != GL_NO_ERROR) {
         glDeleteTextures(1, &blockAtlasTexture_);
         blockAtlasTexture_ = 0;
