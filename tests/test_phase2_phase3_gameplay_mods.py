@@ -96,6 +96,37 @@ def test_lan_protocol_v3_requires_matching_content_on_both_sides():
     assert "setContentFingerprint(new ModManager(this).enabledModsFingerprint())" in MAIN
 
 
+
+def test_tool_durability_is_material_based_and_persisted_outside_mfvox():
+    assert "std::array<std::uint16_t, kSlotCount> toolDurability{};" in PLAYER_H
+    assert "bool DamageSelectedItem(std::uint16_t amount = 1);" in PLAYER_H
+    assert "MaxToolDurability" in PLAYER
+    for material in ("_wooden_", "_stone_", "_copper_", "_iron_", "_gold_", "_diamond_", "_emerald_"):
+        assert material in PLAYER
+    assert 'storagePath_ + ".durability"' in ENGINE
+    assert "0x4D464459u" in ENGINE
+    assert "Inventory::kSlotCount" in ENGINE
+    assert "inventory_.toolDurability = savedDurability;" in ENGINE
+    assert "inventory_.DamageSelectedItem(1u)" in ENGINE
+
+
+def test_tool_durability_moves_with_inventory_slots_and_has_visual_bars():
+    assert "std::swap(inventory_.toolDurability[slot]" in ENGINE
+    assert "SlotItemMaxDurability(std::size_t slot) const" in PLAYER_H
+    assert "SlotItemDurability(std::size_t slot) const" in PLAYER_H
+    assert "inventory-durability" in ENGINE
+    assert "slot-durability" in ENGINE
+    assert "Durabilidad " in ENGINE
+    assert ".slot-durability" in RML and ".inventory-durability" in RML
+
+
+def test_lan_fingerprint_errors_fail_closed_and_incompatible_games_are_filtered():
+    assert "contentFingerprint = validFingerprint(fingerprint)" in LAN
+    assert 'contentFingerprint = ""' in LAN
+    assert "Ignoring LAN game with different active mods" in LAN
+    assert "if (!contentFingerprint.equals(game.contentFingerprint))" in LAN
+
+
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
               if name.startswith("test_") and callable(value)]
