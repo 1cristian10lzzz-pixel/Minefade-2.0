@@ -426,6 +426,61 @@ public final class ModManager {
     }
 
 
+
+    private static boolean isValidInstalledV2Package(File gameplayFile,
+                                                       Map<String,String> gameplayValues) {
+        File manifestFile = packageManifestFor(gameplayFile);
+        if (manifestFile == null) return true;
+        if (manifestFile.length() <= 0L || manifestFile.length() > 8192L) return false;
+        try {
+            byte[] manifestBytes;
+            try (InputStream input = new FileInputStream(manifestFile);
+                 ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[2048];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (bytes.size() + count > 8192) return false;
+                    bytes.write(buffer, 0, count);
+                }
+                manifestBytes = bytes.toByteArray();
+            }
+            JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
+            Set<String> required = new HashSet<>();
+            Collections.addAll(required, "format", "id", "name", "version",
+                    "engine_min", "engine_max", "entry", "sha256");
+            if (manifest.length() != required.size()) return false;
+            Iterator<String> keys = manifest.keys();
+            while (keys.hasNext()) if (!required.contains(keys.next())) return false;
+            if (manifest.getInt("format") != 2 ||
+                    !"data/gameplay.mfmod".equals(manifest.getString("entry")) ||
+                    !gameplayValues.get("id").equals(manifest.getString("id")) ||
+                    !gameplayValues.get("name").equals(manifest.getString("name"))) return false;
+            String version = manifest.getString("version");
+            String minimum = manifest.getString("engine_min");
+            String maximum = manifest.getString("engine_max");
+            if (!isSemanticVersion(version) || !isSemanticVersion(minimum) ||
+                    !isSemanticVersion(maximum) || compareVersions(minimum, maximum) > 0 ||
+                    compareVersions(minimum, BuildConfig.VERSION_NAME) > 0 ||
+                    compareVersions(BuildConfig.VERSION_NAME, maximum) > 0) return false;
+
+            byte[] payload;
+            try (InputStream input = new FileInputStream(gameplayFile);
+                 ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[2048];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (bytes.size() + count > 32768) return false;
+                    bytes.write(buffer, 0, count);
+                }
+                payload = bytes.toByteArray();
+            }
+            String expected = manifest.getString("sha256").toLowerCase(Locale.ROOT);
+            return expected.matches("[0-9a-f]{64}") && expected.equals(sha256(payload));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private static File packageManifestFor(File gameplayFile) {
         if (gameplayFile == null || gameplayFile.getParentFile() == null ||
                 !"data".equals(gameplayFile.getParentFile().getName()) ||
@@ -473,7 +528,7 @@ public final class ModManager {
                 if (!isSupportedKey(key) || values.containsKey(key)) return null;
                 values.put(key, content);
             }
-            if (!isValidPack(values)) return null;
+            if (!isValidPack(values) || !isValidInstalledV2Package(file, values)) return null;
             return new ModInfo(file, values);
         } catch (Exception ignored) {
             return null;
