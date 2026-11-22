@@ -240,6 +240,13 @@ private:
     std::chrono::steady_clock::time_point pickupToastUntil_{};
     std::chrono::steady_clock::time_point lastFrame_{};
     std::chrono::steady_clock::time_point lastStats_{};
+    std::chrono::steady_clock::time_point lastPerfLog_{};
+    std::array<float, 120> frameTimeSamplesMs_{};
+    std::size_t frameTimeSampleCursor_{0u};
+    std::size_t frameTimeSampleCount_{0u};
+    float lastChunkGenerationMs_{0.0f};
+    float lastMeshBuildMs_{0.0f};
+    float lastGpuUploadMs_{0.0f};
     int framesSinceStats_{0};
     float fps_{0.0f};
     std::atomic_bool exitRequested_{false};
