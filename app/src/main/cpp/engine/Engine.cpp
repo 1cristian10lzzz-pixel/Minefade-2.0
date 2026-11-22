@@ -630,6 +630,30 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     // Without this reset, a failed/missing save could silently reuse stale chunks,
     // entities, drops, inventory and player state from the previous GL session.
     lastInitError_.clear();
+    const auto glString = [](GLenum name) {
+        const GLubyte* value = glGetString(name);
+        return value != nullptr ? reinterpret_cast<const char*>(value) : "no disponible";
+    };
+    GLint maxTextureSize = 0;
+    GLint maxRenderbufferSize = 0;
+    GLint extensionCount = 0;
+    GLint framebufferBinding = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+    glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxRenderbufferSize);
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebufferBinding);
+    const GLenum startupFramebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    ENGINE_LOGI("GLES startup vendor=%s renderer=%s version=%s GLSL=%s maxTexture=%d maxRenderbuffer=%d extensions=%d framebuffer=%d status=0x%04X",
+        glString(GL_VENDOR), glString(GL_RENDERER), glString(GL_VERSION),
+        glString(GL_SHADING_LANGUAGE_VERSION), maxTextureSize, maxRenderbufferSize,
+        extensionCount, framebufferBinding, static_cast<unsigned int>(startupFramebufferStatus));
+    if (startupFramebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
+        ENGINE_LOGW("Default startup framebuffer is incomplete: 0x%04X",
+                    static_cast<unsigned int>(startupFramebufferStatus));
+    }
+    frameTimeSamplesMs_.fill(0.0f);
+    frameTimeSampleCursor_ = frameTimeSampleCount_ = 0u;
+    lastChunkGenerationMs_ = lastMeshBuildMs_ = lastGpuUploadMs_ = 0.0f;
     Shutdown();
     world_ = VoxelWorld(0x4D464445u);
     player_ = Player();
@@ -940,29 +964,53 @@ void Engine::Shutdown() {
 }
 
 void Engine::Resize(int width, int height) {
-    width_ = std::max(width, 1);
-    height_ = std::max(height, 1);
+    // Surface callbacks may briefly report zero while Android is recreating a
+    // window. Keep the last valid extent instead of forcing a 1x1 viewport.
+    if (width <= 0 || height <= 0) {
+        ENGINE_LOGW("Ignoring invalid EGL surface extent %dx%d; keeping %dx%d",
+                    width, height, width_, height_);
+        return;
+    }
+    width_ = width;
+    height_ = height;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width_, height_);
+    const GLenum framebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (framebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
+        ENGINE_LOGE("Window framebuffer incomplete after resize %dx%d: 0x%04X",
+                    width_, height_, static_cast<unsigned int>(framebufferStatus));
+    }
     ui_.Resize(width_, height_);
 }
 
 void Engine::RebuildWorldMesh() {
-    // Update only dirty cache entries. The normal play path deliberately skips
-    // flattening every cached chunk into one large CPU vertex vector.
+    // Update only dirty cache entries from immutable block snapshots. The normal
+    // play path deliberately skips flattening every cached chunk into one vector.
+    const auto buildStart = std::chrono::steady_clock::now();
     world_.BuildMesh(meshBuildScratch_, static_cast<int>(std::floor(player_.position.x)),
                      static_cast<int>(std::floor(player_.position.z)),
                      renderDistanceChunks_, nullptr, nullptr, 1u, false);
+    lastMeshBuildMs_ = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - buildStart).count();
 }
 
 void Engine::UploadWorldMesh() {
+    const auto uploadStart = std::chrono::steady_clock::now();
     const int centerX = static_cast<int>(std::floor(player_.position.x));
     const int centerZ = static_cast<int>(std::floor(player_.position.z));
     world_.GetChunkMeshViews(centerX, centerZ, renderDistanceChunks_, worldChunkViews_);
     const std::size_t uploadBudget = graphicsQuality_ <= 0 ? 1u
         : (graphicsQuality_ >= 2 ? 3u : 2u);
-    if (!worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(), uploadBudget)) {
+    const std::size_t byteBudget = graphicsQuality_ <= 0 ? 256u * 1024u
+        : (graphicsQuality_ >= 2 ? 2u * 1024u * 1024u : 768u * 1024u);
+    const double timeBudgetMs = graphicsQuality_ <= 0 ? 1.5
+        : (graphicsQuality_ >= 2 ? 4.0 : 2.5);
+    if (!worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(),
+                             uploadBudget, byteBudget, timeBudgetMs)) {
         ENGINE_LOGE("One or more chunk GPU buffers could not be synchronized; affected chunks will retry on the next upload pass");
     }
+    lastGpuUploadMs_ = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - uploadStart).count();
 }
 
 void Engine::UploadTransparentWorldMesh() {
@@ -1186,6 +1234,9 @@ void Engine::Render() {
     const auto now = std::chrono::steady_clock::now();
     const float delta = std::chrono::duration<float>(now - lastFrame_).count();
     lastFrame_ = now;
+    frameTimeSamplesMs_[frameTimeSampleCursor_] = std::clamp(delta, 0.0f, 1.0f) * 1000.0f;
+    frameTimeSampleCursor_ = (frameTimeSampleCursor_ + 1u) % frameTimeSamplesMs_.size();
+    frameTimeSampleCount_ = std::min(frameTimeSampleCount_ + 1u, frameTimeSamplesMs_.size());
     if (!paused_) {
         const float safeDelta = std::clamp(delta, 0.0f, 0.05f);
         environment_.Update(safeDelta * modDaySpeed_);
@@ -1279,7 +1330,10 @@ void Engine::Render() {
         }
 
         UpdateMining(safeDelta);
+        const auto generationStart = std::chrono::steady_clock::now();
         const bool generatedChunkReady = world_.PumpChunkGeneration();
+        lastChunkGenerationMs_ = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - generationStart).count();
         if (generatedChunkReady) {
             // Start meshing as soon as a generated chunk becomes available, but
             // never rebuild every dirty chunk in one render frame.
@@ -1327,7 +1381,10 @@ void Engine::Render() {
             chunkMeshAccumulator_ = 0.0f;
         }
     }
-    // OpenGL ES state is global. Restore full-surface state before clearing.
+    // Always draw into the Android window framebuffer, never into an FBO that
+    // may have been left bound by another UI or native rendering path.
+    // OpenGL ES state is global. Restore the complete surface before clearing.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width_, height_);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -1427,13 +1484,38 @@ void Engine::Render() {
         fps_ = static_cast<float>(framesSinceStats_);
         framesSinceStats_ = 0;
         lastStats_ = now;
-        char status[128]{};
+        std::array<float, 120> sortedFrameTimes = frameTimeSamplesMs_;
+        std::sort(sortedFrameTimes.begin(),
+                  sortedFrameTimes.begin() + static_cast<std::ptrdiff_t>(frameTimeSampleCount_));
+        const auto percentile = [&](double fraction) {
+            if (frameTimeSampleCount_ == 0u) return 0.0f;
+            const double rank = std::ceil(fraction * static_cast<double>(frameTimeSampleCount_));
+            const std::size_t index = std::min(frameTimeSampleCount_ - 1u,
+                static_cast<std::size_t>(std::max(1.0, rank) - 1.0));
+            return sortedFrameTimes[index];
+        };
+        const float frameP50 = percentile(0.50);
+        const float frameP95 = percentile(0.95);
+        const float frameP99 = percentile(0.99);
+        char status[160]{};
         std::snprintf(status, sizeof(status),
-                      "FPS %.0f · C %zu +%zu · GPU %zu +%zu · Día %.0f%%",
-                      fps_, world_.ChunkCount(), world_.PendingChunkCount(),
-                      worldRenderer_.ResidentChunkCount(), worldRenderer_.PendingUploadCount(),
-                      environment_.Daylight() * 100.0f);
+                      "FPS %.0f · F %.1f/%.1fms · C %zu · GPU %.1fMiB",
+                      fps_, frameP50, frameP95, world_.ChunkCount(),
+                      static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0));
         ui_.SetStatus(status);
+
+        if (lastPerfLog_.time_since_epoch().count() == 0 ||
+            now - lastPerfLog_ >= std::chrono::seconds(5)) {
+            ENGINE_LOGI("perf frame_ms p50=%.2f p95=%.2f p99=%.2f generation_ms=%.2f mesh_ms=%.2f upload_ms=%.2f chunks=%zu pending_generation=%zu cpu_blocks_MiB=%.2f cpu_mesh_MiB=%.2f gpu_MiB=%.2f uploads=%zu upload_bytes=%zu pending_uploads=%zu pending_bytes=%zu",
+                frameP50, frameP95, frameP99, lastChunkGenerationMs_, lastMeshBuildMs_,
+                lastGpuUploadMs_, world_.ChunkCount(), world_.PendingChunkCount(),
+                static_cast<double>(world_.ChunkStorageBytes()) / (1024.0 * 1024.0),
+                static_cast<double>(world_.MeshCacheMemoryBytes()) / (1024.0 * 1024.0),
+                static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0),
+                worldRenderer_.LastUploadCount(), worldRenderer_.LastUploadBytes(),
+                worldRenderer_.PendingUploadCount(), worldRenderer_.PendingUploadBytes());
+            lastPerfLog_ = now;
+        }
     }
 
     ui_.UpdateAndRender();
