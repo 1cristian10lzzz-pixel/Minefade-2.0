@@ -35,8 +35,12 @@ def test_block_edits_advance_revision_only_when_the_value_changes():
     end = WORLD.index("bool VoxelWorld::IsSolid(", start)
     method = WORLD[start:end]
     assert "if (stored == block) return true;" in method
-    assert "chunk->revision = chunk->revision ==" in method
     assert "InvalidateChunkMesh(chunk->x, chunk->z);" in method
+    invalidation_start = WORLD.index("void VoxelWorld::InvalidateChunkMesh(")
+    invalidation_end = WORLD.index("void VoxelWorld::InvalidateChunkAndNeighbors(", invalidation_start)
+    invalidation = WORLD[invalidation_start:invalidation_end]
+    assert "chunk->revision = chunk->revision ==" in invalidation
+    assert "FindChunk(chunkX, chunkZ)" in invalidation
     assert "std::uint64_t revision{1};" in WORLD_H
 
 
