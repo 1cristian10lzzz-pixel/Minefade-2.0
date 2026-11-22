@@ -1087,7 +1087,7 @@ def main():
         'sampling':'NEAREST',
         'sha256':atlas_sha256,
     }
-    OUT_JSON.write_text(json.dumps({'source':'user-provided Minecraft MOD.apk / vanilla blocks.json','source_format_version':raw.get('format_version'),'manifest_version':1,'count':len(catalogue),'atlas':atlas_manifest,'blocks':catalogue},ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')
+    OUT_JSON.write_text(json.dumps({'source':'user-provided Minecraft MOD.apk / vanilla blocks.json','source_format_version':raw.get('format_version'),'manifest_version':1,'count':len(catalogue),'atlas':atlas_manifest,'blocks':catalogue},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     atlas_h=[
         '#pragma once',
         '#include <cstddef>',
@@ -1104,7 +1104,7 @@ def main():
         f'inline constexpr char kBlockAtlasSha256[] = "{atlas_sha256}";',
         '} // namespace minefade',
     ]
-    OUT_ATLAS_H.write_text('\\n'.join(atlas_h)+'\\n',encoding='utf-8')
+    OUT_ATLAS_H.write_text('\n'.join(atlas_h)+'\n',encoding='utf-8')
     # Compact native registry.
     h=[]
     h += ['#pragma once','#include <cstddef>','#include <cstdint>','#include <string_view>','namespace minefade {',
