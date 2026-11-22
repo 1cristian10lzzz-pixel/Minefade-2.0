@@ -642,18 +642,37 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxRenderbufferSize);
     glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebufferBinding);
+    GLint maxViewport[2]{0, 0};
+    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, maxViewport);
+    char extensionSummary[2048]{};
+    std::size_t extensionLength = 0u;
+    for (GLint index = 0; index < extensionCount; ++index) {
+        const GLubyte* extension = glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(index));
+        if (extension == nullptr) continue;
+        const int written = std::snprintf(extensionSummary + extensionLength,
+            sizeof(extensionSummary) - extensionLength, "%s%s",
+            extensionLength == 0u ? "" : " ", reinterpret_cast<const char*>(extension));
+        if (written < 0) break;
+        if (static_cast<std::size_t>(written) >= sizeof(extensionSummary) - extensionLength) {
+            extensionLength = sizeof(extensionSummary) - 1u;
+            break;
+        }
+        extensionLength += static_cast<std::size_t>(written);
+    }
     const GLenum startupFramebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    ENGINE_LOGI("GLES startup vendor=%s renderer=%s version=%s GLSL=%s maxTexture=%d maxRenderbuffer=%d extensions=%d framebuffer=%d status=0x%04X",
+    ENGINE_LOGI("GLES startup vendor=%s renderer=%s version=%s GLSL=%s maxTexture=%d maxRenderbuffer=%d maxViewport=%dx%d extensions=%d framebuffer=%d status=0x%04X",
         glString(GL_VENDOR), glString(GL_RENDERER), glString(GL_VERSION),
         glString(GL_SHADING_LANGUAGE_VERSION), maxTextureSize, maxRenderbufferSize,
-        extensionCount, framebufferBinding, static_cast<unsigned int>(startupFramebufferStatus));
+        maxViewport[0], maxViewport[1], extensionCount, framebufferBinding,
+        static_cast<unsigned int>(startupFramebufferStatus));
+    if (extensionLength > 0u) ENGINE_LOGI("GLES extensions: %s", extensionSummary);
     if (startupFramebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
         ENGINE_LOGW("Default startup framebuffer is incomplete: 0x%04X",
                     static_cast<unsigned int>(startupFramebufferStatus));
     }
     frameTimeSamplesMs_.fill(0.0f);
     frameTimeSampleCursor_ = frameTimeSampleCount_ = 0u;
-    lastChunkGenerationMs_ = lastMeshBuildMs_ = lastGpuUploadMs_ = 0.0f;
+    lastChunkGenerationPumpMs_ = lastMeshBuildMs_ = lastGpuUploadMs_ = 0.0f;
     Shutdown();
     world_ = VoxelWorld(0x4D464445u);
     player_ = Player();
@@ -1332,7 +1351,7 @@ void Engine::Render() {
         UpdateMining(safeDelta);
         const auto generationStart = std::chrono::steady_clock::now();
         const bool generatedChunkReady = world_.PumpChunkGeneration();
-        lastChunkGenerationMs_ = std::chrono::duration<float, std::milli>(
+        lastChunkGenerationPumpMs_ = std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - generationStart).count();
         if (generatedChunkReady) {
             // Start meshing as soon as a generated chunk becomes available, but
@@ -1506,8 +1525,8 @@ void Engine::Render() {
 
         if (lastPerfLog_.time_since_epoch().count() == 0 ||
             now - lastPerfLog_ >= std::chrono::seconds(5)) {
-            ENGINE_LOGI("perf frame_ms p50=%.2f p95=%.2f p99=%.2f generation_ms=%.2f mesh_ms=%.2f upload_ms=%.2f chunks=%zu pending_generation=%zu cpu_blocks_MiB=%.2f cpu_mesh_MiB=%.2f gpu_MiB=%.2f uploads=%zu upload_bytes=%zu pending_uploads=%zu pending_bytes=%zu",
-                frameP50, frameP95, frameP99, lastChunkGenerationMs_, lastMeshBuildMs_,
+            ENGINE_LOGI("perf frame_ms p50=%.2f p95=%.2f p99=%.2f generation_pump_ms=%.2f mesh_ms=%.2f upload_ms=%.2f chunks=%zu pending_generation=%zu cpu_blocks_MiB=%.2f cpu_mesh_MiB=%.2f gpu_MiB=%.2f uploads=%zu upload_bytes=%zu pending_uploads=%zu pending_bytes=%zu",
+                frameP50, frameP95, frameP99, lastChunkGenerationPumpMs_, lastMeshBuildMs_,
                 lastGpuUploadMs_, world_.ChunkCount(), world_.PendingChunkCount(),
                 static_cast<double>(world_.ChunkStorageBytes()) / (1024.0 * 1024.0),
                 static_cast<double>(world_.MeshCacheMemoryBytes()) / (1024.0 * 1024.0),
