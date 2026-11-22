@@ -19,6 +19,10 @@ def test_discovery_generation_invalidates_stale_resolve_callbacks():
     resolved = discover[discover.index("public void onServiceResolved"):discover.index("});", discover.index("public void onServiceResolved"))]
     assert "if (discoveryEpoch != discoveryGeneration.get()) return;" in resolved
     assert "discoveryGeneration.incrementAndGet();" in method_body("private void stopDiscovery()", "private void stopSession()")
+    notify = method_body("private void notifyGames()", "private void postStatus(")
+    assert "discoveryEpoch != discoveryGeneration.get()" in notify
+    host = method_body("public void startHost(", "public void discover(")
+    assert host.index("stopDiscovery();") < host.index("stopSession();")
 
 
 def test_discovery_failures_release_the_multicast_lock():
