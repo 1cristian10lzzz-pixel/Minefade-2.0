@@ -64,6 +64,8 @@ public:
     bool DamageSelectedItem(std::uint16_t amount = 1);
     std::uint16_t SelectedItemMaxDurability() const;
     std::uint16_t SelectedItemDurability() const;
+    std::uint16_t SlotItemMaxDurability(std::size_t slot) const;
+    std::uint16_t SlotItemDurability(std::size_t slot) const;
     std::uint16_t CountItem(std::uint16_t itemId) const;
     bool ConsumeItem(std::uint16_t itemId, std::uint16_t amount);
     std::uint16_t SelectedItemId() const;
