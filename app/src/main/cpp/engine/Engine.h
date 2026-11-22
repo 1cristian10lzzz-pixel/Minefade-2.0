@@ -21,7 +21,7 @@ namespace minefade {
 
 class Engine {
 public:
-    bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight, const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize);
+    bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight, const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize, const std::uint8_t* sheepTextureRgba, std::size_t sheepTextureBytes);
     std::string LastInitError() const;
     bool IsUiReady() const;
     void FallbackAction(int action, bool pressed);
@@ -71,11 +71,13 @@ private:
     static GLuint CompileShader(GLenum type, const char* source);
     bool CreateWorldProgram();
     bool UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int width, int height);
+    bool UploadSheepTexture(const std::uint8_t* pixels, std::size_t bytes);
     void RebuildWorldMesh();
     void UploadWorldMesh();
     void UploadTransparentWorldMesh();
     void RebuildEntityMesh();
     void UploadEntityMesh();
+    void UploadMaesEntityMesh();
     void UploadItemMesh();
     void HandleUiAction(const std::string& action);
     void SaveWorld();
@@ -98,6 +100,8 @@ private:
     GLint daylightLocation_{-1};
     GLint atlasLocation_{-1};
     GLint useAtlasLocation_{-1};
+    GLint entityTextureLocation_{-1};
+    GLint useEntityTextureLocation_{-1};
     GLint timeLocation_{-1};
     GLint qualityLocation_{-1};
     GLint waterWavesLocation_{-1};
@@ -109,11 +113,15 @@ private:
     GLint fogNearLocation_{-1};
     GLint fogFarLocation_{-1};
     GLuint blockAtlasTexture_{0};
+    GLuint sheepTexture_{0};
     GLuint entityVao_{0};
     GLuint entityVbo_{0};
+    GLuint maesEntityVao_{0};
+    GLuint maesEntityVbo_{0};
     GLuint itemVao_{0};
     GLuint itemVbo_{0};
     GLsizei entityVertexCount_{0};
+    GLsizei maesEntityVertexCount_{0};
     GLsizei itemVertexCount_{0};
     int lastChunkX_{999999};
     int lastChunkZ_{999999};
@@ -213,6 +221,7 @@ private:
     std::vector<ChunkMeshView> worldChunkViews_;
     WorldMeshRenderer worldRenderer_;
     std::vector<WorldVertex> entityMesh_;
+    std::vector<WorldVertex> maesEntityMesh_;
     std::vector<WorldVertex> itemMesh_;
     std::vector<float> remotePlayers_;
     std::vector<int> pendingBlockEdits_;
