@@ -8,7 +8,7 @@ from pathlib import Path
 
 MAX_BYTES, MAX_LINES = 32768, 128
 ALLOWED = {
-    "id", "name", "version", "description", "enabled",
+    "id", "name", "version", "description", "icon", "enabled",
     "spawn.sheep", "spawn.cow", "spawn.bird", "spawn.pig",
     "spawn.rabbit", "spawn.zombie", "spawn.skeleton",
     "player.speed", "player.jump", "player.crouch_speed",
@@ -87,6 +87,8 @@ def parse_mod(path: Path) -> dict[str, str]:
         raise ValueError("enabled debe ser true o false")
     if len(values.get("description", "")) > 512:
         raise ValueError("description demasiado largo")
+    if values.get("icon", "cube") not in {"cube", "tool", "creature", "world", "magic", "decor"}:
+        raise ValueError("icon inválido")
 
     for key in SPAWN & values.keys():
         try:

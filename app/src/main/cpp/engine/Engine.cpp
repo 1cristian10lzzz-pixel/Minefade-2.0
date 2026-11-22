@@ -2195,7 +2195,7 @@ void Engine::LoadEnabledMods() {
 
     const auto isAllowedKey = [](const std::string& key) {
         static const std::unordered_set<std::string> allowed{
-            "id", "name", "version", "description", "enabled",
+            "id", "name", "version", "description", "icon", "enabled",
             "spawn.sheep", "spawn.cow", "spawn.bird", "spawn.pig",
             "spawn.rabbit", "spawn.zombie", "spawn.skeleton",
             "player.speed", "player.jump", "player.crouch_speed",
