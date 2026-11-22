@@ -5,6 +5,7 @@
     2,
     0
   ],
+  "manifest_version": 1,
   "count": 414,
   "atlas": {
     "pixel_format": "RGBA8",
@@ -17,7 +18,8 @@
     "padding": 1,
     "tile_count": 1242,
     "byte_count": 1617408,
-    "sampling": "NEAREST"
+    "sampling": "NEAREST",
+    "sha256": "c2edde34464d6b2afd008c937e2c6b1b258ac38d7a61ca342f2fccc3f7052dd3"
   },
   "blocks": [
     {
@@ -10370,6 +10372,5 @@
         "bottom": 1241
       }
     }
-  ],
-  "manifest_version": 1
+  ]
 }
