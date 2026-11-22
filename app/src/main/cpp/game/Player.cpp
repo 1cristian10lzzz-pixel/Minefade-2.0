@@ -13,6 +13,7 @@ static_assert(sizeof(MfEnvironmentState) == 8u, "Rust/C environment ABI mismatch
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace minefade {
 namespace {
@@ -490,6 +491,7 @@ bool Inventory::DamageSelectedItem(std::uint16_t amount) {
     if (maximum == 0u) return false;
     std::uint16_t& remaining = toolDurability[selectedSlot];
     if (remaining == 0u) remaining = maximum;
+    else remaining = std::min(remaining, maximum);
     if (amount >= remaining) {
         counts[selectedSlot] = 0u;
         remaining = 0u;
@@ -510,16 +512,14 @@ std::uint16_t Inventory::CountItem(std::uint16_t itemId) const {
 bool Inventory::ConsumeItem(std::uint16_t itemId, std::uint16_t amount) {
     if (itemId == 0u || amount == 0u || CountItem(itemId) < amount) return false;
     std::uint16_t remaining = amount;
-    for (std::uint32_t& encoded : counts) {
+    for (std::size_t slot = 0; slot < counts.size(); ++slot) {
+        std::uint32_t& encoded = counts[slot];
         if (encoded / 1000u != itemId) continue;
         const std::uint16_t current = static_cast<std::uint16_t>(encoded % 1000u);
         const std::uint16_t take = std::min(current, remaining);
         const std::uint16_t after = static_cast<std::uint16_t>(current - take);
         encoded = after == 0u ? 0u : static_cast<std::uint32_t>(itemId) * 1000u + after;
-        if (after == 0u) {
-            const std::size_t slot = static_cast<std::size_t>(&encoded - counts.data());
-            toolDurability[slot] = 0u;
-        }
+        if (after == 0u) toolDurability[slot] = 0u;
         remaining = static_cast<std::uint16_t>(remaining - take);
         if (remaining == 0u) return true;
     }
