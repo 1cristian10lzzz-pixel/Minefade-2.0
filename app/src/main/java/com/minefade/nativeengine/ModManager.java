@@ -288,8 +288,8 @@ public final class ModManager {
                     name.trim().isEmpty() || name.length() > 96 ||
                     !isSemanticVersion(packageVersion) ||
                     !isSemanticVersion(minimumEngine) || !isSemanticVersion(maximumEngine) ||
-                    compareVersions(minimumEngine, BuildConfig.VERSION_NAME) > 0 ||
-                    compareVersions(BuildConfig.VERSION_NAME, maximumEngine) > 0 ||
+                    compareVersions(minimumEngine, currentEngineVersion()) > 0 ||
+                    compareVersions(currentEngineVersion(), maximumEngine) > 0 ||
                     !expectedHash.matches("[0-9a-f]{64}") ||
                     !expectedHash.equals(sha256(gameplayBytes))) return null;
 
@@ -335,6 +335,16 @@ public final class ModManager {
         File[] children = file.listFiles();
         if (children != null) for (File child : children) deleteTree(child);
         file.delete();
+    }
+
+    private String currentEngineVersion() {
+        try {
+            String version = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName;
+            return version == null || version.trim().isEmpty() ? "0.0.0" : version;
+        } catch (android.content.pm.PackageManager.NameNotFoundException error) {
+            return "0.0.0";
+        }
     }
 
     private static boolean isSemanticVersion(String value) {
@@ -460,8 +470,8 @@ public final class ModManager {
             String maximum = manifest.getString("engine_max");
             if (!isSemanticVersion(version) || !isSemanticVersion(minimum) ||
                     !isSemanticVersion(maximum) || compareVersions(minimum, maximum) > 0 ||
-                    compareVersions(minimum, BuildConfig.VERSION_NAME) > 0 ||
-                    compareVersions(BuildConfig.VERSION_NAME, maximum) > 0) return false;
+                    compareVersions(minimum, currentEngineVersion()) > 0 ||
+                    compareVersions(currentEngineVersion(), maximum) > 0) return false;
 
             byte[] payload;
             try (InputStream input = new FileInputStream(gameplayFile);
