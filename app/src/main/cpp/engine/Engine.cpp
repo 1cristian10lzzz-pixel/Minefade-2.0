@@ -696,6 +696,13 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     entityMeshAccumulator_ = 0.0f;
     itemMeshAccumulator_ = 0.0f;
     minimapAccumulator_ = 0.0f;
+    playerHealth_ = 20.0f;
+    playerHunger_ = 20.0f;
+    hungerExhaustion_ = 0.0f;
+    hungerDrainTimer_ = 0.0f;
+    starvationTimer_ = 0.0f;
+    regenerationTimer_ = 0.0f;
+    hostileDamageCooldown_ = 0.0f;
     exitRequested_.store(false, std::memory_order_release);
     soundEvents_.store(0u, std::memory_order_release);
 
@@ -828,6 +835,29 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
     }
     if (loadedExistingWorld && !storagePath_.empty()) {
+        // Survival stats are stored in a validated sidecar so MFVOX001/002/003
+        // remain byte-for-byte compatible with existing worlds.
+        std::ifstream survivalFile(storagePath_ + ".survival", std::ios::binary);
+        if (survivalFile) {
+            std::uint32_t magic = 0u;
+            std::uint32_t version = 0u;
+            float savedHealth = 20.0f;
+            float savedHunger = 20.0f;
+            survivalFile.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            survivalFile.read(reinterpret_cast<char*>(&version), sizeof(version));
+            survivalFile.read(reinterpret_cast<char*>(&savedHealth), sizeof(savedHealth));
+            survivalFile.read(reinterpret_cast<char*>(&savedHunger), sizeof(savedHunger));
+            if (survivalFile && survivalFile.peek() == std::char_traits<char>::eof() &&
+                magic == 0x4D465356u && version == 1u &&
+                std::isfinite(savedHealth) && std::isfinite(savedHunger) &&
+                savedHealth >= 0.0f && savedHealth <= 20.0f &&
+                savedHunger >= 0.0f && savedHunger <= 20.0f) {
+                playerHealth_ = savedHealth;
+                playerHunger_ = savedHunger;
+            } else {
+                ENGINE_LOGW("Ignored invalid survival sidecar; retaining safe default health/hunger");
+            }
+        }
         std::ifstream gearFile(storagePath_ + ".armor", std::ios::binary);
         if (gearFile) {
             std::array<std::uint16_t,4> savedGear{};
@@ -1258,8 +1288,87 @@ void Engine::Render() {
     if (!paused_) {
         const float safeDelta = std::clamp(delta, 0.0f, 0.05f);
         environment_.Update(safeDelta * modDaySpeed_);
+        const bool wasGrounded = player_.grounded;
+        const float incomingVerticalVelocity = player_.verticalVelocity;
         player_.Update(world_, safeDelta);
         autoJumpCooldown_ = std::max(0.0f, autoJumpCooldown_ - safeDelta);
+
+        if (gameMode_ != 1) {
+            const auto applyPlayerDamage = [this](float rawDamage, const char* source) {
+                if (rawDamage <= 0.0f || !std::isfinite(rawDamage) || playerHealth_ <= 0.0f) return;
+                std::size_t armorPieces = 0u;
+                for (const std::uint16_t item : inventory_.equippedArmor) {
+                    if (item != 0u) ++armorPieces;
+                }
+                const float armorFactor = std::max(0.55f, 1.0f - 0.08f * static_cast<float>(armorPieces));
+                playerHealth_ = std::clamp(playerHealth_ - rawDamage * armorFactor, 0.0f, 20.0f);
+                ui_.SetChatMessage(std::string(source) + " · Vida " +
+                    std::to_string(static_cast<int>(std::ceil(playerHealth_))) + "/20");
+                if (playerHealth_ <= 0.0f) {
+                    if (!player_.ResolveSafeSpawn(world_)) {
+                        const int spawnX = 8;
+                        const int spawnZ = 8;
+                        player_.position = {8.0f,
+                            static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f, 8.0f};
+                    }
+                    playerHealth_ = 10.0f;
+                    playerHunger_ = std::max(playerHunger_, 8.0f);
+                    hungerExhaustion_ = 0.0f;
+                    ui_.SetChatMessage("Has reaparecido. Conservas tu inventario.");
+                    SaveWorld();
+                }
+            };
+
+            // A fall only causes damage when the movement solver reports a new landing.
+            if (!wasGrounded && player_.grounded && incomingVerticalVelocity < -10.0f) {
+                const float fallDamage = std::ceil((-incomingVerticalVelocity - 10.0f) * 0.45f);
+                applyPlayerDamage(fallDamage, "Daño por caída");
+            }
+
+            const bool moving = std::abs(player_.movementX) + std::abs(player_.movementY) > 0.12f;
+            hungerExhaustion_ += safeDelta * (moving ? 0.020f : 0.0012f);
+            while (hungerExhaustion_ >= 1.0f && playerHunger_ > 0.0f) {
+                hungerExhaustion_ -= 1.0f;
+                playerHunger_ = std::max(0.0f, playerHunger_ - 1.0f);
+            }
+
+            if (playerHunger_ >= 18.0f && playerHealth_ < 20.0f) {
+                regenerationTimer_ += safeDelta;
+                if (regenerationTimer_ >= 4.0f) {
+                    regenerationTimer_ = std::fmod(regenerationTimer_, 4.0f);
+                    playerHealth_ = std::min(20.0f, playerHealth_ + 1.0f);
+                    playerHunger_ = std::max(0.0f, playerHunger_ - 1.0f);
+                }
+            } else {
+                regenerationTimer_ = 0.0f;
+            }
+
+            if (playerHunger_ <= 0.0f) {
+                starvationTimer_ += safeDelta;
+                if (starvationTimer_ >= 8.0f) {
+                    starvationTimer_ = std::fmod(starvationTimer_, 8.0f);
+                    applyPlayerDamage(1.0f, "Hambre extrema");
+                }
+            } else {
+                starvationTimer_ = 0.0f;
+            }
+
+            hostileDamageCooldown_ = std::max(0.0f, hostileDamageCooldown_ - safeDelta);
+            if (hostileDamageCooldown_ <= 0.0f) {
+                const bool hostileNearby = std::any_of(entities_.Entities().begin(),
+                    entities_.Entities().end(), [this](const Entity& entity) {
+                        if (entity.kind != 4 && entity.kind != 5) return false;
+                        const float dx = entity.position.x - player_.position.x;
+                        const float dy = entity.position.y - player_.position.y;
+                        const float dz = entity.position.z - player_.position.z;
+                        return dx * dx + dy * dy + dz * dz < 1.65f;
+                    });
+                if (hostileNearby) {
+                    applyPlayerDamage(2.0f, "Ataque enemigo");
+                    hostileDamageCooldown_ = 1.25f;
+                }
+            }
+        }
         if (autoJump_ && autoJumpCooldown_ <= 0.0f && player_.grounded &&
             player_.movementY > 0.28f) {
             // Bedrock-style auto-jump: jump only when forward movement meets a
@@ -1515,11 +1624,17 @@ void Engine::Render() {
         const float frameP50 = percentile(0.50);
         const float frameP95 = percentile(0.95);
         const float frameP99 = percentile(0.99);
-        char status[160]{};
-        std::snprintf(status, sizeof(status),
-                      "FPS %.0f · F %.1f/%.1fms · C %zu · GPU %.1fMiB",
-                      fps_, frameP50, frameP95, world_.ChunkCount(),
-                      static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0));
+        char status[220]{};
+        if (gameMode_ == 1) {
+            std::snprintf(status, sizeof(status),
+                          "Creativo · FPS %.0f · F %.1f/%.1fms · C %zu · GPU %.1fMiB",
+                          fps_, frameP50, frameP95, world_.ChunkCount(),
+                          static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0));
+        } else {
+            std::snprintf(status, sizeof(status),
+                          "VIDA %.0f/20 · COMIDA %.0f/20 · FPS %.0f · F %.1f/%.1fms",
+                          std::ceil(playerHealth_), std::floor(playerHunger_), fps_, frameP50, frameP95);
+        }
         ui_.SetStatus(status);
 
         if (lastPerfLog_.time_since_epoch().count() == 0 ||
@@ -1693,6 +1808,61 @@ void Engine::HandleUiAction(const std::string& action) {
         paused_ = true;
         RefreshInventoryUi();
         ui_.SetPanelVisible("inventory-panel", true);
+    } else if (action == "eat") {
+        if (gameMode_ == 1) {
+            ui_.SetChatMessage("En creativo no necesitas comer.");
+        } else if (playerHunger_ >= 20.0f) {
+            ui_.SetChatMessage("No tienes hambre.");
+        } else {
+            const std::uint16_t selected = inventory_.SelectedItemId();
+            const BlockDefinition* food = GetBlockDefinition(static_cast<BlockId>(selected));
+            float restored = 0.0f;
+            if (food != nullptr) {
+                const std::string_view key(food->key);
+                if (key == "carrots") restored = 4.0f;
+                else if (key == "potatoes") restored = 3.0f;
+            }
+            if (restored <= 0.0f) {
+                ui_.SetChatMessage("Selecciona zanahorias o patatas para comer.");
+            } else if (inventory_.ConsumeSelected(1u)) {
+                playerHunger_ = std::min(20.0f, playerHunger_ + restored);
+                hungerExhaustion_ = 0.0f;
+                RefreshInventoryUi();
+                ui_.SetChatMessage(std::string("Has comido ") + food->nameEs + ".");
+            } else {
+                ui_.SetChatMessage("No quedan unidades de ese alimento.");
+            }
+        }
+    } else if (action == "attack") {
+        if (gameMode_ == 1) {
+            ui_.SetChatMessage("El combate no está disponible en este modo.");
+        } else {
+            float damage = 2.0f;
+            const BlockDefinition* held = GetBlockDefinition(
+                static_cast<BlockId>(inventory_.SelectedItemId()));
+            if (held != nullptr) {
+                const std::string_view key(held->key);
+                if (key.find("_sword") != std::string_view::npos) damage = 6.0f;
+                else if (key.find("_axe") != std::string_view::npos) damage = 4.0f;
+                else if (key.find("_pickaxe") != std::string_view::npos) damage = 3.0f;
+            }
+            bool defeated = false;
+            int defeatedKind = -1;
+            if (entities_.DamageNearest(player_.CameraPosition(), player_.Forward(),
+                                        3.25f, damage, &defeated, &defeatedKind)) {
+                if (defeated) {
+                    ui_.SetChatMessage(defeatedKind == 5
+                        ? "Has derrotado a un esqueleto."
+                        : "Has derrotado a un zombi.");
+                } else {
+                    ui_.SetChatMessage("Impacto · daño " + std::to_string(static_cast<int>(damage)));
+                }
+                RebuildEntityMesh();
+                UploadEntityMesh();
+            } else {
+                ui_.SetChatMessage("No hay ningún enemigo frente a ti.");
+            }
+        }
     } else if (action == "craft-planks") {
         CraftRecipe("planks");
     } else if (action == "craft-sticks") {
@@ -2382,6 +2552,34 @@ void Engine::SaveWorld() {
                         std::filesystem::rename(modeTemp, modePath, error);
                     }
                     if (error) std::filesystem::remove(modeTemp);
+                }
+            }
+            {
+                const std::string survivalPath = storagePath_ + ".survival";
+                const std::string survivalTemp = survivalPath + ".tmp";
+                const std::uint32_t magic = 0x4D465356u;
+                const std::uint32_t version = 1u;
+                std::ofstream survivalFile(survivalTemp, std::ios::binary | std::ios::trunc);
+                if (survivalFile) {
+                    survivalFile.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    survivalFile.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    survivalFile.write(reinterpret_cast<const char*>(&playerHealth_), sizeof(playerHealth_));
+                    survivalFile.write(reinterpret_cast<const char*>(&playerHunger_), sizeof(playerHunger_));
+                    survivalFile.flush();
+                    survivalFile.close();
+                    std::error_code error;
+                    std::filesystem::rename(survivalTemp, survivalPath, error);
+                    if (error) {
+                        std::filesystem::remove(survivalPath, error);
+                        error.clear();
+                        std::filesystem::rename(survivalTemp, survivalPath, error);
+                    }
+                    if (error) {
+                        ENGINE_LOGE("Could not atomically save survival stats: %s", error.message().c_str());
+                        std::filesystem::remove(survivalTemp);
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create survival sidecar temporary file");
                 }
             }
             if (starterChestEnabled_) {
