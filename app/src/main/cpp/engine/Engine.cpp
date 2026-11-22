@@ -511,17 +511,26 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
     GLint previousUnpackAlignment = 4;
+    GLint previousUnpackRowLength = 0;
+    GLint previousUnpackSkipPixels = 0;
+    GLint previousUnpackSkipRows = 0;
     GLint previousPixelUnpackBuffer = 0;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
     glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH, &previousUnpackRowLength);
+    glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &previousUnpackSkipPixels);
+    glGetIntegerv(GL_UNPACK_SKIP_ROWS, &previousUnpackSkipRows);
     glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousPixelUnpackBuffer);
 
     const auto restoreUploadState = [&]() {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER,
                      static_cast<GLuint>(previousPixelUnpackBuffer));
         glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, previousUnpackRowLength);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, previousUnpackSkipPixels);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, previousUnpackSkipRows);
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
         glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     };
@@ -540,6 +549,9 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     const GLenum error = glGetError();
