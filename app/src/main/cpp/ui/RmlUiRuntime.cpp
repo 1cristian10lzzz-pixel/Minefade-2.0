@@ -1,8 +1,10 @@
 #include "RmlUiRuntime.h"
+#include "../blocks/BlockAtlasManifest.h"
 
 #include <android/log.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <fstream>
 #include <iterator>
@@ -14,6 +16,98 @@ namespace {
 constexpr const char* kTag = "MinefadeRmlUi";
 const auto kStartTime = std::chrono::steady_clock::now();
 std::string gLastRmlLogMessage;
+
+// RmlUi uses GLES state directly. Isolate that state once per UI frame so
+// blend/scissor/viewport/texture/VAO changes cannot leak into the world pass.
+class ScopedRmlUiGlState {
+public:
+    ScopedRmlUiGlState() {
+        glGetIntegerv(GL_CURRENT_PROGRAM, &program_);
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray_);
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer_);
+        glGetIntegerv(GL_VIEWPORT, viewport_.data());
+        glGetIntegerv(GL_SCISSOR_BOX, scissorBox_.data());
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture_);
+        glActiveTexture(GL_TEXTURE0);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureUnit0_);
+        glActiveTexture(static_cast<GLenum>(activeTexture_));
+
+        glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgb_);
+        glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgb_);
+        glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha_);
+        glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha_);
+        glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEquationRgb_);
+        glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEquationAlpha_);
+        glGetIntegerv(GL_DEPTH_FUNC, &depthFunc_);
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteMask_);
+        glGetBooleanv(GL_COLOR_WRITEMASK, colorWriteMask_.data());
+
+        blendEnabled_ = glIsEnabled(GL_BLEND);
+        depthEnabled_ = glIsEnabled(GL_DEPTH_TEST);
+        cullEnabled_ = glIsEnabled(GL_CULL_FACE);
+        scissorEnabled_ = glIsEnabled(GL_SCISSOR_TEST);
+        valid_ = glGetError() == GL_NO_ERROR;
+    }
+
+    ~ScopedRmlUiGlState() {
+        if (!valid_) return;
+
+        glUseProgram(static_cast<GLuint>(program_));
+        glBindVertexArray(static_cast<GLuint>(vertexArray_));
+        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(arrayBuffer_));
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(textureUnit0_));
+        glActiveTexture(static_cast<GLenum>(activeTexture_));
+
+        glViewport(viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
+        glScissor(scissorBox_[0], scissorBox_[1], scissorBox_[2], scissorBox_[3]);
+        glBlendFuncSeparate(static_cast<GLenum>(blendSrcRgb_),
+                            static_cast<GLenum>(blendDstRgb_),
+                            static_cast<GLenum>(blendSrcAlpha_),
+                            static_cast<GLenum>(blendDstAlpha_));
+        glBlendEquationSeparate(static_cast<GLenum>(blendEquationRgb_),
+                                static_cast<GLenum>(blendEquationAlpha_));
+        glDepthFunc(static_cast<GLenum>(depthFunc_));
+        glDepthMask(depthWriteMask_);
+        glColorMask(colorWriteMask_[0], colorWriteMask_[1],
+                    colorWriteMask_[2], colorWriteMask_[3]);
+        SetEnabled(GL_BLEND, blendEnabled_);
+        SetEnabled(GL_DEPTH_TEST, depthEnabled_);
+        SetEnabled(GL_CULL_FACE, cullEnabled_);
+        SetEnabled(GL_SCISSOR_TEST, scissorEnabled_);
+    }
+
+    ScopedRmlUiGlState(const ScopedRmlUiGlState&) = delete;
+    ScopedRmlUiGlState& operator=(const ScopedRmlUiGlState&) = delete;
+
+private:
+    static void SetEnabled(GLenum capability, GLboolean enabled) {
+        if (enabled == GL_TRUE) glEnable(capability);
+        else glDisable(capability);
+    }
+
+    GLint program_{0};
+    GLint vertexArray_{0};
+    GLint arrayBuffer_{0};
+    GLint activeTexture_{GL_TEXTURE0};
+    GLint textureUnit0_{0};
+    GLint blendSrcRgb_{GL_ONE};
+    GLint blendDstRgb_{GL_ZERO};
+    GLint blendSrcAlpha_{GL_ONE};
+    GLint blendDstAlpha_{GL_ZERO};
+    GLint blendEquationRgb_{GL_FUNC_ADD};
+    GLint blendEquationAlpha_{GL_FUNC_ADD};
+    GLint depthFunc_{GL_LESS};
+    std::array<GLint, 4> viewport_{0, 0, 1, 1};
+    std::array<GLint, 4> scissorBox_{0, 0, 1, 1};
+    std::array<GLboolean, 4> colorWriteMask_{GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
+    GLboolean depthWriteMask_{GL_TRUE};
+    GLboolean blendEnabled_{GL_FALSE};
+    GLboolean depthEnabled_{GL_FALSE};
+    GLboolean cullEnabled_{GL_FALSE};
+    GLboolean scissorEnabled_{GL_FALSE};
+    bool valid_{true};
+};
 
 constexpr char kHudDocument[] = R"RML(
 <rml>
@@ -433,17 +527,21 @@ void RmlUiRuntime::Shutdown() {
 
 void RmlUiRuntime::SetBlockAtlas(const std::uint8_t* pixels,std::size_t bytes,
                                      int width,int height) {
-    if(pixels==nullptr||width<=0||height<=0) {
+    if (pixels == nullptr ||
+        width != static_cast<int>(kBlockAtlasWidth) ||
+        height != static_cast<int>(kBlockAtlasHeight) ||
+        bytes < kBlockAtlasByteCount) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+            "Rejected block atlas: %dx%d bytes=%zu; expected %zux%zu bytes=%zu",
+            width, height, bytes, kBlockAtlasWidth, kBlockAtlasHeight,
+            kBlockAtlasByteCount);
         blockAtlasPixels_.clear();
-        blockAtlasWidth_=blockAtlasHeight_=0;
+        blockAtlasWidth_ = blockAtlasHeight_ = 0;
         return;
     }
-    const std::size_t expected=static_cast<std::size_t>(width)*
-        static_cast<std::size_t>(height)*4u;
-    if(bytes<expected)return;
-    blockAtlasPixels_.assign(pixels,pixels+expected);
-    blockAtlasWidth_=width;
-    blockAtlasHeight_=height;
+    blockAtlasPixels_.assign(pixels, pixels + kBlockAtlasByteCount);
+    blockAtlasWidth_ = width;
+    blockAtlasHeight_ = height;
 }
 
 void RmlUiRuntime::Resize(int width, int height) {
@@ -492,6 +590,7 @@ bool RmlUiRuntime::Touch(int action, float x, float y) {
 
 void RmlUiRuntime::UpdateAndRender() {
     if (!ready_ || context_ == nullptr) return;
+    ScopedRmlUiGlState stateGuard;
     context_->Update();
     context_->Render();
 }
