@@ -244,7 +244,7 @@ private:
     std::array<float, 120> frameTimeSamplesMs_{};
     std::size_t frameTimeSampleCursor_{0u};
     std::size_t frameTimeSampleCount_{0u};
-    float lastChunkGenerationMs_{0.0f};
+    float lastChunkGenerationPumpMs_{0.0f};
     float lastMeshBuildMs_{0.0f};
     float lastGpuUploadMs_{0.0f};
     int framesSinceStats_{0};
