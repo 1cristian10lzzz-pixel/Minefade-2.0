@@ -437,7 +437,7 @@ public final class ModManager {
 
 
 
-    private static boolean isValidInstalledV2Package(File gameplayFile,
+    private boolean isValidInstalledV2Package(File gameplayFile,
                                                        Map<String,String> gameplayValues) {
         File manifestFile = packageManifestFor(gameplayFile);
         if (manifestFile == null) return true;
