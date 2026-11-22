@@ -363,6 +363,8 @@ bool Engine::CreateWorldProgram() {
         daylightLocation_ = glGetUniformLocation(worldProgram_, "uDaylight");
         atlasLocation_ = glGetUniformLocation(worldProgram_, "uBlockAtlas");
         useAtlasLocation_ = glGetUniformLocation(worldProgram_, "uUseAtlas");
+        entityTextureLocation_ = glGetUniformLocation(worldProgram_, "uEntityTexture");
+        useEntityTextureLocation_ = glGetUniformLocation(worldProgram_, "uUseEntityTexture");
         timeLocation_ = glGetUniformLocation(worldProgram_, "uTime");
         qualityLocation_ = glGetUniformLocation(worldProgram_, "uQuality");
         waterWavesLocation_ = glGetUniformLocation(worldProgram_, "uWaterWaves");
@@ -379,12 +381,16 @@ bool Engine::CreateWorldProgram() {
     if (buildProgram(kWorldVertexShader, kWorldFragmentShader, fullDiagnostic)) {
         fetchLocations();
         if (mvpLocation_ >= 0 && lightLocation_ >= 0 && daylightLocation_ >= 0 &&
-            atlasLocation_ >= 0 && useAtlasLocation_ >= 0 && timeLocation_ >= 0 &&
-            qualityLocation_ >= 0 && waterWavesLocation_ >= 0 && cameraLocation_ >= 0 &&
+            atlasLocation_ >= 0 && useAtlasLocation_ >= 0 &&
+            entityTextureLocation_ >= 0 && useEntityTextureLocation_ >= 0 &&
+            timeLocation_ >= 0 && qualityLocation_ >= 0 &&
+            waterWavesLocation_ >= 0 && cameraLocation_ >= 0 &&
             fogColorLocation_ >= 0 && fogNearLocation_ >= 0 && fogFarLocation_ >= 0) {
             glUseProgram(worldProgram_);
             glUniform1i(atlasLocation_, 0);
             glUniform1i(useAtlasLocation_, 1);
+            glUniform1i(entityTextureLocation_, 1);
+            glUniform1i(useEntityTextureLocation_, 0);
             glUseProgram(0);
             ENGINE_LOGI("Full world shader compiled and linked");
             return true;
@@ -458,7 +464,8 @@ void main() {
         return false;
     }
     fetchLocations();
-    if (mvpLocation_ < 0 || atlasLocation_ < 0 || useAtlasLocation_ < 0) {
+    if (mvpLocation_ < 0 || atlasLocation_ < 0 || useAtlasLocation_ < 0 ||
+        entityTextureLocation_ < 0 || useEntityTextureLocation_ < 0) {
         fallbackDiagnostic = "El shader alternativo enlazó, pero faltan uniforms obligatorios.";
         gWorldShaderDiagnostic = "Shader principal: " + fullDiagnostic +
                 "\nShader alternativo: " + fallbackDiagnostic;
@@ -469,6 +476,8 @@ void main() {
     glUseProgram(worldProgram_);
     glUniform1i(atlasLocation_, 0);
     glUniform1i(useAtlasLocation_, 1);
+    glUniform1i(entityTextureLocation_, 1);
+    glUniform1i(useEntityTextureLocation_, 0);
     glUseProgram(0);
     ENGINE_LOGW("Using conservative ES 3.0 fallback world shader");
     return true;
@@ -518,9 +527,64 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
     return true;
 }
 
+bool Engine::UploadSheepTexture(const std::uint8_t* pixels, std::size_t bytes) {
+    constexpr int width = 64;
+    constexpr int height = 32;
+    constexpr std::size_t expectedBytes = static_cast<std::size_t>(width * height * 4);
+    if (pixels == nullptr || bytes != expectedBytes) {
+        ENGINE_LOGW("MAES sheep texture has invalid size (%zu); using baked face-colour fallback", bytes);
+        return false;
+    }
+
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousBinding = 0;
+    GLint previousUnpackAlignment = 4;
+    GLint previousUnpackBuffer = 0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE1);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousBinding);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousUnpackBuffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+    glGenTextures(1, &sheepTexture_);
+    if (sheepTexture_ == 0) {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousUnpackBuffer));
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousBinding));
+        glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+        return false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, sheepTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    const GLenum error = glGetError();
+
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousUnpackBuffer));
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousBinding));
+    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+
+    if (error != GL_NO_ERROR) {
+        ENGINE_LOGW("MAES sheep texture upload failed: GL error 0x%04X; using baked face-colour fallback",
+                    static_cast<unsigned int>(error));
+        glDeleteTextures(1, &sheepTexture_);
+        sheepTexture_ = 0;
+        return false;
+    }
+    return true;
+}
+
 bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                         std::size_t atlasBytes, int atlasWidth, int atlasHeight,
-                        const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize) {
+                        const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize,
+                        const std::uint8_t* sheepTextureRgba, std::size_t sheepTextureBytes) {
     // Preserve the previous world first (Shutdown saves it when appropriate), then
     // reset every gameplay subsystem before loading or creating the next session.
     // Without this reset, a failed/missing save could silently reuse stale chunks,
@@ -628,11 +692,17 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     if (!UploadBlockAtlas(atlasPixels, atlasBytes, atlasWidth, atlasHeight)) {
         return failInitialisation("No se pudo cargar la textura atlas de bloques. Comprueba sus dimensiones, memoria gráfica y GL_MAX_TEXTURE_SIZE.");
     }
+    if (sheepTextureRgba != nullptr && sheepTextureBytes > 0u)
+        UploadSheepTexture(sheepTextureRgba, sheepTextureBytes);
     glGenVertexArrays(1, &entityVao_);
     glGenBuffers(1, &entityVbo_);
+    glGenVertexArrays(1, &maesEntityVao_);
+    glGenBuffers(1, &maesEntityVbo_);
     glGenVertexArrays(1, &itemVao_);
     glGenBuffers(1, &itemVbo_);
-    if (entityVao_ == 0 || entityVbo_ == 0 || itemVao_ == 0 || itemVbo_ == 0)
+    if (entityVao_ == 0 || entityVbo_ == 0 ||
+        maesEntityVao_ == 0 || maesEntityVbo_ == 0 ||
+        itemVao_ == 0 || itemVbo_ == 0)
         return failInitialisation("El controlador no pudo reservar los VAO/VBO de entidades u objetos. Posible falta de memoria gráfica.");
     if (const GLenum error = glGetError(); error != GL_NO_ERROR) {
         char code[24]{};
@@ -807,17 +877,22 @@ void Engine::Shutdown() {
     worldRenderer_.Shutdown();
     if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
     if (entityVao_ != 0) glDeleteVertexArrays(1, &entityVao_);
+    if (maesEntityVbo_ != 0) glDeleteBuffers(1, &maesEntityVbo_);
+    if (maesEntityVao_ != 0) glDeleteVertexArrays(1, &maesEntityVao_);
     if (itemVbo_ != 0) glDeleteBuffers(1, &itemVbo_);
     if (itemVao_ != 0) glDeleteVertexArrays(1, &itemVao_);
     if (worldProgram_ != 0) glDeleteProgram(worldProgram_);
     if (blockAtlasTexture_ != 0) glDeleteTextures(1, &blockAtlasTexture_);
+    if (sheepTexture_ != 0) glDeleteTextures(1, &sheepTexture_);
     entityVbo_ = entityVao_ = itemVbo_ = itemVao_ = 0;
-    worldProgram_ = blockAtlasTexture_ = 0;
+    maesEntityVao_ = maesEntityVbo_ = 0;
+    worldProgram_ = blockAtlasTexture_ = sheepTexture_ = 0;
     mvpLocation_ = lightLocation_ = daylightLocation_ = atlasLocation_ = useAtlasLocation_ = -1;
+    entityTextureLocation_ = useEntityTextureLocation_ = -1;
     timeLocation_ = qualityLocation_ = waterWavesLocation_ = -1;
     lavaAnimationsLocation_ = leafWindLocation_ = leafWindStrengthLocation_ = -1;
     cameraLocation_ = fogColorLocation_ = fogNearLocation_ = fogFarLocation_ = -1;
-    entityVertexCount_ = itemVertexCount_ = 0;
+    entityVertexCount_ = maesEntityVertexCount_ = itemVertexCount_ = 0;
     worldChunkViews_.clear();
     meshBuildScratch_.clear();
     ready_ = false;
