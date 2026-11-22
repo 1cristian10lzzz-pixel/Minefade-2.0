@@ -26,6 +26,12 @@ def test_block_atlas_upload_restores_pixel_unpack_alignment():
     upload = SOURCE[SOURCE.index("bool Engine::UploadBlockAtlas"):SOURCE.index("bool Engine::UploadSheepTexture")]
     assert "GL_UNPACK_ALIGNMENT" in upload
     assert "glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment)" in upload
+    assert "GL_UNPACK_ROW_LENGTH" in upload
+    assert "GL_UNPACK_SKIP_PIXELS" in upload
+    assert "GL_UNPACK_SKIP_ROWS" in upload
+    assert "glPixelStorei(GL_UNPACK_ROW_LENGTH, 0)" in upload
+    assert "glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0)" in upload
+    assert "glPixelStorei(GL_UNPACK_SKIP_ROWS, 0)" in upload
 
 
 if __name__ == "__main__":
