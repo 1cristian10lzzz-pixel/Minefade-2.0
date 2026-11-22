@@ -737,7 +737,6 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     const auto* glRenderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
     const auto* glVendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
     const auto* glslVersion = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
-    GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
     ENGINE_LOGI("OpenGL version=%s GLSL=%s vendor=%s renderer=%s maxTexture=%d",
                 glVersion != nullptr ? glVersion : "unknown",
