@@ -858,6 +858,27 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 ENGINE_LOGW("Ignored invalid survival sidecar; retaining safe default health/hunger");
             }
         }
+        std::ifstream durabilityFile(storagePath_ + ".durability", std::ios::binary);
+        if (durabilityFile) {
+            std::uint32_t magic = 0u;
+            std::uint32_t version = 0u;
+            std::array<std::uint16_t, Inventory::kSlotCount> savedDurability{};
+            durabilityFile.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            durabilityFile.read(reinterpret_cast<char*>(&version), sizeof(version));
+            durabilityFile.read(reinterpret_cast<char*>(savedDurability.data()),
+                static_cast<std::streamsize>(sizeof(savedDurability)));
+            bool valid = durabilityFile && durabilityFile.peek() == std::char_traits<char>::eof() &&
+                magic == 0x4D464459u && version == 1u;
+            if (valid) {
+                for (std::size_t slot = 0; slot < savedDurability.size(); ++slot) {
+                    if (savedDurability[slot] > 2000u) { valid = false; break; }
+                    const std::uint16_t itemId = static_cast<std::uint16_t>(inventory_.counts[slot] / 1000u);
+                    if (itemId == 0u) savedDurability[slot] = 0u;
+                }
+            }
+            if (valid) inventory_.toolDurability = savedDurability;
+            else ENGINE_LOGW("Ignored invalid tool durability sidecar; legacy tools start at full durability");
+        }
         std::ifstream gearFile(storagePath_ + ".armor", std::ios::binary);
         if (gearFile) {
             std::array<std::uint16_t,4> savedGear{};
@@ -1850,6 +1871,7 @@ void Engine::HandleUiAction(const std::string& action) {
             int defeatedKind = -1;
             if (entities_.DamageNearest(player_.CameraPosition(), player_.Forward(),
                                         3.25f, damage, &defeated, &defeatedKind)) {
+                if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
                 if (defeated) {
                     ui_.SetChatMessage(defeatedKind == 5
                         ? "Has derrotado a un esqueleto."
@@ -1947,6 +1969,8 @@ void Engine::HandleUiAction(const std::string& action) {
                     RefreshInventoryUi();
                 } else {
                     std::swap(inventory_.counts[slot], inventory_.counts[inventory_.selectedSlot]);
+                    std::swap(inventory_.toolDurability[slot],
+                              inventory_.toolDurability[inventory_.selectedSlot]);
                     RefreshInventoryUi();
                 }
             }
@@ -2359,6 +2383,7 @@ void Engine::UpdateMining(float deltaSeconds) {
             droppedItems_.Spawn({broken.x + 0.5f, broken.y + 0.55f, broken.z + 0.5f},
                                 brokenDefinition->dropId, dropQuantity);
         }
+        if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
         soundEvents_.fetch_or(1u, std::memory_order_release);
         if (HasBlockFlag(brokenType, BlockFluid))
             soundEvents_.fetch_or(524288u, std::memory_order_release);
@@ -2580,6 +2605,34 @@ void Engine::SaveWorld() {
                     }
                 } else {
                     ENGINE_LOGE("Could not create survival sidecar temporary file");
+                }
+            }
+            {
+                const std::string durabilityPath = storagePath_ + ".durability";
+                const std::string durabilityTemp = durabilityPath + ".tmp";
+                const std::uint32_t magic = 0x4D464459u;
+                const std::uint32_t version = 1u;
+                std::ofstream durabilityFile(durabilityTemp, std::ios::binary | std::ios::trunc);
+                if (durabilityFile) {
+                    durabilityFile.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    durabilityFile.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    durabilityFile.write(reinterpret_cast<const char*>(inventory_.toolDurability.data()),
+                        static_cast<std::streamsize>(sizeof(inventory_.toolDurability)));
+                    durabilityFile.flush();
+                    durabilityFile.close();
+                    std::error_code error;
+                    std::filesystem::rename(durabilityTemp, durabilityPath, error);
+                    if (error) {
+                        std::filesystem::remove(durabilityPath, error);
+                        error.clear();
+                        std::filesystem::rename(durabilityTemp, durabilityPath, error);
+                    }
+                    if (error) {
+                        ENGINE_LOGE("Could not atomically save tool durability: %s", error.message().c_str());
+                        std::filesystem::remove(durabilityTemp);
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create tool durability temporary file");
                 }
             }
             if (starterChestEnabled_) {
