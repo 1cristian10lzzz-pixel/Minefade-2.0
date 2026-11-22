@@ -408,6 +408,7 @@ bool Inventory::EquipArmorFromSlot(std::size_t slot) {
     const std::uint16_t previous = equippedArmor[armorSlot];
     if (previous != 0u && !CanAdd(previous, 1u)) return false;
     counts[slot] = 0u;
+    toolDurability[slot] = 0u;
     if (previous != 0u && !Add(previous, 1u)) return false;
     equippedArmor[armorSlot] = itemId;
     return true;
@@ -515,6 +516,10 @@ bool Inventory::ConsumeItem(std::uint16_t itemId, std::uint16_t amount) {
         const std::uint16_t take = std::min(current, remaining);
         const std::uint16_t after = static_cast<std::uint16_t>(current - take);
         encoded = after == 0u ? 0u : static_cast<std::uint32_t>(itemId) * 1000u + after;
+        if (after == 0u) {
+            const std::size_t slot = static_cast<std::size_t>(&encoded - counts.data());
+            toolDurability[slot] = 0u;
+        }
         remaining = static_cast<std::uint16_t>(remaining - take);
         if (remaining == 0u) return true;
     }
