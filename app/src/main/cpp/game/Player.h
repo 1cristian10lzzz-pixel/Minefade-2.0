@@ -51,6 +51,8 @@ public:
     static constexpr std::size_t kSlotCount = 36;
     static constexpr std::size_t kHotbarSlotCount = 9;
     std::array<std::uint32_t, kSlotCount> counts{{2016u}};
+    // Runtime/persistence sidecar data; the historical MFVOX inventory ABI is unchanged.
+    std::array<std::uint16_t, kSlotCount> toolDurability{};
     std::uint16_t selectedSlot{0};
     std::array<std::uint16_t, 4> equippedArmor{}; // helmet, chestplate, leggings, boots
 
@@ -59,6 +61,9 @@ public:
     bool CanAdd(std::uint16_t itemId, std::uint16_t amount = 1) const;
     bool Add(std::uint16_t itemId, std::uint16_t amount = 1);
     bool ConsumeSelected(std::uint16_t amount = 1);
+    bool DamageSelectedItem(std::uint16_t amount = 1);
+    std::uint16_t SelectedItemMaxDurability() const;
+    std::uint16_t SelectedItemDurability() const;
     std::uint16_t CountItem(std::uint16_t itemId) const;
     bool ConsumeItem(std::uint16_t itemId, std::uint16_t amount);
     std::uint16_t SelectedItemId() const;
