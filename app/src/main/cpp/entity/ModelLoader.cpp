@@ -171,7 +171,7 @@ bool ModelLoader::Load(const std::uint8_t* bytes, std::size_t size,
     const std::uint32_t stateCount = fields[10];
     const std::uint32_t stringBytes = fields[11];
 
-    if (headerBytes != kHeaderBytes || totalBytes != size || reader.Position() != kHeaderBytes) {
+    if (headerBytes != kHeaderBytes || totalBytes != size || reader.Position() != kHeaderBytes - 6u * 4u) {
         error = "model header size or total file size is inconsistent";
         return false;
     }
