@@ -511,7 +511,8 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
 }
 
 bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
-                        std::size_t atlasBytes, int atlasWidth, int atlasHeight) {
+                        std::size_t atlasBytes, int atlasWidth, int atlasHeight,
+                        const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize) {
     // Preserve the previous world first (Shutdown saves it when appropriate), then
     // reset every gameplay subsystem before loading or creating the next session.
     // Without this reset, a failed/missing save could silently reuse stale chunks,
@@ -554,6 +555,18 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     entities_.SetContactShadows(contactShadows_);
     animationQuality_ = pendingAnimationQuality_;
     animationsEnabled_ = pendingAnimationsEnabled_;
+    entityVisuals_.Clear();
+    if (sheepModelBytes != nullptr && sheepModelSize > 0u) {
+        std::string modelError;
+        if (!entityVisuals_.LoadSheepModel(sheepModelBytes, sheepModelSize, modelError)) {
+            ENGINE_LOGW("MAES sheep model rejected; retaining legacy kind 0 renderer: %s",
+                        modelError.c_str());
+        } else {
+            ENGINE_LOGI("MAES sheep model loaded: %s", entityVisuals_.SheepDiagnostic().c_str());
+        }
+    } else {
+        ENGINE_LOGW("MAES sheep model asset missing; retaining legacy kind 0 renderer");
+    }
     player_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
     entities_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
     lookSensitivityX_ = pendingLookSensitivityX_;
@@ -842,7 +855,12 @@ void Engine::RebuildEntityMesh() {
         static_cast<float>(width_)/static_cast<float>(height_),0.08f,120.0f);
     const Mat4 view=LookAt(eye,target,{0.0f,1.0f,0.0f});
     const CameraFrustum frustum=ExtractFrustum(Multiply(projection,view));
-    entities_.AppendMesh(entityMesh_,&frustum);
+    // MAES only replaces the sheep when its external model has passed every
+    // format, hierarchy, material and animation validation. All other entity
+    // kinds remain on the historical renderer until individually migrated.
+    entities_.AppendLegacyMesh(entityMesh_, &frustum,
+                               entityVisuals_.IsSheepReady() ? 0 : -1);
+    entityVisuals_.AppendMesh(entities_.Entities(), entityMesh_, &frustum);
     if (thirdPerson_) {
         player_.AppendMesh(entityMesh_);
     } else {
