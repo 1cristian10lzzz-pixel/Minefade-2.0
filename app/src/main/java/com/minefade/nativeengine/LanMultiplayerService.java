@@ -40,7 +40,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class LanMultiplayerService implements Closeable {
     private static final String TAG = "MinefadeLAN";
     private static final String SERVICE_TYPE = "_minefade._tcp.";
-    private static final int PROTOCOL_VERSION = 2;
+    private static final int PROTOCOL_VERSION = 3;
+    private static final String EMPTY_CONTENT_FINGERPRINT =
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     private static final int MAX_PLAYERS = 8;
     private static final long STATE_INTERVAL_NS = 50_000_000L;
     private static final long INTERPOLATION_DELAY_NS = 110_000_000L;
@@ -56,11 +58,13 @@ public final class LanMultiplayerService implements Closeable {
         public final String name;
         public final String host;
         public final int port;
+        public final String contentFingerprint;
 
-        GameInfo(String name, String host, int port) {
+        GameInfo(String name, String host, int port, String contentFingerprint) {
             this.name = name == null || name.isEmpty() ? "Partida Minefade" : name;
             this.host = host;
             this.port = port;
+            this.contentFingerprint = contentFingerprint == null ? "" : contentFingerprint;
         }
 
         @Override public String toString() {
@@ -195,10 +199,20 @@ public final class LanMultiplayerService implements Closeable {
     private volatile long lastStateSentNs;
     private volatile String playerName = "Jugador";
     private volatile String advertisedName = "Minefade";
+    private volatile String contentFingerprint = EMPTY_CONTENT_FINGERPRINT;
 
     public LanMultiplayerService(Context context) {
         appContext = context.getApplicationContext();
         nsdManager = (NsdManager) appContext.getSystemService(Context.NSD_SERVICE);
+    }
+
+    public void setContentFingerprint(String fingerprint) {
+        contentFingerprint = fingerprint != null && fingerprint.matches("[0-9a-fA-F]{64}")
+                ? fingerprint.toLowerCase(Locale.ROOT) : EMPTY_CONTENT_FINGERPRINT;
+    }
+
+    private static boolean validFingerprint(String fingerprint) {
+        return fingerprint != null && fingerprint.matches("[0-9a-f]{64}");
     }
 
     public boolean isConnected() {
@@ -242,6 +256,7 @@ public final class LanMultiplayerService implements Closeable {
                 service.setServiceType(SERVICE_TYPE);
                 service.setPort(server.getLocalPort());
                 service.setAttribute("protocol", String.valueOf(PROTOCOL_VERSION));
+                service.setAttribute("content", contentFingerprint.getBytes(StandardCharsets.UTF_8));
                 NsdManager.RegistrationListener registration = new NsdManager.RegistrationListener() {
                     @Override public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
                         Log.e(TAG, "NSD registration failed: " + errorCode);
@@ -311,10 +326,17 @@ public final class LanMultiplayerService implements Closeable {
                                 Log.i(TAG, "Ignoring incompatible LAN protocol " + protocol);
                                 return;
                             }
+                            byte[] advertisedContent = info.getAttributes().get("content");
+                            String fingerprint = advertisedContent == null ? "" :
+                                    new String(advertisedContent, StandardCharsets.UTF_8);
+                            if (!validFingerprint(fingerprint)) {
+                                Log.i(TAG, "Ignoring LAN game without a valid content fingerprint");
+                                return;
+                            }
                             InetAddress address = info.getHost();
                             if (address == null || info.getPort() <= 0) return;
                             GameInfo game = new GameInfo(info.getServiceName(),
-                                    address.getHostAddress(), info.getPort());
+                                    address.getHostAddress(), info.getPort(), fingerprint);
                             discoveredGames.put(game.name, game);
                             notifyGames();
                         }
@@ -359,6 +381,11 @@ public final class LanMultiplayerService implements Closeable {
             postStatus("Selecciona una partida de la lista.");
             return;
         }
+        if (!validFingerprint(game.contentFingerprint) ||
+                !contentFingerprint.equals(game.contentFingerprint)) {
+            postStatus("Los mods activos no coinciden con los de esa partida. Instala la misma versión y vuelve a buscar.");
+            return;
+        }
         stopDiscovery();
         stopSession();
         listener = callback;
@@ -377,7 +404,7 @@ public final class LanMultiplayerService implements Closeable {
                         new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                 clientWriter = writer;
                 synchronized (clientWriteLock) {
-                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + playerName);
+                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|" + playerName);
                     writer.newLine();
                     writer.flush();
                 }
@@ -386,7 +413,8 @@ public final class LanMultiplayerService implements Closeable {
                 while (!closed && (line = reader.readLine()) != null) {
                     if (line.startsWith("WELCOME|")) {
                         String[] fields = line.split("\\|", -1);
-                        if (fields.length >= 4 && parseInt(fields[1], -1) == PROTOCOL_VERSION) {
+                        if (fields.length == 5 && parseInt(fields[1], -1) == PROTOCOL_VERSION &&
+                                contentFingerprint.equals(fields[4])) {
                             localPlayerId = parseInt(fields[2], -1);
                             playerNames.put(0, fields[3]);
                             connected = localPlayerId > 0;
@@ -458,7 +486,7 @@ public final class LanMultiplayerService implements Closeable {
                 return;
             }
             String[] helloFields = hello.split("\\|", -1);
-            if (helloFields.length != 3 || !"HELLO".equals(helloFields[0]) ||
+            if (helloFields.length != 4 || !"HELLO".equals(helloFields[0]) ||
                     parseInt(helloFields[1], -1) != PROTOCOL_VERSION) {
                 writer.write("ERROR|VERSION");
                 writer.newLine();
@@ -466,12 +494,19 @@ public final class LanMultiplayerService implements Closeable {
                 socket.close();
                 return;
             }
+            if (!validFingerprint(helloFields[2]) || !contentFingerprint.equals(helloFields[2])) {
+                writer.write("ERROR|CONTENT");
+                writer.newLine();
+                writer.flush();
+                socket.close();
+                return;
+            }
             id = nextPlayerId.getAndIncrement();
-            String name = safeField(helloFields[2], "Jugador");
+            String name = safeField(helloFields[3], "Jugador");
             peer = new Peer(id, name, socket, writer);
             peers.put(id, peer);
             playerNames.put(id, name);
-            peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName);
+            peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName + "|" + contentFingerprint);
             peer.send("PLAYER|0|" + playerName);
             for (Map.Entry<Integer, String> entry : playerNames.entrySet()) {
                 if (entry.getKey() != 0 && entry.getKey() != id)
