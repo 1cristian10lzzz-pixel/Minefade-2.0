@@ -441,7 +441,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                     if (retryable) {
                         Log.w(TAG, "Retrying with conservative graphics settings: " + firstFailure);
                         NativeBridge.nativeSetGraphicsOptions(0, 1, false, fieldOfView, false);
-                        nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel);
+                        nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
                         if (nativeReady) {
                             preferences.edit().putInt("graphics_quality", 0)
                                     .putInt("render_distance", 0)
