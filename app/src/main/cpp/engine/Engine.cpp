@@ -2667,10 +2667,34 @@ void Engine::LoadEnabledMods() {
     if (!std::filesystem::is_directory(modsDirectory_, error) || error) return;
 
     std::vector<std::filesystem::path> packs;
-    for (const auto& entry : std::filesystem::directory_iterator(modsDirectory_, error)) {
-        if (error) break;
-        if (!entry.is_regular_file()) continue;
-        if (entry.path().extension() == ".mfmod") packs.push_back(entry.path());
+    for (std::filesystem::recursive_directory_iterator it(
+             modsDirectory_, std::filesystem::directory_options::skip_permission_denied, error), end;
+         !error && it != end; it.increment(error)) {
+        const auto& entry = *it;
+        std::error_code statusError;
+        if (entry.is_symlink(statusError)) {
+            if (entry.is_directory(statusError)) it.disable_recursion_pending();
+            continue;
+        }
+        if (statusError || !entry.is_regular_file(statusError) || statusError ||
+            entry.path().extension() != ".mfmod") continue;
+
+        const std::size_t depth = static_cast<std::size_t>(it.depth());
+        if (depth == 0u) {
+            packs.push_back(entry.path()); // Legacy flat MFMod v1 file.
+        } else if (depth == 2u && entry.path().filename() == "gameplay.mfmod" &&
+                   entry.path().parent_path().filename() == "data") {
+            const std::filesystem::path packageRoot = entry.path().parent_path().parent_path();
+            std::error_code manifestError;
+            if (std::filesystem::is_regular_file(packageRoot / "manifest.json", manifestError) &&
+                !manifestError) {
+                packs.push_back(entry.path()); // Validated MFMod v2 settings payload.
+            }
+        }
+    }
+    if (error) {
+        ENGINE_LOGW("Mod directory traversal ended early: %s", error.message().c_str());
+        error.clear();
     }
     std::sort(packs.begin(), packs.end());
     bool hasExplicitSpawnDistance = false;
