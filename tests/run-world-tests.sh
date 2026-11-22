@@ -25,6 +25,13 @@ c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
   "$ROOT/app/src/main/cpp/world/VoxelWorld.cpp" \
   "$ROOT/app/src/main/cpp/blocks/BlockRegistry.cpp" \
   "$ROOT/app/src/main/cpp/game/Player.cpp" \
+  "$ROOT/app/src/main/cpp/entity/ModelLoader.cpp" \
+  "$ROOT/app/src/main/cpp/entity/ModelValidator.cpp" \
+  "$ROOT/app/src/main/cpp/entity/EntityDefinition.cpp" \
+  "$ROOT/app/src/main/cpp/entity/LegacyModelAdapter.cpp" \
+  "$ROOT/app/src/main/cpp/entity/Skeleton.cpp" \
+  "$ROOT/app/src/main/cpp/entity/AnimationController.cpp" \
+  "$ROOT/app/src/main/cpp/entity/EntityVisualSystem.cpp" \
   "$RUST_LIB" -ldl -lpthread -lm \
   -o "$BIN"
 "$BIN"
