@@ -124,7 +124,7 @@ def test_lan_fingerprint_errors_fail_closed_and_incompatible_games_are_filtered(
     assert "contentFingerprint = validFingerprint(fingerprint)" in LAN
     assert '? fingerprint.toLowerCase(Locale.ROOT) : ""' in LAN
     assert "Ignoring LAN game with different active mods" in LAN
-    assert "if (!contentFingerprint.equals(game.contentFingerprint))" in LAN
+    assert "!contentFingerprint.equals(game.contentFingerprint)" in LAN
 
 
 if __name__ == "__main__":
