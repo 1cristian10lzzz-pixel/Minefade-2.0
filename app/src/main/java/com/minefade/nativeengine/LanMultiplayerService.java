@@ -178,6 +178,7 @@ public final class LanMultiplayerService implements Closeable {
     private final Map<Integer, String> playerNames = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<int[]> inboundBlockEdits = new ConcurrentLinkedQueue<>();
     private final AtomicInteger nextPlayerId = new AtomicInteger(1);
+    private final AtomicInteger discoveryGeneration = new AtomicInteger();
     private final Object clientWriteLock = new Object();
 
     private volatile Listener listener;
@@ -276,24 +277,32 @@ public final class LanMultiplayerService implements Closeable {
         listener = callback;
         discoveredGames.clear();
         notifyGames();
-        acquireMulticastLock();
         if (nsdManager == null) {
             postStatus("Este dispositivo no ofrece descubrimiento de servicios de red.");
             return;
         }
+
+        // A resolved mDNS callback can arrive after stopDiscovery() or after a
+        // newer search starts. Tie every callback to this discovery generation.
+        final int discoveryEpoch = discoveryGeneration.get();
+        acquireMulticastLock();
         NsdManager.DiscoveryListener discovery = new NsdManager.DiscoveryListener() {
             @Override public void onDiscoveryStarted(String type) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 postStatus("Buscando partidas cercanas…");
             }
             @Override public void onServiceFound(NsdServiceInfo service) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 if (!SERVICE_TYPE.equals(service.getServiceType())) return;
                 if (advertisedName.equals(service.getServiceName())) return;
                 try {
                     nsdManager.resolveService(service, new NsdManager.ResolveListener() {
                         @Override public void onResolveFailed(NsdServiceInfo info, int errorCode) {
+                            if (discoveryEpoch != discoveryGeneration.get()) return;
                             Log.w(TAG, "Could not resolve " + info.getServiceName() + ": " + errorCode);
                         }
                         @Override public void onServiceResolved(NsdServiceInfo info) {
+                            if (discoveryEpoch != discoveryGeneration.get()) return;
                             byte[] advertisedProtocol = info.getAttributes().get("protocol");
                             String protocol = advertisedProtocol == null ? "" :
                                     new String(advertisedProtocol, StandardCharsets.UTF_8);
@@ -310,22 +319,27 @@ public final class LanMultiplayerService implements Closeable {
                         }
                     });
                 } catch (RuntimeException error) {
-                    Log.w(TAG, "NSD resolve request failed", error);
+                    if (discoveryEpoch == discoveryGeneration.get())
+                        Log.w(TAG, "NSD resolve request failed", error);
                 }
             }
             @Override public void onServiceLost(NsdServiceInfo service) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 discoveredGames.remove(service.getServiceName());
                 notifyGames();
             }
             @Override public void onDiscoveryStopped(String type) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 Log.i(TAG, "LAN discovery stopped");
             }
             @Override public void onStartDiscoveryFailed(String type, int errorCode) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 Log.e(TAG, "Discovery start failed: " + errorCode);
                 stopDiscovery();
                 postStatus("No se pudo buscar partidas (" + errorCode + ").");
             }
             @Override public void onStopDiscoveryFailed(String type, int errorCode) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 Log.w(TAG, "Discovery stop failed: " + errorCode);
             }
         };
@@ -334,6 +348,7 @@ public final class LanMultiplayerService implements Closeable {
             nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discovery);
         } catch (RuntimeException error) {
             Log.e(TAG, "NSD discovery failed", error);
+            if (discoveryEpoch == discoveryGeneration.get()) stopDiscovery();
             postStatus("No se pudo iniciar la búsqueda de partidas.");
         }
     }
@@ -706,6 +721,8 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private void stopDiscovery() {
+        // Invalidate outstanding NSD/resolve callbacks before releasing resources.
+        discoveryGeneration.incrementAndGet();
         NsdManager.DiscoveryListener current = discoveryListener;
         discoveryListener = null;
         if (current != null && nsdManager != null) {
@@ -748,9 +765,11 @@ public final class LanMultiplayerService implements Closeable {
     private void notifyGames() {
         Listener current = listener;
         if (current == null) return;
+        final int discoveryEpoch = discoveryGeneration.get();
         List<GameInfo> snapshot = new ArrayList<>(discoveredGames.values());
         Collections.sort(snapshot, (a, b) -> a.name.compareToIgnoreCase(b.name));
         main.post(() -> {
+            if (discoveryEpoch != discoveryGeneration.get()) return;
             Listener latest = listener;
             if (latest != null) latest.onGamesChanged(snapshot);
         });
