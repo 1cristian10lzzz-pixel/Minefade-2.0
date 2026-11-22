@@ -77,6 +77,7 @@ El motor nativo conserva los archivos v1 planos y también descubre únicamente 
 - `tools/mfmod2.py validate`: verifica ZIP, rutas, campos, rango de motor y hash.
 - El administrador de mods lista el payload instalado del paquete y permite activar/desactivar su archivo de ajustes.
 - Al activar/desactivar un payload MFMod v2 se vuelve a calcular el SHA-256 del manifiesto.
+- Al enumerar mods instalados se vuelve a validar el manifiesto, el rango de Minefade y el SHA-256 del payload antes de mostrar el paquete como válido.
 - Cada mundo guarda un sidecar `.mods` con la huella SHA-256 del conjunto de mods activos. En una discrepancia se avisa y se conserva la huella anterior; no se reescribe silenciosamente.
 
 ### LAN — protocolo 3
