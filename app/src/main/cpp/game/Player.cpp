@@ -19,6 +19,24 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 int FloorToInt(float value) { return static_cast<int>(std::floor(value)); }
 
+std::uint16_t MaxToolDurability(const BlockDefinition* definition) {
+    if (definition == nullptr) return 0u;
+    const std::string_view key(definition->key);
+    if (key.find("_pickaxe") == std::string_view::npos &&
+        key.find("_axe") == std::string_view::npos &&
+        key.find("_shovel") == std::string_view::npos &&
+        key.find("_sword") == std::string_view::npos &&
+        key.find("_hoe") == std::string_view::npos) return 0u;
+    if (key.find("_wooden_") != std::string_view::npos) return 60u;
+    if (key.find("_stone_") != std::string_view::npos) return 132u;
+    if (key.find("_copper_") != std::string_view::npos) return 181u;
+    if (key.find("_iron_") != std::string_view::npos) return 251u;
+    if (key.find("_gold_") != std::string_view::npos) return 33u;
+    if (key.find("_diamond_") != std::string_view::npos) return 1562u;
+    if (key.find("_emerald_") != std::string_view::npos) return 1900u;
+    return 60u;
+}
+
 Vec3 CrossPlayer(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
@@ -414,10 +432,18 @@ bool Inventory::CanAdd(std::uint16_t itemId, std::uint16_t amount) const {
 bool Inventory::Add(std::uint16_t itemId, std::uint16_t amount) {
     const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
     if (definition == nullptr) return false;
-    // Rust preflights the whole insertion before touching the nine encoded slots.
-    return minefade_inventory_add(
-        counts.data(), static_cast<std::uint32_t>(counts.size()),
-        itemId, amount, definition->stackLimit) != 0;
+    // Rust preflights the whole insertion before touching the encoded slots.
+    if (minefade_inventory_add(
+            counts.data(), static_cast<std::uint32_t>(counts.size()),
+            itemId, amount, definition->stackLimit) == 0) return false;
+    const std::uint16_t maximum = MaxToolDurability(definition);
+    if (maximum > 0u) {
+        for (std::size_t slot = 0; slot < counts.size(); ++slot) {
+            if (counts[slot] / 1000u == itemId && toolDurability[slot] == 0u)
+                toolDurability[slot] = maximum;
+        }
+    }
+    return true;
 }
 
 std::uint16_t Inventory::SelectedItemId() const {
@@ -427,9 +453,40 @@ std::uint16_t Inventory::SelectedItemId() const {
 }
 
 bool Inventory::ConsumeSelected(std::uint16_t amount) {
-    return minefade_inventory_consume_selected(
+    const bool consumed = minefade_inventory_consume_selected(
         counts.data(), static_cast<std::uint32_t>(counts.size()),
         static_cast<std::uint32_t>(selectedSlot), amount) != 0;
+    if (consumed && selectedSlot < counts.size() && counts[selectedSlot] == 0u)
+        toolDurability[selectedSlot] = 0u;
+    return consumed;
+}
+
+std::uint16_t Inventory::SelectedItemMaxDurability() const {
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(SelectedItemId()));
+    return MaxToolDurability(definition);
+}
+
+std::uint16_t Inventory::SelectedItemDurability() const {
+    if (selectedSlot >= counts.size() || counts[selectedSlot] == 0u) return 0u;
+    const std::uint16_t maximum = SelectedItemMaxDurability();
+    if (maximum == 0u) return 0u;
+    return toolDurability[selectedSlot] == 0u ? maximum
+        : std::min(toolDurability[selectedSlot], maximum);
+}
+
+bool Inventory::DamageSelectedItem(std::uint16_t amount) {
+    if (amount == 0u || selectedSlot >= counts.size() || counts[selectedSlot] == 0u) return false;
+    const std::uint16_t maximum = SelectedItemMaxDurability();
+    if (maximum == 0u) return false;
+    std::uint16_t& remaining = toolDurability[selectedSlot];
+    if (remaining == 0u) remaining = maximum;
+    if (amount >= remaining) {
+        counts[selectedSlot] = 0u;
+        remaining = 0u;
+    } else {
+        remaining = static_cast<std::uint16_t>(remaining - amount);
+    }
+    return true;
 }
 
 std::uint16_t Inventory::CountItem(std::uint16_t itemId) const {
