@@ -1338,9 +1338,23 @@ void Engine::Render() {
 
         if (entityVertexCount_ > 0) {
             glUniform1i(useAtlasLocation_, 0);
+            glUniform1i(useEntityTextureLocation_, 0);
             glBindVertexArray(entityVao_);
             glDrawArrays(GL_TRIANGLES, 0, entityVertexCount_);
             glBindVertexArray(0);
+        }
+        if (maesEntityVertexCount_ > 0) {
+            glUniform1i(useAtlasLocation_, 0);
+            glUniform1i(useEntityTextureLocation_, sheepTexture_ != 0 ? 1 : 0);
+            if (sheepTexture_ != 0) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, sheepTexture_);
+            }
+            glBindVertexArray(maesEntityVao_);
+            glDrawArrays(GL_TRIANGLES, 0, maesEntityVertexCount_);
+            glBindVertexArray(0);
+            glUniform1i(useEntityTextureLocation_, 0);
+            glActiveTexture(GL_TEXTURE0);
         }
         if(itemVertexCount_>0) {
             glUniform1i(useAtlasLocation_,1);
