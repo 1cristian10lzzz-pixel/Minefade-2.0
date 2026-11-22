@@ -931,6 +931,7 @@ void Engine::UploadTransparentWorldMesh() {
 
 void Engine::RebuildEntityMesh() {
     entityMesh_.clear();
+    maesEntityMesh_.clear();
     itemMesh_.clear();
     const Vec3 eye=ViewPosition();
     const Vec3 target=ViewTarget();
@@ -943,7 +944,8 @@ void Engine::RebuildEntityMesh() {
     // kinds remain on the historical renderer until individually migrated.
     entities_.AppendLegacyMesh(entityMesh_, &frustum,
                                entityVisuals_.IsSheepReady() ? 0 : -1);
-    entityVisuals_.AppendMesh(entities_.Entities(), entityMesh_, &frustum);
+    entityVisuals_.AppendMesh(entities_.Entities(), maesEntityMesh_, &frustum,
+                              sheepTexture_ != 0);
     if (thirdPerson_) {
         player_.AppendMesh(entityMesh_);
     } else {
@@ -1073,6 +1075,34 @@ void Engine::UploadEntityMesh() {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     entityVertexCount_ = static_cast<GLsizei>(entityMesh_.size());
+    UploadMaesEntityMesh();
+}
+
+void Engine::UploadMaesEntityMesh() {
+    if (maesEntityVao_ == 0 || maesEntityVbo_ == 0) return;
+    glBindVertexArray(maesEntityVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, maesEntityVbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(maesEntityMesh_.size() * sizeof(WorldVertex)),
+                 maesEntityMesh_.empty() ? nullptr : maesEntityMesh_.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, x)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, nx)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, r)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, u)));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, atlasTile)));
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    maesEntityVertexCount_ = static_cast<GLsizei>(maesEntityMesh_.size());
 }
 
 double Engine::ElapsedSeconds() const {
