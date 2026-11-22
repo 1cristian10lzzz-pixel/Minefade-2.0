@@ -143,41 +143,72 @@ public final class ModManager {
 
     public synchronized boolean setEnabled(ModInfo info, boolean enabled) {
         if (info == null || info.file == null || !info.file.isFile()) return false;
+        byte[] previousGameplay;
+        try (InputStream input = new FileInputStream(info.file);
+             ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[2048];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (bytes.size() + count > 32768) return false;
+                bytes.write(buffer, 0, count);
+            }
+            previousGameplay = bytes.toByteArray();
+        } catch (Exception error) {
+            return false;
+        }
+
+        File packageManifest = packageManifestFor(info.file);
+        byte[] previousManifest = null;
+        JSONObject manifest = null;
+        if (packageManifest != null) {
+            try (InputStream input = new FileInputStream(packageManifest);
+                 ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[2048];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (bytes.size() + count > 8192) return false;
+                    bytes.write(buffer, 0, count);
+                }
+                previousManifest = bytes.toByteArray();
+                manifest = new JSONObject(new String(previousManifest, StandardCharsets.UTF_8));
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
         try {
             Map<String,String> values = new LinkedHashMap<>(info.settings);
             values.put("enabled", Boolean.toString(enabled));
-            StringBuilder data = new StringBuilder("# Minefade data mod v1\n");
+            StringBuilder data = new StringBuilder("# Minefade data mod v1\\n");
             for (Map.Entry<String,String> entry : values.entrySet()) {
                 String key = entry.getKey();
                 String value = entry.getValue();
-                if (key.matches("[a-zA-Z0-9_.-]{1,64}") && value.indexOf('\n') < 0 && value.indexOf('\r') < 0)
-                    data.append(key).append('=').append(value).append('\n');
+                if (key.matches("[a-zA-Z0-9_.-]{1,64}") &&
+                        value.indexOf('\\n') < 0 && value.indexOf('\\r') < 0) {
+                    data.append(key).append('=').append(value).append('\\n');
+                }
             }
             byte[] updatedGameplay = data.toString().getBytes(StandardCharsets.UTF_8);
             if (!writeAtomically(info.file, updatedGameplay)) return false;
-            File packageManifest = packageManifestFor(info.file);
-            if (packageManifest != null) {
-                JSONObject manifest;
-                try (InputStream input = new FileInputStream(packageManifest)) {
-                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[2048];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) {
-                        if (bytes.size() + count > 8192) return false;
-                        bytes.write(buffer, 0, count);
-                    }
-                    manifest = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
-                }
+            if (manifest != null && packageManifest != null) {
                 manifest.put("sha256", sha256(updatedGameplay));
-                return writeAtomically(packageManifest,
-                        manifest.toString().getBytes(StandardCharsets.UTF_8));
+                if (!writeAtomically(packageManifest,
+                        manifest.toString().getBytes(StandardCharsets.UTF_8))) {
+                    // Keep the installed package internally consistent if the
+                    // manifest update fails after the payload was replaced.
+                    writeAtomically(info.file, previousGameplay);
+                    return false;
+                }
             }
             return true;
         } catch (Exception ignored) {
+            if (previousManifest != null && packageManifest != null) {
+                writeAtomically(packageManifest, previousManifest);
+            }
+            writeAtomically(info.file, previousGameplay);
             return false;
         }
     }
-
 
     /**
      * Installs a bounded, data-only MFMod v2 ZIP package.
