@@ -208,8 +208,9 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     public void setContentFingerprint(String fingerprint) {
-        contentFingerprint = fingerprint != null && fingerprint.matches("[0-9a-fA-F]{64}")
-                ? fingerprint.toLowerCase(Locale.ROOT) : EMPTY_CONTENT_FINGERPRINT;
+        // Fail closed: a calculation error must never masquerade as a valid empty-mod set.
+        contentFingerprint = validFingerprint(fingerprint)
+                ? fingerprint.toLowerCase(Locale.ROOT) : "";
     }
 
     private static boolean validFingerprint(String fingerprint) {
@@ -332,6 +333,10 @@ public final class LanMultiplayerService implements Closeable {
                                     new String(advertisedContent, StandardCharsets.UTF_8);
                             if (!validFingerprint(fingerprint)) {
                                 Log.i(TAG, "Ignoring LAN game without a valid content fingerprint");
+                                return;
+                            }
+                            if (!contentFingerprint.equals(fingerprint)) {
+                                Log.i(TAG, "Ignoring LAN game with different active mods");
                                 return;
                             }
                             InetAddress address = info.getHost();
