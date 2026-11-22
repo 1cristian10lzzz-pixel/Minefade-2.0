@@ -10,7 +10,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from tools.validate_mfmod import parse_mod
+try:
+    from tools.validate_mfmod import parse_mod
+except ModuleNotFoundError:  # Direct execution as: python tools/mfmod2.py
+    from validate_mfmod import parse_mod
 
 ALLOWED_ENTRIES = {"manifest.json", "data/", "data/gameplay.mfmod"}
 ALLOWED_MANIFEST = {
