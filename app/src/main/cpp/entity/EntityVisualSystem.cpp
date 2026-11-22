@@ -148,7 +148,8 @@ void EntityVisualSystem::Clear() {
 
 void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
                                     std::vector<WorldVertex>& output,
-                                    const CameraFrustum* frustum) const {
+                                    const CameraFrustum* frustum,
+                                    bool textureAvailable) const {
     if(!sheepValidated_ || !legacyAdapter_.UseMaes(sheepValidated_)) return;
     for(const Entity& entity:entities) {
         if(entity.kind!=0 || !IsVisible(entity,sheepModel_,frustum)) continue;
@@ -194,11 +195,15 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
                     {{rect[2],rect[3]}},{{rect[0],rect[3]}}
                 }};
                 const std::size_t offset=face*4u;
-                const std::array<float,3> color{{
-                    (static_cast<float>(cube.faceColors[offset])/255.0f)*material.baseColor[0],
-                    (static_cast<float>(cube.faceColors[offset+1u])/255.0f)*material.baseColor[1],
-                    (static_cast<float>(cube.faceColors[offset+2u])/255.0f)*material.baseColor[2]
-                }};
+                // A valid GL texture uses the model's full UVs. If upload fails,
+                // preserve a representative face colour so the entity is still visible.
+                const std::array<float,3> color = textureAvailable
+                    ? std::array<float,3>{{material.baseColor[0],material.baseColor[1],material.baseColor[2]}}
+                    : std::array<float,3>{{
+                        (static_cast<float>(cube.faceColors[offset])/255.0f)*material.baseColor[0],
+                        (static_cast<float>(cube.faceColors[offset+1u])/255.0f)*material.baseColor[1],
+                        (static_cast<float>(cube.faceColors[offset+2u])/255.0f)*material.baseColor[2]
+                    }};
                 AppendTriangle(output,worldCorners,uv,color,0,1,2);
                 AppendTriangle(output,worldCorners,uv,color,0,2,3);
             }
