@@ -38,6 +38,7 @@ bool ModelValidator::Validate(const ModelData& model, std::string& error) {
     }
 
     std::unordered_set<std::string> boneNames;
+    std::size_t rootCount = 0u;
     std::vector<std::uint8_t> visit(model.bones.size(), 0u);
     for (std::size_t i = 0; i < model.bones.size(); ++i) {
         const ModelBone& bone = model.bones[i];
@@ -45,11 +46,15 @@ bool ModelValidator::Validate(const ModelData& model, std::string& error) {
             !Finite(bone.pivot) || !Finite(bone.bindRotationDegrees)) {
             error = "bone has an empty/duplicate name or non-finite transform"; return false;
         }
-        if (bone.parentIndex != 0xFFFFFFFFu &&
-            (bone.parentIndex >= model.bones.size() || bone.parentIndex == i ||
-             bone.parentIndex > i)) {
+        if (bone.parentIndex == 0xFFFFFFFFu) {
+            ++rootCount;
+        } else if (bone.parentIndex >= model.bones.size() || bone.parentIndex == i ||
+                   bone.parentIndex > i) {
             error = "bone parent must be a valid earlier topological entry"; return false;
         }
+    }
+    if (rootCount != 1u) {
+        error = "model skeleton must have exactly one root bone"; return false;
     }
     std::function<bool(std::size_t)> visitBone = [&](std::size_t index) {
         if (visit[index] == 1u) return false;
@@ -112,6 +117,7 @@ bool ModelValidator::Validate(const ModelData& model, std::string& error) {
         float previousTime = -1.0f;
         for (const ModelKeyframe& key : track.keyframes) {
             if (!std::isfinite(key.time) || key.time < 0.0f || key.time < previousTime ||
+                key.time > model.clips[track.clipIndex].duration + 1e-4f ||
                 !Finite(key.translation) || !Finite(key.rotation) ||
                 !Finite(key.scale) || key.scale.x <= 0.0f ||
                 key.scale.y <= 0.0f || key.scale.z <= 0.0f) {
