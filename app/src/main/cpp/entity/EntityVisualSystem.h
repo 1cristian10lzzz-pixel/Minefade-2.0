@@ -24,7 +24,8 @@ public:
 
     void AppendMesh(const std::vector<Entity>& entities,
                     std::vector<WorldVertex>& output,
-                    const CameraFrustum* frustum) const;
+                    const CameraFrustum* frustum,
+                    bool textureAvailable) const;
 
 private:
     ModelData sheepModel_;
