@@ -160,6 +160,7 @@ button:active { background: #47789b; }
 #move-left { left: 3dp; top: 42dp; }
 #move-right { right: 3dp; top: 42dp; }
 #jump { position: absolute; z-index: 7; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; padding: 2dp; text-align: center; border-radius: 18dp; background: #2f6479f2; border: 2dp #d9e9a4ee; color: #ffffff; font-size: 20dp; }
+#attack { position: absolute; z-index: 7; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; padding: 1dp; text-align: center; border-radius: 16dp; background: #7d3d36ee; border: 2dp #f0c1a1cc; color: #fff7f0; font-size: 17dp; }
 #crouch { position: absolute; z-index: 7; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; padding: 1dp; text-align: center; border-radius: 14dp; background: #20394ce8; border: 1dp #c3d8e888; color: #f5fbff; font-size: 17dp; }
 #inventory-panel { z-index: 9; left: 50%; top: 50%; width: 92%; height: 84%; margin-left: -46%; margin-top: -42%; padding: 8dp; background: #1b2638f2; border: 2dp #a9c1d4aa; border-radius: 13dp; overflow: hidden; }
 .inventory-layout { width: 100%; height: 100%; display: flex; flex-direction: row; gap: 8dp; }
@@ -223,7 +224,7 @@ button:active { background: #47789b; }
   <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
   <button class="slot" id="slot-6">7</button><button class="slot" id="slot-7">8</button><button class="slot" id="slot-8">9</button>
 </div>
-<button id="crouch">↓</button><button id="jump">↑</button>
+<button id="crouch">↓</button><button id="jump">↑</button><button id="attack">⚔</button>
 <div id="target"><div id="target-name"></div><div id="target-progress"><div id="target-progress-fill"></div></div></div>
 <div id="selected-item"></div>
 <div id="pickup"></div>
@@ -234,7 +235,7 @@ button:active { background: #47789b; }
       <div class="inventory-equipment" id="equipment-items"></div>
       <div class="inventory-heading">INVENTARIO · 9 ESPACIOS</div>
       <div id="inventory-items" class="inventory-grid"></div>
-      <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="inventory-close">Cerrar</button></div>
+      <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="eat">Comer</button><button id="inventory-close">Cerrar</button></div>
     </div>
     <div class="inventory-right">
       <div class="inventory-heading">CATÁLOGO · OBJETOS</div>
@@ -410,6 +411,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: -180dp; display: flex; }
 .slot { width: 36dp; height: 40dp; margin-right: 3dp; padding: 2dp; }
 #jump { position: absolute; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; font-size: 20dp; }
+#attack { position: absolute; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; font-size: 17dp; }
 #crouch { position: absolute; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; font-size: 16dp; }
 #minimap { position: absolute; top: 54dp; left: 10dp; width: 64dp; height: 64dp; border: 1dp solid #ffffff88; background-color: rgba(18, 43, 64, 0.70); }
 #target { position: absolute; top: 58%; left: 50%; margin-left: -70dp; width: 140dp; text-align: center; display: none; }
@@ -434,7 +436,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
 <button class="slot" id="slot-6">7</button><button class="slot" id="slot-7">8</button><button class="slot" id="slot-8">9</button>
 </div>
-<button id="jump">↑</button><button id="crouch">↓</button>
+<button id="jump">↑</button><button id="crouch">↓</button><button id="attack">⚔</button>
 <div id="crosshair"></div>
 <div id="target"><div id="target-name"></div><div id="target-progress-fill"></div></div>
 <div id="selected-item"></div><div id="pickup"></div>
@@ -476,6 +478,8 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("craft-wooden-sword", "craft-wooden-sword");
     AttachAction("jump", "jump");
     AttachAction("crouch", "crouch");
+    AttachAction("attack", "attack");
+    AttachAction("eat", "eat");
     AttachAction("starter-chest-open", "starter-chest-open");
     AttachAction("starter-chest-close", "starter-chest-close");
     AttachAction("starter-chest-take", "starter-chest-take");
