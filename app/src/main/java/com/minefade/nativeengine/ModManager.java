@@ -153,7 +153,26 @@ public final class ModManager {
                 if (key.matches("[a-zA-Z0-9_.-]{1,64}") && value.indexOf('\n') < 0 && value.indexOf('\r') < 0)
                     data.append(key).append('=').append(value).append('\n');
             }
-            return writeAtomically(info.file, data.toString().getBytes(StandardCharsets.UTF_8));
+            byte[] updatedGameplay = data.toString().getBytes(StandardCharsets.UTF_8);
+            if (!writeAtomically(info.file, updatedGameplay)) return false;
+            File packageManifest = packageManifestFor(info.file);
+            if (packageManifest != null) {
+                JSONObject manifest;
+                try (InputStream input = new FileInputStream(packageManifest)) {
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[2048];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        if (bytes.size() + count > 8192) return false;
+                        bytes.write(buffer, 0, count);
+                    }
+                    manifest = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+                }
+                manifest.put("sha256", sha256(updatedGameplay));
+                return writeAtomically(packageManifest,
+                        manifest.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            return true;
         } catch (Exception ignored) {
             return false;
         }
@@ -327,6 +346,14 @@ public final class ModManager {
                     int read;
                     while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
                 }
+                File packageManifest = packageManifestFor(info.file);
+                if (packageManifest != null) {
+                    try (InputStream input = new FileInputStream(packageManifest)) {
+                        byte[] buffer = new byte[4096];
+                        int read;
+                        while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+                    }
+                }
                 digest.update((byte) 0xff);
             }
             byte[] result = digest.digest();
@@ -365,6 +392,15 @@ public final class ModManager {
         } catch (Exception error) {
             return "No se pudo comprobar el manifiesto de mods del mundo.";
         }
+    }
+
+
+    private static File packageManifestFor(File gameplayFile) {
+        if (gameplayFile == null || gameplayFile.getParentFile() == null ||
+                !"data".equals(gameplayFile.getParentFile().getName()) ||
+                gameplayFile.getParentFile().getParentFile() == null) return null;
+        File manifest = new File(gameplayFile.getParentFile().getParentFile(), "manifest.json");
+        return manifest.isFile() ? manifest : null;
     }
 
     private static boolean writeAtomically(File target, byte[] bytes) {
