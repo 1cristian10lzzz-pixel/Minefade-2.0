@@ -837,33 +837,6 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         return a->z < b->z;
     });
 
-    // Freeze the selected block data before workers start. Mesh jobs below only
-    // read these value snapshots; they never dereference mutable world chunks.
-    // The snapshot keeps the historical chunk coordinates and block IDs intact.
-    std::vector<Chunk> snapshots;
-    snapshots.reserve(selected.size());
-    std::map<std::pair<int, int>, std::size_t> snapshotIndices;
-    for (const Chunk* chunk : selected) {
-        const std::size_t index = snapshots.size();
-        snapshots.push_back(*chunk);
-        snapshotIndices.emplace(std::make_pair(chunk->x, chunk->z), index);
-    }
-
-    // Neighbour queries outside the rendered radius behave as air. Inside the
-    // radius, workers read only the immutable snapshot map, including borders.
-    const auto getMeshBlock = [&](int x,int y,int z) {
-        if (y<0 || y>=kWorldHeight) return BlockId::Air;
-        const int cx=FloorDiv(x,kChunkSize);
-        const int cz=FloorDiv(z,kChunkSize);
-        if (radiusInChunks>=0 &&
-            (std::abs(cx-centerChunkX)>radiusInChunks ||
-             std::abs(cz-centerChunkZ)>radiusInChunks)) return BlockId::Air;
-        const auto snapshot = snapshotIndices.find({cx, cz});
-        if (snapshot == snapshotIndices.end()) return BlockId::Air;
-        const Chunk& source = snapshots[snapshot->second];
-        return source.blocks[Index(PositiveMod(x,kChunkSize), y, PositiveMod(z,kChunkSize))];
-    };
-
     std::vector<ChunkMeshData> built(selected.size());
     std::vector<bool> needsBuild(selected.size(), false);
     for (std::size_t i = 0; i < selected.size(); ++i) {
@@ -890,6 +863,56 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
             }
         }
     }
+
+    // Snapshot only chunks that a scheduled mesh can read: the source chunk and
+    // its four horizontal neighbours. Copying every loaded chunk on each render
+    // pass caused avoidable RAM traffic on phones with a wider view distance.
+    // Snapshots are immutable while workers run, so they never race live edits.
+    constexpr std::size_t kNoSnapshot = std::numeric_limits<std::size_t>::max();
+    std::set<std::pair<int, int>> requiredSnapshotKeys;
+    for (std::size_t i = 0; i < selected.size(); ++i) {
+        if (!needsBuild[i]) continue;
+        const int cx = selected[i]->x;
+        const int cz = selected[i]->z;
+        requiredSnapshotKeys.insert({cx, cz});
+        requiredSnapshotKeys.insert({cx - 1, cz});
+        requiredSnapshotKeys.insert({cx + 1, cz});
+        requiredSnapshotKeys.insert({cx, cz - 1});
+        requiredSnapshotKeys.insert({cx, cz + 1});
+    }
+
+    std::vector<Chunk> snapshots;
+    snapshots.reserve(requiredSnapshotKeys.size());
+    std::map<std::pair<int, int>, std::size_t> snapshotIndices;
+    for (const Chunk* chunk : selected) {
+        const auto key = std::make_pair(chunk->x, chunk->z);
+        if (requiredSnapshotKeys.find(key) == requiredSnapshotKeys.end()) continue;
+        snapshotIndices.emplace(key, snapshots.size());
+        snapshots.push_back(*chunk);
+    }
+
+    std::vector<std::size_t> selectedSnapshotIndices(selected.size(), kNoSnapshot);
+    for (std::size_t i = 0; i < selected.size(); ++i) {
+        if (!needsBuild[i]) continue;
+        const auto key = std::make_pair(selected[i]->x, selected[i]->z);
+        const auto snapshot = snapshotIndices.find(key);
+        if (snapshot != snapshotIndices.end()) selectedSnapshotIndices[i] = snapshot->second;
+    }
+
+    // Neighbour queries outside the rendered radius behave as air. Inside it,
+    // workers use only this reduced immutable source/halo snapshot set.
+    const auto getMeshBlock = [&](int x,int y,int z) {
+        if (y<0 || y>=kWorldHeight) return BlockId::Air;
+        const int cx=FloorDiv(x,kChunkSize);
+        const int cz=FloorDiv(z,kChunkSize);
+        if (radiusInChunks>=0 &&
+            (std::abs(cx-centerChunkX)>radiusInChunks ||
+             std::abs(cz-centerChunkZ)>radiusInChunks)) return BlockId::Air;
+        const auto snapshot = snapshotIndices.find({cx, cz});
+        if (snapshot == snapshotIndices.end()) return BlockId::Air;
+        const Chunk& source = snapshots[snapshot->second];
+        return source.blocks[Index(PositiveMod(x,kChunkSize), y, PositiveMod(z,kChunkSize))];
+    };
     static constexpr int neighborOffsets[6][3] = {
         {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}
     };
@@ -904,7 +927,7 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
 
     const auto buildOneChunk = [&](std::size_t index) {
         if (!needsBuild[index]) return;
-        const Chunk& chunk=snapshots[index];
+        const Chunk& chunk=snapshots[selectedSnapshotIndices[index]];
         ChunkMeshData& result=built[index];
         const int baseX=chunk.x*kChunkSize, baseZ=chunk.z*kChunkSize;
         const int chunkDistance=std::max(std::abs(chunk.x-centerChunkX),
@@ -1162,7 +1185,7 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         if (!needsBuild[i]) continue;
         // A future persistent scheduler may finish after a block edit. Never
         // publish a mesh from a snapshot older than the current chunk revision.
-        if (selected[i]->revision != snapshots[i].revision) {
+        if (selected[i]->revision != snapshots[selectedSnapshotIndices[i]].revision) {
             dirtyChunkMeshes_.insert(key);
             continue;
         }
