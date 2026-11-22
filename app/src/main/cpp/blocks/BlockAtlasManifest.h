@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-
 namespace minefade {
 inline constexpr std::size_t kBlockAtlasWidth = 576u;
 inline constexpr std::size_t kBlockAtlasHeight = 702u;
