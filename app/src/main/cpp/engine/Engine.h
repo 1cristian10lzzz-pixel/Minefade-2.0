@@ -173,6 +173,13 @@ private:
     bool crouching_{false};
     int gameMode_{0};
     bool allowCheats_{false};
+    float playerHealth_{20.0f};
+    float playerHunger_{20.0f};
+    float hungerExhaustion_{0.0f};
+    float hungerDrainTimer_{0.0f};
+    float starvationTimer_{0.0f};
+    float regenerationTimer_{0.0f};
+    float hostileDamageCooldown_{0.0f};
     bool starterChestEnabled_{false};
     bool starterChestOpen_{false};
     Vec3 starterChestPosition_{};
