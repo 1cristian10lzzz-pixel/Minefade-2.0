@@ -553,8 +553,56 @@ bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWo
     entity.phase = animationTime_ + index * 0.73f;
     entity.speed = 0.12f + std::fmod(index, 4.0f) * 0.025f;
     entity.kind = kind;
+    entity.health = kind == 5 ? 10.0f : (kind == 4 ? 8.0f : 5.0f);
     entity.behaviorTimer = 2.5f + std::fmod(index * 0.87f, 4.0f);
     entities_.push_back(entity);
+    return true;
+}
+
+bool EntitySystem::DamageNearest(const Vec3& origin, const Vec3& direction,
+                                 float maxDistance, float damage,
+                                 bool* defeated, int* defeatedKind) {
+    if (defeated != nullptr) *defeated = false;
+    if (defeatedKind != nullptr) *defeatedKind = -1;
+    if (!std::isfinite(maxDistance) || !std::isfinite(damage) ||
+        maxDistance <= 0.0f || damage <= 0.0f) return false;
+
+    const float directionLength = std::sqrt(std::max(
+        direction.x * direction.x + direction.y * direction.y + direction.z * direction.z,
+        0.000001f));
+    const Vec3 forward{direction.x / directionLength,
+                       direction.y / directionLength,
+                       direction.z / directionLength};
+    const float maximumDistanceSquared = maxDistance * maxDistance;
+    std::size_t bestIndex = entities_.size();
+    float bestDistanceSquared = maximumDistanceSquared;
+    for (std::size_t index = 0; index < entities_.size(); ++index) {
+        const Entity& entity = entities_[index];
+        if (entity.kind != 4 && entity.kind != 5) continue;
+        const Vec3 delta{entity.position.x - origin.x,
+                         entity.position.y + 0.7f - origin.y,
+                         entity.position.z - origin.z};
+        const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+        if (!std::isfinite(distanceSquared) || distanceSquared > bestDistanceSquared ||
+            distanceSquared < 0.01f) continue;
+        const float distance = std::sqrt(distanceSquared);
+        const float facing = (delta.x * forward.x + delta.y * forward.y + delta.z * forward.z) / distance;
+        if (facing < 0.72f) continue;
+        bestDistanceSquared = distanceSquared;
+        bestIndex = index;
+    }
+    if (bestIndex == entities_.size()) return false;
+
+    Entity& target = entities_[bestIndex];
+    target.health = std::max(0.0f, target.health - damage);
+    target.visualState = 1u;
+    target.behavior = 3;
+    target.behaviorTimer = 1.0f;
+    if (target.health <= 0.0f) {
+        if (defeated != nullptr) *defeated = true;
+        if (defeatedKind != nullptr) *defeatedKind = target.kind;
+        entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(bestIndex));
+    }
     return true;
 }
 
