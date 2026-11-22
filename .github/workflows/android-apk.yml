@@ -90,6 +90,7 @@ jobs:
             app/src/main/assets/textures/block_atlas.rgba \
             app/src/main/cpp/blocks/BlockRegistry.h \
             app/src/main/cpp/blocks/BlockRegistry.cpp \
+            app/src/main/cpp/blocks/BlockAtlasManifest.h \
             docs/block_atlas_preview.png \
             docs/BLOCK_CATALOG_1_8.md
           if ! git diff --cached --quiet; then
