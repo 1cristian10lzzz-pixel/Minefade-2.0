@@ -24,7 +24,6 @@ def test_every_catalogued_block_has_a_valid_side_icon_tile():
         definition = by_id[block_id]
         tile = definition["atlas"]["side"]
         assert 0 <= tile < len(blocks) * 3
-        assert block_id >= 306 or block_id < 306
     assert 414 not in by_id
 
 
