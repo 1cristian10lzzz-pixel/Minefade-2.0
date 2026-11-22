@@ -118,12 +118,17 @@ public:
     std::uint32_t Seed() const { return seed_; }
     std::size_t ChunkCount() const { return chunks_.size(); }
     std::size_t CountNonAirBlocks() const;
+    // Approximate CPU residency; save files and block IDs are unchanged.
+    std::size_t ChunkStorageBytes() const noexcept;
+    std::size_t MeshCacheMemoryBytes() const noexcept;
 
 private:
     struct Chunk {
         int x{0};
         int z{0};
         std::array<BlockId, kChunkVolume> blocks{};
+        // Runtime-only revision. It is deliberately not serialized to MFVOX.
+        std::uint64_t revision{1};
     };
 
     struct ChunkMeshCache {
