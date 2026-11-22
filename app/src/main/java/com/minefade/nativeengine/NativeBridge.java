@@ -8,7 +8,7 @@ public final class NativeBridge {
 
     private NativeBridge() { }
 
-    public static native boolean nativeInit(float displayDensity, byte[] blockAtlasRgba, int atlasWidth, int atlasHeight, byte[] sheepModel);
+    public static native boolean nativeInit(float displayDensity, byte[] blockAtlasRgba, int atlasWidth, int atlasHeight, byte[] sheepModel, byte[] sheepTextureRgba);
     public static native String nativeGetLastInitError();
     public static native boolean nativeIsUiReady();
     public static native void nativeFallbackAction(int action, boolean pressed);
