@@ -46,11 +46,9 @@ public:
         depthEnabled_ = glIsEnabled(GL_DEPTH_TEST);
         cullEnabled_ = glIsEnabled(GL_CULL_FACE);
         scissorEnabled_ = glIsEnabled(GL_SCISSOR_TEST);
-        valid_ = glGetError() == GL_NO_ERROR;
     }
 
     ~ScopedRmlUiGlState() {
-        if (!valid_) return;
 
         glUseProgram(static_cast<GLuint>(program_));
         glBindVertexArray(static_cast<GLuint>(vertexArray_));
@@ -106,7 +104,6 @@ private:
     GLboolean depthEnabled_{GL_FALSE};
     GLboolean cullEnabled_{GL_FALSE};
     GLboolean scissorEnabled_{GL_FALSE};
-    bool valid_{true};
 };
 
 constexpr char kHudDocument[] = R"RML(
