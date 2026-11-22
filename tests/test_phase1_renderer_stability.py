@@ -15,13 +15,18 @@ ENGINE_H = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
 def test_meshing_workers_only_read_frozen_chunk_snapshots():
     snapshot = WORLD.index("std::vector<Chunk> snapshots;")
     build = WORLD.index("const auto buildOneChunk", snapshot)
-    worker_source = WORLD.index("const Chunk& chunk=snapshots[index];", build)
+    worker_source = WORLD.index("const Chunk& chunk=snapshots[selectedSnapshotIndices[index]];", build)
     commit = WORLD.index("A future persistent scheduler may finish", worker_source)
     assert snapshot < build < worker_source < commit
-    assert "snapshotIndices.emplace" in WORLD[snapshot:build]
+    assert "requiredSnapshotKeys.insert({cx, cz});" in WORLD
+    assert "requiredSnapshotKeys.insert({cx - 1, cz});" in WORLD
+    assert "requiredSnapshotKeys.insert({cx + 1, cz});" in WORLD
+    assert "requiredSnapshotKeys.insert({cx, cz - 1});" in WORLD
+    assert "requiredSnapshotKeys.insert({cx, cz + 1});" in WORLD
+    assert "snapshots.reserve(requiredSnapshotKeys.size());" in WORLD
     assert "source.blocks[Index(PositiveMod(x,kChunkSize), y, PositiveMod(z,kChunkSize))]" in WORLD[snapshot:build]
     assert "const Chunk& chunk=*selected[index]" not in WORLD
-    assert "selected[i]->revision != snapshots[i].revision" in WORLD
+    assert "selected[i]->revision != snapshots[selectedSnapshotIndices[i]].revision" in WORLD
     assert "dirtyChunkMeshes_.insert(key);" in WORLD[commit:commit + 500]
 
 
