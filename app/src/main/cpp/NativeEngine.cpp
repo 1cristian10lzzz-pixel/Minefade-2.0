@@ -17,7 +17,8 @@ std::atomic_bool gEngineFailure{false};
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jfloat density,
-                                                           jbyteArray atlas, jint width, jint height) {
+                                                           jbyteArray atlas, jint width, jint height,
+                                                           jbyteArray sheepModel) {
     auto& engine = minefade::GetEngine();
     if (atlas == nullptr || width <= 0 || height <= 0) {
         engine.SetLastInitError("El atlas de bloques llegó vacío o con dimensiones no válidas desde Android.");
@@ -39,8 +40,29 @@ Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jflo
             engine.Shutdown();
             return JNI_FALSE;
         }
+        std::vector<std::uint8_t> sheepModelBytes;
+        if (sheepModel != nullptr) {
+            const jsize modelLength = env->GetArrayLength(sheepModel);
+            if (modelLength > 0 && modelLength <= 8 * 1024 * 1024) {
+                sheepModelBytes.resize(static_cast<std::size_t>(modelLength));
+                env->GetByteArrayRegion(sheepModel, 0, modelLength,
+                    reinterpret_cast<jbyte*>(sheepModelBytes.data()));
+                if (env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    sheepModelBytes.clear();
+                    __android_log_print(ANDROID_LOG_WARN, kTag,
+                        "Optional MAES sheep model could not be copied; legacy model remains active");
+                }
+            } else if (modelLength > 8 * 1024 * 1024) {
+                __android_log_print(ANDROID_LOG_WARN, kTag,
+                    "Optional MAES sheep model exceeds 8 MiB; legacy model remains active");
+            }
+        }
         const bool result = engine.Initialise(static_cast<float>(density), pixels.data(), pixels.size(),
-                                               static_cast<int>(width), static_cast<int>(height));
+                                               static_cast<int>(width), static_cast<int>(height),
+                                               sheepModelBytes.empty() ? nullptr : sheepModelBytes.data(),
+                                               sheepModelBytes.size());
         __android_log_print(result ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, kTag,
                             "Engine initialisation %s", result ? "succeeded" : "failed");
         return result ? JNI_TRUE : JNI_FALSE;
