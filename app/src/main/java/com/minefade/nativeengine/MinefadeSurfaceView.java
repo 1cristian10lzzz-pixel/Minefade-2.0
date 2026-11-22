@@ -222,6 +222,28 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         return new byte[0];
     }
 
+    private static byte[] readOptionalSheepTexture(AssetManager assets) {
+        final int expectedBytes = 64 * 32 * 4;
+        try (InputStream input = assets.open("entities/sheep/sheep.texture.rgba");
+             ByteArrayOutputStream output = new ByteArrayOutputStream(expectedBytes)) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > expectedBytes) {
+                    Log.w(TAG, "MAES sheep texture exceeds its declared dimensions; using baked face-colour fallback");
+                    return new byte[0];
+                }
+                output.write(buffer, 0, read);
+            }
+            byte[] result = output.toByteArray();
+            if (result.length == expectedBytes) return result;
+            Log.w(TAG, "MAES sheep texture has invalid size: " + result.length);
+        } catch (IOException error) {
+            Log.w(TAG, "MAES sheep texture is not packaged; using baked face-colour fallback", error);
+        }
+        return new byte[0];
+    }
+
     private static byte[] readBlockAtlas(AssetManager assets) {
         final int expected = ATLAS_WIDTH * ATLAS_HEIGHT * 4;
         try (InputStream input = assets.open("textures/block_atlas.rgba");
@@ -366,6 +388,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             try {
                 byte[] atlas = readBlockAtlas(assetManager);
                 byte[] sheepModel = readOptionalSheepModel(assetManager);
+                byte[] sheepTexture = readOptionalSheepTexture(assetManager);
                 // Set mode and storage on the same GL thread as nativeInit/render.
                 NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
                 NativeBridge.nativeSetStoragePath(storagePath);
@@ -406,7 +429,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                         preferences.getInt("avatar_accesorios", 0)
                 };
                 NativeBridge.nativeSetAvatarAppearance(avatarChoices);
-                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel);
+                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
                 if (!nativeReady) {
                     final String firstFailure = readNativeInitError();
                     // Retry once with a smaller workload only for resource-allocation failures.
