@@ -199,6 +199,29 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         return result.get();
     }
 
+    private static byte[] readOptionalSheepModel(AssetManager assets) {
+        final int maxBytes = 8 * 1024 * 1024;
+        try (InputStream input = assets.open("entities/sheep/sheep.mfmodel");
+             ByteArrayOutputStream output = new ByteArrayOutputStream(64 * 1024)) {
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > maxBytes) {
+                    Log.w(TAG, "MAES sheep model exceeds 8 MiB; using the legacy sheep renderer");
+                    return new byte[0];
+                }
+                output.write(buffer, 0, read);
+            }
+            byte[] result = output.toByteArray();
+            if (result.length >= 64) return result;
+            Log.w(TAG, "MAES sheep model is empty or truncated; using the legacy sheep renderer");
+        } catch (IOException error) {
+            // Optional during staged migration: resource/model errors must not block world startup.
+            Log.w(TAG, "MAES sheep model is not packaged; using the legacy sheep renderer", error);
+        }
+        return new byte[0];
+    }
+
     private static byte[] readBlockAtlas(AssetManager assets) {
         final int expected = ATLAS_WIDTH * ATLAS_HEIGHT * 4;
         try (InputStream input = assets.open("textures/block_atlas.rgba");
@@ -342,6 +365,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
             try {
                 byte[] atlas = readBlockAtlas(assetManager);
+                byte[] sheepModel = readOptionalSheepModel(assetManager);
                 // Set mode and storage on the same GL thread as nativeInit/render.
                 NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
                 NativeBridge.nativeSetStoragePath(storagePath);
@@ -382,7 +406,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                         preferences.getInt("avatar_accesorios", 0)
                 };
                 NativeBridge.nativeSetAvatarAppearance(avatarChoices);
-                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT);
+                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel);
                 if (!nativeReady) {
                     final String firstFailure = readNativeInitError();
                     // Retry once with a smaller workload only for resource-allocation failures.
