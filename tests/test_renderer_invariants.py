@@ -27,14 +27,16 @@ def test_terrain_gpu_resources_are_incremental_per_chunk():
     assert "render/WorldMeshRenderer.cpp" in CMAKE
     assert '#include "../render/WorldMeshRenderer.h"' in ENGINE_H
     assert "WorldMeshRenderer worldRenderer_;" in ENGINE_H
-    assert "worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(), uploadBudget)" in ENGINE
+    assert "worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(),\n                             uploadBudget, byteBudget, timeBudgetMs)" in ENGINE
     assert "world_.GetChunkMeshViews(centerX, centerZ, renderDistanceChunks_, worldChunkViews_)" in ENGINE
     assert "world_.BuildMesh(meshBuildScratch_" in ENGINE
     assert "1u, false);" in ENGINE
     assert "existing->second.revision == view.revision" in RENDERER
     assert "const std::vector<ChunkMeshView>& chunkViews" in RENDERER_H
     assert "const std::vector<WorldVertex>* opaque" in WORLD_H
-    assert "GL_STATIC_DRAW" in RENDERER
+    assert "GL_DYNAMIC_DRAW" in RENDERER
+    assert "glBufferSubData" in RENDERER
+    assert "glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(newCapacity)" in RENDERER
     assert "worldRenderer_.DrawOpaque(frustum)" in ENGINE
     assert "worldRenderer_.DrawTransparent(frustum, eye)" in ENGINE
     assert "glBufferData(GL_ARRAY_BUFFER,\n                 static_cast<GLsizeiptr>(worldMesh_.size()" not in ENGINE
@@ -83,6 +85,11 @@ def test_gpu_chunk_uploads_are_bounded_and_nearest_first():
     assert "std::size_t maxChunkUploads" in RENDERER_H
     assert "PendingUploadCount()" in RENDERER_H
     assert "LastUploadCount()" in RENDERER_H
+    assert "LastUploadBytes()" in RENDERER_H
+    assert "PendingUploadBytes()" in RENDERER_H
+    assert "ResidentGpuBytes()" in RENDERER_H
+    assert "maxUploadBytes" in RENDERER_H
+    assert "maxUploadMilliseconds" in RENDERER_H
     assert "std::sort(dirty.begin(), dirty.end()" in RENDERER
     assert "a.distanceSquared < b.distanceSquared" in RENDERER
     assert "if (attemptedUploads >= maxChunkUploads) break;" in RENDERER
