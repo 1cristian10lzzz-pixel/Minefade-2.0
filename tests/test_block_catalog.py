@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Validate Minefade's one-entry-per-source-block registry and atlas."""
 from __future__ import annotations
+import hashlib
 import json
 import pathlib
+import re
 import struct
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -100,7 +102,7 @@ synthetic_item_keys = [
 all_catalog_keys = source_keys + synthetic_item_keys
 block_count = len(all_catalog_keys)
 assert len(blocks) == block_count == catalog["count"]
-assert block_count >= 306
+assert block_count == 414
 assert [block["key"] for block in blocks] == all_catalog_keys
 assert [block["key"] for block in blocks[:len(source_keys)]] == source_keys
 for item in blocks[len(source_keys):]:
@@ -130,21 +132,46 @@ for block in blocks:
 assert len(all_tiles) == block_count * 3
 atlas_meta = catalog["atlas"]
 rgba = (ROOT / "app/src/main/assets/textures/block_atlas.rgba").read_bytes()
-assert len(rgba) == atlas_meta["width"] * atlas_meta["height"] * 4
 expected_height = ((block_count * 3 + 31) // 32) * 18
+expected_bytes = 576 * expected_height * 4
+assert atlas_meta["pixel_format"] == "RGBA8"
 assert atlas_meta["width"] == 576
-assert atlas_meta["height"] == expected_height
-assert atlas_meta["rows"] == expected_height // 18
-assert len(rgba) == 576 * expected_height * 4
+assert atlas_meta["height"] == expected_height == 702
+assert atlas_meta["tile_size"] == 16
+assert atlas_meta["cell_size"] == 18
+assert atlas_meta["columns"] == 32
+assert atlas_meta["rows"] == expected_height // 18 == 39
+assert atlas_meta["padding"] == 1
+assert atlas_meta["tile_count"] == block_count * 3 == 1242
+assert atlas_meta["byte_count"] == expected_bytes == 1_617_408
+assert atlas_meta["sampling"] == "NEAREST"
+assert len(rgba) == atlas_meta["byte_count"]
+assert re.fullmatch(r"[0-9a-f]{64}", atlas_meta["sha256"])
+assert hashlib.sha256(rgba).hexdigest() == atlas_meta["sha256"]
 
-# The native atlas UV helper must use the generated row count. A stale fixed
-# height clips every row after the old 486px atlas when more entries are added.
+# The native atlas layout is generated from the same catalogue manifest.
+manifest_header = (ROOT / "app/src/main/cpp/blocks/BlockAtlasManifest.h").read_text(encoding="utf-8")
+for name, value in {
+    "kBlockAtlasWidth": 576,
+    "kBlockAtlasHeight": 702,
+    "kBlockAtlasTileSize": 16,
+    "kBlockAtlasCellSize": 18,
+    "kBlockAtlasColumns": 32,
+    "kBlockAtlasRows": 39,
+    "kBlockAtlasPadding": 1,
+    "kBlockAtlasTileCount": 1242,
+    "kBlockAtlasByteCount": 1_617_408,
+}.items():
+    assert re.search(rf"{name} = {value}u;", manifest_header)
+
 registry_source = (ROOT / "app/src/main/cpp/blocks/BlockRegistry.cpp").read_text(encoding="utf-8")
-assert "const float atlasHeight=static_cast<float>(rows*18u)" in registry_source
+assert '#include "BlockAtlasManifest.h"' in registry_source
 assert "GetBlockDefinitionCount()*3u" in registry_source
-assert "static_cast<std::size_t>(tile)>=tileCount" in registry_source
-assert "v0=(y+0.5f)/atlasHeight" in registry_source
-assert "v1=(y+15.5f)/atlasHeight" in registry_source
+assert "tileIndex>=kBlockAtlasTileCount" in registry_source
+assert "tileIndex%kBlockAtlasColumns" in registry_source
+assert "tileIndex/kBlockAtlasColumns" in registry_source
+assert "kBlockAtlasCellSize+kBlockAtlasPadding" in registry_source
+assert "kBlockAtlasWidth" in registry_source and "kBlockAtlasHeight" in registry_source
 assert "1.0f-(y+" not in registry_source
 assert "/486.0f" not in registry_source
 
