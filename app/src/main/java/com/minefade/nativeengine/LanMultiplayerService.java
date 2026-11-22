@@ -42,8 +42,6 @@ public final class LanMultiplayerService implements Closeable {
     private static final String TAG = "MinefadeLAN";
     private static final String SERVICE_TYPE = "_minefade._tcp.";
     private static final int PROTOCOL_VERSION = 3;
-    private static final String EMPTY_CONTENT_FINGERPRINT =
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     private static final int MAX_PLAYERS = 8;
     private static final long STATE_INTERVAL_NS = 50_000_000L;
     private static final long INTERPOLATION_DELAY_NS = 110_000_000L;
@@ -200,7 +198,7 @@ public final class LanMultiplayerService implements Closeable {
     private volatile long lastStateSentNs;
     private volatile String playerName = "Jugador";
     private volatile String advertisedName = "Minefade";
-    private volatile String contentFingerprint = EMPTY_CONTENT_FINGERPRINT;
+    private volatile String contentFingerprint = "";
 
     public LanMultiplayerService(Context context) {
         appContext = context.getApplicationContext();
