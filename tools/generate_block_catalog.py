@@ -1101,10 +1101,10 @@ def main():
         f'inline constexpr std::size_t kBlockAtlasPadding = 1u;',
         f'inline constexpr std::size_t kBlockAtlasTileCount = {len(catalogue)*3}u;',
         f'inline constexpr std::size_t kBlockAtlasByteCount = {len(atlas)}u;',
-        f'inline constexpr char kBlockAtlasSha256[] = "{atlas_sha256}";',
         '} // namespace minefade',
     ]
     OUT_ATLAS_H.write_text('\n'.join(atlas_h)+'\n',encoding='utf-8')
+    print(f'Atlas SHA-256: {atlas_sha256}')
     # Compact native registry.
     h=[]
     h += ['#pragma once','#include <cstddef>','#include <cstdint>','#include <string_view>','namespace minefade {',
