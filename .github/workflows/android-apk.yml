@@ -101,6 +101,9 @@ jobs:
             exit 1
           fi
 
+      - name: Compile MAES external sheep model and texture
+        run: python3 tools/mfmodelc.py
+
       - name: Run Python regression tests
         run: python3 -m pytest -q tests
 
