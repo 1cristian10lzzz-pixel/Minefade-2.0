@@ -171,7 +171,7 @@ bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews,
     std::size_t attemptedUploads = 0u;
     for (const DirtyChunk& candidate : dirty) {
         if (attemptedUploads >= maxChunkUploads) break;
-        if (lastUploadCount_ > 0u) {
+        if (attemptedUploads > 0u) {
             const double elapsedMs = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - uploadStart).count();
             if (elapsedMs >= std::max(0.0, maxUploadMilliseconds)) break;
