@@ -18,6 +18,9 @@ La prioridad es conservar los mundos, los identificadores históricos de bloques
 - **Daño de enemigos cercanos:** las entidades hostiles existentes (kinds 4 y 5) hacen daño por contacto con enfriamiento, evitando una pérdida de vida por cada frame.
 - **Combate cuerpo a cuerpo:** botón de ataque, alcance limitado y cono frontal; solo se dañan las entidades hostiles. Puños, espada, hacha y pico usan daños distintos. Los enemigos llevan salud en tiempo de ejecución y desaparecen al llegar a cero.
 - **Comer desde el inventario:** el botón COMER consume una unidad seleccionada de zanahorias o patatas y restaura comida. No consume el objeto si la acción no es válida o la barra ya está llena.
+- **Durabilidad de herramientas y armas:** madera, piedra, cobre, hierro, oro, diamante y esmeralda tienen valores de durabilidad distintos. Minar y golpear con una herramienta la desgasta; al llegar a cero desaparece del slot. El intercambio de objetos entre casillas mueve también su desgaste.
+- **HUD de durabilidad:** la barra del hotbar y las filas del inventario muestran el porcentaje restante; el objeto seleccionado muestra el valor numérico.
+- **Guardado de durabilidad:** el array por slot se escribe en el sidecar .durability con magic y versión, y se valida al cargar. Los mundos anteriores sin ese sidecar consideran las herramientas intactas. El archivo MFVOX no se modifica.
 - **HUD de supervivencia:** muestra vida y comida junto con las métricas de rendimiento.
 - **Reaparición:** al llegar a cero de vida se intenta resolver una posición segura, se restaura una cantidad inicial de vida y comida y se conserva el inventario.
 - **Guardado de supervivencia sin migrar el mundo:** los valores de vida y comida se escriben en el sidecar `.survival` con magic y versión, validación de tamaño/valores y sustitución temporal. Los archivos MFVOX001/002/003 mantienen su estructura histórica.
@@ -34,7 +37,7 @@ La prioridad es conservar los mundos, los identificadores históricos de bloques
 ### Pendiente para cerrar la fase 2 al nivel de un juego completo
 
 1. **Alimentos completos:** cocinar, carne, pan, pescado, cultivos con estados de crecimiento completos, pociones y efectos temporales. En esta revisión solo se habilitan zanahorias y patatas que ya existen en el catálogo.
-2. **Durabilidad real:** desgaste persistente por herramienta y armadura, barras de durabilidad, rotura y reparación. El inventario actual codifica identificador/cantidad en cada slot y aún no almacena durabilidad individual.
+2. **Durabilidad de armaduras y reparación:** la durabilidad de herramientas ya está implementada y guardada; falta desgaste por daño recibido en cada pieza de armadura, reducción de protección basada en daño/material, reparación en mesa y recuperación de herramientas encantadas.
 3. **Loot y economía de entidades:** tablas de drops por entidad, experiencia, objetos de cadáver, domesticación y reproducción. El ataque implementado retira el enemigo al derrotarlo, pero todavía no crea una tabla de botín.
 4. **Combate completo:** ataques enemigos animados, proyectiles, retroceso, armaduras con absorción específica por material, invulnerabilidad temporal y estados alterados.
 5. **IA ampliada:** navegación, búsqueda de ruta con obstáculos, memoria de objetivos, grupos, horarios, reproducción, monturas y animaciones completas para cada especie.
@@ -83,6 +86,8 @@ El motor nativo conserva los archivos v1 planos y también descubre únicamente 
 - HELLO incluye protocolo, huella de contenido y nombre.
 - El host rechaza clientes que no tengan exactamente la misma huella.
 - WELCOME devuelve la huella del host y el cliente la vuelve a comprobar.
+- La búsqueda filtra partidas cuyo contenido no coincide; el ingreso vuelve a validar.
+- Si no puede calcularse una huella local válida, la conexión falla cerrada en lugar de fingir que el conjunto está vacío.
 - La búsqueda, el ingreso y el hosting usan la misma huella calculada por ModManager.
 
 Esto evita iniciar una sesión con distintas versiones de mods de configuración. No convierte todavía la LAN en un servidor autoritativo completo.
