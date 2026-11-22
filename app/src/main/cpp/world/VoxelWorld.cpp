@@ -743,7 +743,11 @@ bool VoxelWorld::SetBlock(int x,int y,int z,BlockId block) {
     Chunk* chunk=FindChunk(FloorDiv(x,kChunkSize),FloorDiv(z,kChunkSize));if(chunk==nullptr)return false;
     const int localX = PositiveMod(x, kChunkSize);
     const int localZ = PositiveMod(z, kChunkSize);
-    chunk->blocks[Index(localX, y, localZ)] = block;
+    BlockId& stored = chunk->blocks[Index(localX, y, localZ)];
+    if (stored == block) return true;
+    stored = block;
+    chunk->revision = chunk->revision == std::numeric_limits<std::uint64_t>::max()
+        ? 1u : chunk->revision + 1u;
     InvalidateChunkMesh(chunk->x, chunk->z);
     if (localX == 0) InvalidateChunkMesh(chunk->x - 1, chunk->z);
     if (localX == kChunkSize - 1) InvalidateChunkMesh(chunk->x + 1, chunk->z);
@@ -833,9 +837,20 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         return a->z < b->z;
     });
 
-    // Neighbour queries outside the rendered radius must behave as air.
-    // Otherwise already-generated off-screen chunks can hide boundary faces
-    // belonging to the last visible ring and create holes at the view-distance edge.
+    // Freeze the selected block data before workers start. Mesh jobs below only
+    // read these value snapshots; they never dereference mutable world chunks.
+    // The snapshot keeps the historical chunk coordinates and block IDs intact.
+    std::vector<Chunk> snapshots;
+    snapshots.reserve(selected.size());
+    std::map<std::pair<int, int>, std::size_t> snapshotIndices;
+    for (const Chunk* chunk : selected) {
+        const std::size_t index = snapshots.size();
+        snapshots.push_back(*chunk);
+        snapshotIndices.emplace(std::make_pair(chunk->x, chunk->z), index);
+    }
+
+    // Neighbour queries outside the rendered radius behave as air. Inside the
+    // radius, workers read only the immutable snapshot map, including borders.
     const auto getMeshBlock = [&](int x,int y,int z) {
         if (y<0 || y>=kWorldHeight) return BlockId::Air;
         const int cx=FloorDiv(x,kChunkSize);
@@ -843,7 +858,10 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         if (radiusInChunks>=0 &&
             (std::abs(cx-centerChunkX)>radiusInChunks ||
              std::abs(cz-centerChunkZ)>radiusInChunks)) return BlockId::Air;
-        return GetBlock(x,y,z);
+        const auto snapshot = snapshotIndices.find({cx, cz});
+        if (snapshot == snapshotIndices.end()) return BlockId::Air;
+        const Chunk& source = snapshots[snapshot->second];
+        return source.blocks[Index(PositiveMod(x,kChunkSize), y, PositiveMod(z,kChunkSize))];
     };
 
     std::vector<ChunkMeshData> built(selected.size());
@@ -886,7 +904,7 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
 
     const auto buildOneChunk = [&](std::size_t index) {
         if (!needsBuild[index]) return;
-        const Chunk& chunk=*selected[index];
+        const Chunk& chunk=snapshots[index];
         ChunkMeshData& result=built[index];
         const int baseX=chunk.x*kChunkSize, baseZ=chunk.z*kChunkSize;
         const int chunkDistance=std::max(std::abs(chunk.x-centerChunkX),
@@ -1142,6 +1160,12 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
     for (std::size_t i = 0; i < selected.size(); ++i) {
         const auto key = std::make_pair(selected[i]->x, selected[i]->z);
         if (!needsBuild[i]) continue;
+        // A future persistent scheduler may finish after a block edit. Never
+        // publish a mesh from a snapshot older than the current chunk revision.
+        if (selected[i]->revision != snapshots[i].revision) {
+            dirtyChunkMeshes_.insert(key);
+            continue;
+        }
         ChunkMeshData& fresh = built[i];
         fresh.minY = static_cast<float>(kWorldHeight);
         fresh.maxY = 0.0f;
@@ -1250,6 +1274,30 @@ void VoxelWorld::GetChunkMeshViews(int centerWorldX, int centerWorldZ, int radiu
 
 std::size_t VoxelWorld::CountNonAirBlocks() const {
     std::size_t total=0;for(const auto& pair:chunks_)for(BlockId id:pair.second.blocks)if(id!=BlockId::Air)++total;return total;
+}
+
+std::size_t VoxelWorld::ChunkStorageBytes() const noexcept {
+    if (chunks_.size() > std::numeric_limits<std::size_t>::max() /
+            (kChunkVolume * sizeof(BlockId))) {
+        return std::numeric_limits<std::size_t>::max();
+    }
+    return chunks_.size() * kChunkVolume * sizeof(BlockId);
+}
+
+std::size_t VoxelWorld::MeshCacheMemoryBytes() const noexcept {
+    std::size_t total = 0u;
+    const auto addBytes = [&total](std::size_t count, std::size_t elementSize) {
+        if (count > (std::numeric_limits<std::size_t>::max() - total) / elementSize) {
+            total = std::numeric_limits<std::size_t>::max();
+            return;
+        }
+        total += count * elementSize;
+    };
+    for (const auto& entry : chunkMeshCache_) {
+        addBytes(entry.second.opaque.capacity(), sizeof(WorldVertex));
+        addBytes(entry.second.transparent.capacity(), sizeof(WorldVertex));
+    }
+    return total;
 }
 
 bool VoxelWorld::Save(const std::string& filePath,const Vec3& playerPosition,
