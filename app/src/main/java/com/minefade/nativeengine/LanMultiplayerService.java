@@ -256,7 +256,7 @@ public final class LanMultiplayerService implements Closeable {
                 service.setServiceType(SERVICE_TYPE);
                 service.setPort(server.getLocalPort());
                 service.setAttribute("protocol", String.valueOf(PROTOCOL_VERSION));
-                service.setAttribute("content", contentFingerprint.getBytes(StandardCharsets.UTF_8));
+                service.setAttribute("content", contentFingerprint);
                 NsdManager.RegistrationListener registration = new NsdManager.RegistrationListener() {
                     @Override public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
                         Log.e(TAG, "NSD registration failed: " + errorCode);
@@ -326,9 +326,7 @@ public final class LanMultiplayerService implements Closeable {
                                 Log.i(TAG, "Ignoring incompatible LAN protocol " + protocol);
                                 return;
                             }
-                            byte[] advertisedContent = info.getAttributes().get("content");
-                            String fingerprint = advertisedContent == null ? "" :
-                                    new String(advertisedContent, StandardCharsets.UTF_8);
+                            String fingerprint = info.getAttributes().get("content");
                             if (!validFingerprint(fingerprint)) {
                                 Log.i(TAG, "Ignoring LAN game without a valid content fingerprint");
                                 return;
