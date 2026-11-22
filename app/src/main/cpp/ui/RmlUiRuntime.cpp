@@ -148,6 +148,12 @@ button:active { background: #47789b; }
 .slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 8dp; text-shadow: 0dp 1dp 2dp #000000; }
 .slot img { width: 21dp; height: 21dp; display: block; margin: auto; }
 .slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 7dp; text-shadow: 0dp 1dp 2dp #000000; }
+.slot-durability { position: absolute; left: 3dp; right: 3dp; bottom: 2dp; height: 3dp; background: #000000aa; border-radius: 2dp; overflow: hidden; }
+.slot-durability span { display: block; height: 3dp; background: #9ad27d; }
+.inventory-row { position: relative; flex-wrap: wrap; }
+.inventory-durability { display: block; flex-basis: 100%; height: 3dp; margin-left: 26dp; margin-top: -2dp; background: #000000aa; border-radius: 2dp; overflow: hidden; }
+.inventory-durability span { display: block; height: 3dp; background: #9ad27d; }
+.selected-durability { font-size: 8dp; color: #c9e3ad; margin-left: 5dp; }
 .inventory-row { display: flex; align-items: center; gap: 7dp; color: #e0e8ed; font-size: 12dp; padding: 5dp 2dp; border-bottom: 1dp #43576a; }
 .inventory-icon { width: 19dp; height: 19dp; }
 #inventory, #pause, #perspective { width: 38dp; min-width: 38dp; height: 38dp; padding: 0dp; text-align: center; background: #142638cc; border: 1dp #d8e6ee77; border-radius: 11dp; }
