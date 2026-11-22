@@ -461,17 +461,26 @@ bool Inventory::ConsumeSelected(std::uint16_t amount) {
     return consumed;
 }
 
-std::uint16_t Inventory::SelectedItemMaxDurability() const {
-    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(SelectedItemId()));
+std::uint16_t Inventory::SlotItemMaxDurability(std::size_t slot) const {
+    if (slot >= counts.size() || counts[slot] == 0u) return 0u;
+    const std::uint16_t itemId = static_cast<std::uint16_t>(counts[slot] / 1000u);
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
     return MaxToolDurability(definition);
 }
 
-std::uint16_t Inventory::SelectedItemDurability() const {
-    if (selectedSlot >= counts.size() || counts[selectedSlot] == 0u) return 0u;
-    const std::uint16_t maximum = SelectedItemMaxDurability();
+std::uint16_t Inventory::SlotItemDurability(std::size_t slot) const {
+    const std::uint16_t maximum = SlotItemMaxDurability(slot);
     if (maximum == 0u) return 0u;
-    return toolDurability[selectedSlot] == 0u ? maximum
-        : std::min(toolDurability[selectedSlot], maximum);
+    return toolDurability[slot] == 0u ? maximum
+        : std::min(toolDurability[slot], maximum);
+}
+
+std::uint16_t Inventory::SelectedItemMaxDurability() const {
+    return SlotItemMaxDurability(selectedSlot);
+}
+
+std::uint16_t Inventory::SelectedItemDurability() const {
+    return SlotItemDurability(selectedSlot);
 }
 
 bool Inventory::DamageSelectedItem(std::uint16_t amount) {
