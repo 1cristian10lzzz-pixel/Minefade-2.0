@@ -86,7 +86,7 @@ def test_worlds_pin_enabled_mod_fingerprint_without_silently_overwriting_it():
 def test_lan_protocol_v3_requires_matching_content_on_both_sides():
     assert "PROTOCOL_VERSION = 3" in LAN
     assert 'service.setAttribute("content"' in LAN
-    assert 'info.getAttributes().get("content")' in LAN
+    assert 'readNsdAttribute(info, "content")' in LAN
     assert "contentFingerprint.equals(game.contentFingerprint)" in LAN
     assert '"HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|"' in LAN
     assert "helloFields.length != 4" in LAN
@@ -167,3 +167,32 @@ if __name__ == "__main__":
     for check in checks:
         check()
     print(f"Minefade phase 2/3 integration checks passed ({len(checks)} checks).")
+
+
+def test_crafting_is_atomic_and_checks_output_after_consumption():
+    recipe = ENGINE[ENGINE.index("bool Engine::CraftRecipe("):ENGINE.index("std::string Engine::ExecuteCommand(")]
+    assert "Inventory stagedInventory = inventory_;" in recipe
+    assert "stagedInventory.ConsumeItem(ingredients[i].id, ingredients[i].amount)" in recipe
+    assert "stagedInventory.Add(outputId, outputAmount)" in recipe
+    assert "inventory_ = stagedInventory;" in recipe
+    assert "inventory_.CanAdd(outputId, outputAmount)" not in recipe
+
+
+def test_survival_building_and_redstone_recipes_are_exposed_and_implemented():
+    recipe_ui = ENGINE[ENGINE.index("void Engine::RefreshCraftingUi()"):ENGINE.index("void Engine::SaveWorld()")]
+    recipe_impl = ENGINE[ENGINE.index("bool Engine::CraftRecipe("):ENGINE.index("std::string Engine::ExecuteCommand(")]
+    for name in (
+        "torch", "chest", "furnace", "wooden_door", "ladder", "fence",
+        "wooden_slab", "oak_stairs", "stone_stairs", "lever",
+        "wooden_pressure_plate", "stone_pressure_plate", "wooden_button",
+        "stone_button", "trapdoor", "standing_sign", "rail",
+    ):
+        assert 'addRecipe("' + name + '"' in recipe_ui
+        assert 'recipe == "' + name + '"' in recipe_impl
+
+
+def test_inventory_and_mobile_hud_labels_match_real_slot_counts():
+    assert "INVENTARIO · 36 ESPACIOS" in RML
+    assert "margin-left: -150dp" in RML
+    assert "width: 30dp; min-width: 30dp" in RML
+    assert "left: auto; bottom: 126dp" in RML

@@ -1,5 +1,14 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.2.2 — interfaz, controles, fabricación y LAN
+- Se corrige la compilación Android del descubrimiento NSD: Android entrega atributos del servicio como `byte[]`; Minefade los decodifica como UTF-8 con límite de tamaño y validación.
+- La fabricación se ejecuta sobre una copia temporal del inventario. Ingredientes y resultado se confirman juntos; si algo falla, el inventario original no cambia.
+- Se aprovecha el espacio liberado al consumir ingredientes para guardar el objeto producido.
+- Se amplía el recetario con antorchas, cofres, hornos, puertas, escaleras, vallas, losas, trampillas, señales, raíles, placas, botones y palancas.
+- Se compacta la barra rápida, mejora el contraste del HUD y crece el área útil de inventario/fabricación.
+- Se corrige el texto del inventario para indicar sus 36 espacios reales y se refleja el botón de ataque en el modo zurdo.
+- Android versionCode 26 / versionName 2.2.2. La estabilidad aún requiere CI y pruebas físicas.
+
 ## Actualización 2.2 — sistema de mods de datos ampliado
 - Se incorporan propiedades compatibles para velocidad agachada, velocidad pasiva/hostil, radios de huida y alerta, radio de aparición y límite de entidades.
 - Se añade aparición periódica y limitada de fauna pasiva a una distancia configurable del jugador; permanece desactivada en mods antiguos que no indiquen intervalo.

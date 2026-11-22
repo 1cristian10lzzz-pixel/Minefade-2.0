@@ -25,6 +25,18 @@ def test_discovery_generation_invalidates_stale_resolve_callbacks():
     assert host.index("stopDiscovery();") < host.index("stopSession();")
 
 
+def test_nsd_attributes_are_decoded_from_bounded_byte_arrays():
+    start = SOURCE.index("private static String readNsdAttribute(")
+    helper = SOURCE[start:start + 650]
+    assert "Map<String, byte[]> attributes = service.getAttributes();" in helper
+    assert "value.length > 128" in helper
+    assert "new String(value, StandardCharsets.UTF_8)" in helper
+    discover = method_body("public void discover(Listener callback)", "public void join(")
+    assert 'readNsdAttribute(info, "protocol")' in discover
+    assert 'readNsdAttribute(info, "content")' in discover
+    assert 'String fingerprint = info.getAttributes().get("content");' not in discover
+
+
 def test_discovery_failures_release_the_multicast_lock():
     discover = method_body("public void discover(Listener callback)", "public void join(")
     null_check = discover.index("if (nsdManager == null)")
@@ -38,5 +50,6 @@ def test_discovery_failures_release_the_multicast_lock():
 
 if __name__ == "__main__":
     test_discovery_generation_invalidates_stale_resolve_callbacks()
+    test_nsd_attributes_are_decoded_from_bounded_byte_arrays()
     test_discovery_failures_release_the_multicast_lock()
     print("Minefade LAN discovery lifecycle regressions passed.")

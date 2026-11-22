@@ -2059,6 +2059,57 @@ bool Engine::CraftRecipe(const std::string& recipe) {
     } else if (recipe == "table") {
         addIngredient(findId("planks"), 4u);
         outputId = findId("crafting_table");
+    } else if (recipe == "torch") {
+        if (!addIngredient(findId("coal_ore"), 1u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("torch"); outputAmount = 4u;
+    } else if (recipe == "chest") {
+        if (!addIngredient(findId("planks"), 8u)) return false;
+        outputId = findId("chest"); needsTable = true;
+    } else if (recipe == "furnace") {
+        if (!addIngredient(findId("cobblestone"), 8u)) return false;
+        outputId = findId("furnace"); needsTable = true;
+    } else if (recipe == "wooden_door") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId("wooden_door"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "ladder") {
+        if (!addIngredient(findId("minefade_stick"), 7u)) return false;
+        outputId = findId("ladder"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "fence") {
+        if (!addIngredient(findId("planks"), 4u) || !addIngredient(findId("minefade_stick"), 2u)) return false;
+        outputId = findId("fence"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "wooden_slab") {
+        if (!addIngredient(findId("planks"), 3u)) return false;
+        outputId = findId("wooden_slab"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "oak_stairs") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId("oak_stairs"); outputAmount = 4u; needsTable = true;
+    } else if (recipe == "stone_stairs") {
+        if (!addIngredient(findId("cobblestone"), 6u)) return false;
+        outputId = findId("stone_stairs"); outputAmount = 4u; needsTable = true;
+    } else if (recipe == "lever") {
+        if (!addIngredient(findId("cobblestone"), 1u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("lever");
+    } else if (recipe == "wooden_pressure_plate") {
+        if (!addIngredient(findId("planks"), 2u)) return false;
+        outputId = findId("wooden_pressure_plate");
+    } else if (recipe == "stone_pressure_plate") {
+        if (!addIngredient(findId("cobblestone"), 2u)) return false;
+        outputId = findId("stone_pressure_plate");
+    } else if (recipe == "wooden_button") {
+        if (!addIngredient(findId("planks"), 1u)) return false;
+        outputId = findId("wooden_button");
+    } else if (recipe == "stone_button") {
+        if (!addIngredient(findId("cobblestone"), 1u)) return false;
+        outputId = findId("stone_button");
+    } else if (recipe == "trapdoor") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId("trapdoor"); outputAmount = 2u; needsTable = true;
+    } else if (recipe == "standing_sign") {
+        if (!addIngredient(findId("planks"), 6u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("standing_sign"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "rail") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("rail"); outputAmount = 16u; needsTable = true;
     } else if (recipe == "copper_ingot" || recipe == "iron_ingot" || recipe == "gold_ingot") {
         const std::string metal = recipe.substr(0, recipe.find('_'));
         addIngredient(findId(metal + "_ore"), 1u);
@@ -2104,32 +2155,28 @@ bool Engine::CraftRecipe(const std::string& recipe) {
         needsTable = true;
     }
 
-    if (outputId == 0u || !inventory_.CanAdd(outputId, outputAmount)) {
-        ui_.SetChatMessage("No hay espacio suficiente o la receta no está disponible.");
+    if (outputId == 0u) {
+        ui_.SetChatMessage("La receta no está disponible en este catálogo.");
         return false;
     }
     if (needsTable && !HasNearbyCraftingTable()) {
         ui_.SetChatMessage("Necesitas una mesa de trabajo cerca para fabricar este objeto.");
         return false;
     }
+    // Craft against a private inventory copy. Either the ingredients and output
+    // are committed together, or the live inventory stays unchanged.
+    Inventory stagedInventory = inventory_;
     for (std::size_t i = 0; i < ingredientCount; ++i) {
-        if (inventory_.CountItem(ingredients[i].id) < ingredients[i].amount) {
+        if (!stagedInventory.ConsumeItem(ingredients[i].id, ingredients[i].amount)) {
             ui_.SetChatMessage("Faltan materiales para esta receta.");
             return false;
         }
     }
-    for (std::size_t i = 0; i < ingredientCount; ++i) {
-        if (!inventory_.ConsumeItem(ingredients[i].id, ingredients[i].amount)) {
-            ui_.SetChatMessage("No se pudo completar la receta; revisa el inventario.");
-            RefreshInventoryUi();
-            return false;
-        }
-    }
-    if (!inventory_.Add(outputId, outputAmount)) {
-        ui_.SetChatMessage("No se pudo guardar el objeto fabricado.");
-        RefreshInventoryUi();
+    if (!stagedInventory.Add(outputId, outputAmount)) {
+        ui_.SetChatMessage("No hay espacio suficiente para guardar el resultado.");
         return false;
     }
+    inventory_ = stagedInventory;
     const BlockDefinition* output = GetBlockDefinition(static_cast<BlockId>(outputId));
     ui_.SetChatMessage(output != nullptr ? std::string("Fabricado: ") + output->nameEs :
                        "Objeto fabricado.");
@@ -2559,6 +2606,25 @@ void Engine::RefreshCraftingUi() {
     addRecipe("planks", "Tronco → 4 tablones");
     addRecipe("sticks", "2 tablones → 4 palos");
     addRecipe("table", "4 tablones → mesa");
+    markup += "<div class='recipe-category'>SUPERVIVENCIA Y CONSTRUCCIÓN</div>";
+    addRecipe("torch", "Mena de carbón + palo → 4 antorchas");
+    addRecipe("chest", "8 tablones → cofre");
+    addRecipe("furnace", "8 adoquines → horno");
+    addRecipe("wooden_door", "6 tablones → 3 puertas");
+    addRecipe("trapdoor", "6 tablones → 2 trampillas");
+    addRecipe("ladder", "7 palos → 3 escaleras");
+    addRecipe("fence", "4 tablones + 2 palos → 3 vallas");
+    addRecipe("wooden_slab", "3 tablones → 6 losas");
+    addRecipe("oak_stairs", "6 tablones → 4 escaleras de madera");
+    addRecipe("stone_stairs", "6 adoquines → 4 escaleras de piedra");
+    markup += "<div class='recipe-category'>MECANISMOS</div>";
+    addRecipe("lever", "Adoquín + palo → palanca");
+    addRecipe("wooden_pressure_plate", "2 tablones → placa de madera");
+    addRecipe("stone_pressure_plate", "2 adoquines → placa de piedra");
+    addRecipe("wooden_button", "1 tablón → botón de madera");
+    addRecipe("stone_button", "1 adoquín → botón de piedra");
+    addRecipe("standing_sign", "6 tablones + palo → 3 señales");
+    addRecipe("rail", "6 lingotes de hierro + palo → 16 raíles");
     markup += "<div class='recipe-category'>PROCESAR MINERALES</div>";
     addRecipe("copper_ingot", "Mena de cobre + carbón → lingote");
     addRecipe("iron_ingot", "Mena de hierro + carbón → lingote");

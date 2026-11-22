@@ -215,6 +215,19 @@ public final class LanMultiplayerService implements Closeable {
         return fingerprint != null && fingerprint.matches("[0-9a-f]{64}");
     }
 
+    /**
+     * Android NSD exposes TXT attributes as byte arrays, not Strings.
+     * Bound and decode them explicitly so malformed advertisements fail closed.
+     */
+    private static String readNsdAttribute(NsdServiceInfo service, String key) {
+        if (service == null || key == null) return "";
+        Map<String, byte[]> attributes = service.getAttributes();
+        if (attributes == null) return "";
+        byte[] value = attributes.get(key);
+        if (value == null || value.length == 0 || value.length > 128) return "";
+        return new String(value, StandardCharsets.UTF_8).trim();
+    }
+
     public boolean isConnected() {
         return connected && !closed;
     }
@@ -319,14 +332,12 @@ public final class LanMultiplayerService implements Closeable {
                         }
                         @Override public void onServiceResolved(NsdServiceInfo info) {
                             if (discoveryEpoch != discoveryGeneration.get()) return;
-                            byte[] advertisedProtocol = info.getAttributes().get("protocol");
-                            String protocol = advertisedProtocol == null ? "" :
-                                    new String(advertisedProtocol, StandardCharsets.UTF_8);
+                            String protocol = readNsdAttribute(info, "protocol");
                             if (!String.valueOf(PROTOCOL_VERSION).equals(protocol)) {
                                 Log.i(TAG, "Ignoring incompatible LAN protocol " + protocol);
                                 return;
                             }
-                            String fingerprint = info.getAttributes().get("content");
+                            String fingerprint = readNsdAttribute(info, "content");
                             if (!validFingerprint(fingerprint)) {
                                 Log.i(TAG, "Ignoring LAN game without a valid content fingerprint");
                                 return;

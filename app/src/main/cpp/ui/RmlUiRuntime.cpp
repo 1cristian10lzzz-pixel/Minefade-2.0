@@ -115,8 +115,8 @@ body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-
 #topbar { position: absolute; z-index: 8; top: 8dp; left: 8dp; right: 8dp; height: 40dp; display: flex; align-items: center; justify-content: flex-end; pointer-events: none; }
 #topbar button { pointer-events: auto; }
 #brand { display: none; }
-#stats { color: #edf5f8; font-size: 9dp; background: #101c2b88; padding: 7dp 10dp; border: 1dp #d7e8ef33; border-radius: 10dp; text-shadow: none; }
-#minimap { position: absolute; z-index: 5; top: 54dp; left: 10dp; width: 88dp; padding: 5dp; background: #0b1726dd; border: 1dp #d7e8ef88; border-radius: 10dp; }
+#stats { color: #f3f8fb; font-size: 9dp; background: #1c344acb; padding: 7dp 10dp; border: 1dp #d7e8ef66; border-radius: 10dp; text-shadow: none; }
+#minimap { position: absolute; z-index: 5; top: 54dp; left: 10dp; width: 88dp; padding: 5dp; background: #1a344bc9; border: 1dp #d7e8ef88; border-radius: 10dp; }
 #minimap-grid { width: 78dp; height: 78dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1dp; }
 .map-tile { width: 10dp; height: 10dp; border-radius: 1dp; }
 .map-low { background: #6c8064; }
@@ -141,12 +141,10 @@ button:active { background: #47789b; }
 .panel h1 { font-size: 20dp; margin: 0dp 0dp 10dp 0dp; color: #ffffff; }
 .panel p { font-size: 12dp; color: #c8d3db; margin: 3dp 0dp 12dp 0dp; }
 .panel .actions { flex-wrap: wrap; }
-#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: -184dp; display: flex; flex-direction: row; gap: 4dp; padding: 5dp; background: #081522ee; border: 2dp #dcebf0aa; border-radius: 13dp; }
-.slot { position: relative; width: 36dp; min-width: 36dp; height: 41dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #1b344beF; border: 1dp #d8e6eeaa; border-radius: 8dp; color: #ffffff; font-size: 9dp; }
+#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; flex-direction: row; gap: 2dp; padding: 4dp; background: #1b3044d9; border: 1dp #dcebf088; border-radius: 11dp; }
+.slot { position: relative; width: 30dp; min-width: 30dp; height: 39dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #2a4259ed; border: 1dp #d8e6ee99; border-radius: 7dp; color: #ffffff; font-size: 9dp; }
 .slot:active { background: #486b78; }
-.slot img { width: 26dp; height: 26dp; display: block; margin: auto; }
-.slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 8dp; text-shadow: 0dp 1dp 2dp #000000; }
-.slot img { width: 21dp; height: 21dp; display: block; margin: auto; }
+.slot img { width: 22dp; height: 22dp; display: block; margin: auto; }
 .slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 7dp; text-shadow: 0dp 1dp 2dp #000000; }
 .slot-durability { position: absolute; left: 3dp; right: 3dp; bottom: 2dp; height: 3dp; background: #000000aa; border-radius: 2dp; overflow: hidden; }
 .slot-durability span { display: block; height: 3dp; background: #9ad27d; }
@@ -157,7 +155,7 @@ button:active { background: #47789b; }
 .inventory-row { display: flex; align-items: center; gap: 7dp; color: #e0e8ed; font-size: 12dp; padding: 5dp 2dp; border-bottom: 1dp #43576a; }
 .inventory-icon { width: 19dp; height: 19dp; }
 #inventory, #pause, #perspective { width: 38dp; min-width: 38dp; height: 38dp; padding: 0dp; text-align: center; background: #142638cc; border: 1dp #d8e6ee77; border-radius: 11dp; }
-#movement-pad { position: absolute; z-index: 6; left: 14dp; bottom: 54dp; width: 108dp; height: 108dp; border-radius: 54dp; border: 2dp #d9e9a4dd; background: #102438e8; pointer-events: none; }
+#movement-pad { position: absolute; z-index: 6; left: 14dp; bottom: 54dp; width: 108dp; height: 108dp; border-radius: 54dp; border: 2dp #d9e9a4dd; background: #1b3850cc; pointer-events: none; }
 #movement-pad-inner { position: absolute; left: 35dp; top: 35dp; width: 36dp; height: 36dp; border-radius: 18dp; border: 2dp #e7f4c4ee; background: #739d88dd; }
 #movement-pad-cross { display: none; position: absolute; left: 52dp; top: 15dp; width: 2dp; height: 78dp; background: #ffffff44; }
 .pad-arrow { display: none; position: absolute; width: 24dp; height: 22dp; text-align: center; color: #f2f8f5; font-size: 14dp; font-weight: bold; text-shadow: 0dp 1dp 2dp #071321; }
@@ -168,7 +166,7 @@ button:active { background: #47789b; }
 #jump { position: absolute; z-index: 7; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; padding: 2dp; text-align: center; border-radius: 18dp; background: #2f6479f2; border: 2dp #d9e9a4ee; color: #ffffff; font-size: 20dp; }
 #attack { position: absolute; z-index: 7; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; padding: 1dp; text-align: center; border-radius: 16dp; background: #7d3d36ee; border: 2dp #f0c1a1cc; color: #fff7f0; font-size: 17dp; }
 #crouch { position: absolute; z-index: 7; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; padding: 1dp; text-align: center; border-radius: 14dp; background: #20394ce8; border: 1dp #c3d8e888; color: #f5fbff; font-size: 17dp; }
-#inventory-panel { z-index: 9; left: 50%; top: 50%; width: 92%; height: 84%; margin-left: -46%; margin-top: -42%; padding: 8dp; background: #1b2638f2; border: 2dp #a9c1d4aa; border-radius: 13dp; overflow: hidden; }
+#inventory-panel { z-index: 9; left: 50%; top: 50%; width: 94%; height: 88%; margin-left: -47%; margin-top: -44%; padding: 7dp; background: #20344aef; border: 2dp #a9c1d4aa; border-radius: 13dp; overflow: hidden; }
 .inventory-layout { width: 100%; height: 100%; display: flex; flex-direction: row; gap: 8dp; }
 .inventory-left, .inventory-right { width: 50%; height: 100%; overflow-y: auto; background: #263449ee; border: 1dp #a8bdce66; border-radius: 9dp; padding: 7dp; }
 .inventory-left { display: flex; flex-direction: column; }
@@ -177,16 +175,16 @@ button:active { background: #47789b; }
 .inventory-equipment { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4dp; padding: 5dp 0dp; }
 .equipment-slot { width: 43dp; height: 36dp; background: #33465e; border: 1dp #c4d6e255; border-radius: 5dp; text-align: center; padding: 5dp 1dp; font-size: 8dp; color: #dbe8f0; }
 .inventory-grid { display: flex; flex-direction: row; flex-wrap: wrap; gap: 3dp; padding-top: 5dp; }
-.inventory-row { width: 44dp; height: 43dp; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2dp; background: #34475d; border: 1dp #c4d6e255; border-radius: 5dp; color: #e0e8ed; font-size: 8dp; padding: 2dp; }
+.inventory-row { width: 48dp; height: 48dp; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2dp; background: #3a5067; border: 1dp #d4e2ed88; border-radius: 6dp; color: #f1f6fa; font-size: 8dp; padding: 3dp; }
 .inventory-icon { width: 23dp; height: 23dp; }
 .material-row { display: flex; flex-direction: row; align-items: center; gap: 7dp; color: #e3edf4; font-size: 10dp; padding: 5dp 3dp; border-bottom: 1dp #aabed044; }
 .material-row .inventory-icon { width: 20dp; height: 20dp; }
 .inventory-row span { max-width: 42dp; overflow: hidden; }
 .inventory-actions { display: flex; flex-direction: row; justify-content: flex-end; gap: 5dp; padding-top: 5dp; }
-#crafting-panel { z-index: 10; left: 50%; top: 50%; width: 92%; height: 84%; margin-left: -46%; margin-top: -42%; padding: 9dp; background: #1b2638f5; border: 2dp #a9c1d4aa; border-radius: 13dp; overflow: hidden; }
+#crafting-panel { z-index: 10; left: 50%; top: 50%; width: 94%; height: 88%; margin-left: -47%; margin-top: -44%; padding: 9dp; background: #20344af5; border: 2dp #a9c1d4aa; border-radius: 13dp; overflow: hidden; }
 #crafting-panel .recipe-title { font-size: 13dp; color: #f2f7fb; margin-bottom: 6dp; }
 #crafting-recipes { height: 90%; overflow-y: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 5dp; }
-#crafting-panel button { width: 48%; min-height: 37dp; background: #334a62; border: 1dp #a8c1d488; border-radius: 6dp; font-size: 9dp; padding: 4dp; }
+#crafting-panel button { width: 48%; min-height: 42dp; background: #36516b; border: 1dp #a8c1d4aa; border-radius: 7dp; font-size: 10dp; padding: 5dp; }
 .recipe-category { width: 100%; color: #d8f0a4; font-size: 11dp; padding: 5dp 2dp 2dp 2dp; border-bottom: 1dp #d8f0a455; }
 #pause-panel { z-index: 10; width: 270dp; margin-left: -135dp; }
 #pause-panel { z-index: 10; width: 270dp; margin-left: -135dp; }
@@ -212,7 +210,7 @@ button:active { background: #47789b; }
   <div class="actions">
     <div id="stats">FPS -- · Chunks --</div>
     <button id="starter-chest-open">COFRE</button>
-    <button id="inventory">⋯</button>
+    <button id="inventory">▦</button>
     <button id="perspective">◉</button>
     <button id="pause">Ⅱ</button>
   </div>
@@ -239,7 +237,7 @@ button:active { background: #47789b; }
     <div class="inventory-left">
       <div class="inventory-heading">PERSONAJE · EQUIPO</div>
       <div class="inventory-equipment" id="equipment-items"></div>
-      <div class="inventory-heading">INVENTARIO · 9 ESPACIOS</div>
+      <div class="inventory-heading">INVENTARIO · 36 ESPACIOS</div>
       <div id="inventory-items" class="inventory-grid"></div>
       <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="eat">Comer</button><button id="inventory-close">Cerrar</button></div>
     </div>
@@ -394,6 +392,7 @@ bool RmlUiRuntime::Initialise(int width, int height, float displayDensity, Actio
         replaceStyle("left: 14dp; bottom: 54dp;", "right: 14dp; left: auto; bottom: 54dp;");
         replaceStyle("right: 22dp; bottom: 60dp;", "left: 22dp; right: auto; bottom: 60dp;");
         replaceStyle("right: 82dp; bottom: 65dp;", "left: 82dp; right: auto; bottom: 65dp;");
+        replaceStyle("right: 24dp; bottom: 126dp;", "left: 24dp; right: auto; bottom: 126dp;");
     }
     document_ = context_->LoadDocumentFromMemory(hudMarkup, "minefade://hud.rml");
     if (document_ == nullptr) {
@@ -414,8 +413,9 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #stats { position: absolute; left: 10dp; top: 10dp; display: block; font-size: 10dp; color: #ffffff; }
 #movement-pad { position: absolute; left: 14dp; bottom: 54dp; width: 108dp; height: 108dp; border: 2dp solid #e1efb8; border-radius: 54dp; background-color: rgba(25, 50, 73, 0.70); }
 #movement-pad-inner { position: absolute; left: 35dp; top: 35dp; width: 36dp; height: 36dp; border-radius: 18dp; background-color: rgba(154, 181, 154, 0.75); }
-#quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: -180dp; display: flex; }
-.slot { width: 36dp; height: 40dp; margin-right: 3dp; padding: 2dp; }
+#quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; gap: 2dp; padding: 4dp; background: #1b3044d9; border: 1dp #dcebf088; border-radius: 11dp; }
+.slot { width: 30dp; min-width: 30dp; height: 39dp; margin-right: 0dp; padding: 2dp; background: #2a4259ed; border: 1dp #d8e6ee99; border-radius: 7dp; }
+.slot img { width: 22dp; height: 22dp; }
 #jump { position: absolute; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; font-size: 20dp; }
 #attack { position: absolute; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; font-size: 17dp; }
 #crouch { position: absolute; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; font-size: 16dp; }

@@ -22,6 +22,13 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - RmlUi 6.3 y FreeType 2.13.3.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
 
+## Actualización técnica 2.2.2 — interfaz, controles y fabricación
+- Se corrige el error Android de descubrimiento NSD leyendo los atributos TXT desde sus bytes y validando sus valores.
+- La fabricación ahora es transaccional: ingredientes y resultado se confirman juntos, sin pérdidas por fallos parciales.
+- Se amplía el recetario con objetos de supervivencia, construcción y mecanismos.
+- Se compacta la barra rápida, se mejora el contraste y se amplían los paneles táctiles de inventario y fabricación.
+- Se corrige el texto para mostrar las 36 casillas reales y se refleja el botón de ataque para el perfil zurdo.
+
 ## Actualización técnica 2.2 — sistema MFMod ampliado
 
 - Se amplía el formato de mods de datos para controlar movimiento agachado, velocidad y radios de IA de criaturas, aparición periódica limitada de fauna, límites de población, minería y objetos soltados.
@@ -37,7 +44,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Diagnóstico del HUD con chunks pendientes y recursos GPU residentes/pendientes.
 - GitHub Actions valida los pull requests y no crea commits automáticos de recursos.
 
-**Versión Android:** versionCode 25 / versionName 2.2.0. Es una compilación de validación hasta probarla en dispositivos Android reales.
+**Versión Android:** versionCode 26 / versionName 2.2.2. Es una compilación de validación hasta probarla en dispositivos Android reales.
 
 ## Sistemas presentes
 
