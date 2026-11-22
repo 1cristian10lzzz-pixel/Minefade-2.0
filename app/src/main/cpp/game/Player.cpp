@@ -584,6 +584,9 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
     const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
     animationTime_ = std::fmod(animationTime_ + dt, 4096.0f);
     for (Entity& entity : entities_) {
+        const Vec3 previousPosition = entity.position;
+        const std::uint8_t previousVisualState = entity.visualState;
+        entity.animationClock = std::fmod(entity.animationClock + dt, 4096.0f);
         const float towardX = player.position.x - entity.position.x;
         const float towardZ = player.position.z - entity.position.z;
         const float distanceSquared = towardX * towardX + towardZ * towardZ;
@@ -670,6 +673,23 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             entity.position = {state.x, state.y, state.z};
             entity.phase = state.phase;
         }
+
+        const float movedX = entity.position.x - previousPosition.x;
+        const float movedZ = entity.position.z - previousPosition.z;
+        const float movedDistance = std::sqrt(movedX*movedX + movedZ*movedZ);
+        entity.movementAmount = movedDistance / std::max(dt, 0.001f);
+        if (movedDistance > 0.0005f)
+            entity.yaw = std::atan2(movedX, movedZ);
+        const std::uint8_t nextVisualState = entity.behavior == 2 ? 2u
+            : (entity.movementAmount > 0.035f ? 1u : 0u);
+        if (nextVisualState != previousVisualState) {
+            entity.previousVisualState = previousVisualState;
+            entity.visualState = nextVisualState;
+            entity.visualTransitionSeconds = 0.0f;
+        } else {
+            entity.visualState = nextVisualState;
+            entity.visualTransitionSeconds = std::min(2.0f, entity.visualTransitionSeconds + dt);
+        }
     }
     if (ambientSpawnInterval_ > 0.0f && entities_.size() < maxEntities_) {
         ambientSpawnElapsed_ += dt;
@@ -696,7 +716,14 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
 }
 
 void EntitySystem::AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum) const {
+    AppendLegacyMesh(output, frustum, -1);
+}
+
+void EntitySystem::AppendLegacyMesh(std::vector<WorldVertex>& output,
+                                    const CameraFrustum* frustum,
+                                    int excludedKind) const {
     for (const Entity& entity : entities_) {
+        if (excludedKind >= 0 && entity.kind == excludedKind) continue;
         if (frustum != nullptr && !frustum->IntersectsAabb(
                 entity.position.x-0.85f,entity.position.y-0.10f,entity.position.z-0.85f,
                 entity.position.x+0.85f,entity.position.y+2.15f,entity.position.z+0.85f)) continue;
