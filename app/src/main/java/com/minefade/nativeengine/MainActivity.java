@@ -160,6 +160,10 @@ public final class MainActivity extends Activity {
     private void startWorld(WorldManager.WorldInfo world) {
         if (world == null) return;
         worldManager.markPlayed(world);
+        String compatibility = new ModManager(this).pinOrCompareWorldMods(world.getPath());
+        if (compatibility != null && !compatibility.isEmpty()) {
+            Toast.makeText(this, compatibility, Toast.LENGTH_LONG).show();
+        }
         startGame(false, 0, world);
     }
 
@@ -572,18 +576,21 @@ public final class MainActivity extends Activity {
 
     private void startLanHost() {
         if (lanMultiplayer == null) return;
+        lanMultiplayer.setContentFingerprint(new ModManager(this).enabledModsFingerprint());
         lanMultiplayer.startHost("Jugador", createLanListener(true));
         if (homeScreen != null) homeScreen.setMultiplayerStatus("Creando partida y publicándola en la red local…");
     }
 
     private void searchLanGames() {
         if (lanMultiplayer == null) return;
+        lanMultiplayer.setContentFingerprint(new ModManager(this).enabledModsFingerprint());
         lanMultiplayer.discover(createLanListener(false));
         if (homeScreen != null) homeScreen.setNearbyGames(java.util.Collections.emptyList());
     }
 
     private void joinLanGame(LanMultiplayerService.GameInfo game) {
         if (lanMultiplayer == null) return;
+        lanMultiplayer.setContentFingerprint(new ModManager(this).enabledModsFingerprint());
         lanMultiplayer.join(game, "Jugador", createLanListener(false));
         if (homeScreen != null) homeScreen.setMultiplayerStatus("Conectando a " + game.name + "…");
     }
