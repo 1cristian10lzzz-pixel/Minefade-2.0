@@ -71,6 +71,8 @@ struct Entity {
     int kind{0};
     int behavior{0}; // 0 wander, 1 flee, 2 graze/eat, 3 pursue
     float behaviorTimer{0.0f};
+    // Runtime-only combat health; it is not part of MFVOX or the Rust ABI.
+    float health{5.0f};
 
     // Visual-only data. These fields never enter the Rust ABI or world save format.
     float yaw{0.0f};
@@ -121,6 +123,9 @@ public:
     void SetAnimationOptions(std::uint8_t quality, bool enabled) { animationQuality_ = quality > 2 ? 2 : quality; animationsEnabled_ = enabled; }
     std::size_t Count() const { return entities_.size(); }
     bool SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world);
+    // Damages the nearest forward-facing hostile. Returns true on a hit.
+    bool DamageNearest(const Vec3& origin, const Vec3& direction, float maxDistance,
+                       float damage, bool* defeated = nullptr, int* defeatedKind = nullptr);
 private:
     std::vector<Entity> entities_;
     bool initialized_{false};
