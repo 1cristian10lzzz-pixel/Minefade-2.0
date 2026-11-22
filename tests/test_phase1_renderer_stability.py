@@ -114,6 +114,17 @@ def test_render_telemetry_records_frame_percentiles_and_cpu_gpu_memory():
     assert "perf frame_ms p50=" in ENGINE
 
 
+
+def test_gles_startup_diagnostic_reuses_the_existing_texture_limit_variable():
+    init_start = ENGINE.index("bool Engine::Initialise(")
+    init_end = ENGINE.index("const auto failInitialisation", init_start)
+    initialise = ENGINE[init_start:init_end]
+    assert initialise.count("GLint maxTextureSize = 0;") == 1
+    assert "glGetStringi(GL_EXTENSIONS" in initialise
+    assert "GL_MAX_VIEWPORT_DIMS" in initialise
+    assert "GL_FRAMEBUFFER_BINDING" in initialise
+
+
 if __name__ == "__main__":
     for check in (
         test_meshing_workers_only_read_frozen_chunk_snapshots,
@@ -123,6 +134,7 @@ if __name__ == "__main__":
         test_gpu_byte_limits_and_timing_are_passed_from_android_engine,
         test_framebuffer_is_rebound_and_bad_surface_sizes_are_ignored,
         test_render_telemetry_records_frame_percentiles_and_cpu_gpu_memory,
+        test_gles_startup_diagnostic_reuses_the_existing_texture_limit_variable,
     ):
         check()
     print("Minefade phase 1 snapshot, budget, framebuffer and telemetry checks passed.")
