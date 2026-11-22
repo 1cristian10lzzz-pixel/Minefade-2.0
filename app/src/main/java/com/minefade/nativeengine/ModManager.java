@@ -180,13 +180,14 @@ public final class ModManager {
         try {
             Map<String,String> values = new LinkedHashMap<>(info.settings);
             values.put("enabled", Boolean.toString(enabled));
-            StringBuilder data = new StringBuilder("# Minefade data mod v1\\n");
+            StringBuilder data = new StringBuilder("# Minefade data mod v1");
+            data.append((char) 10);
             for (Map.Entry<String,String> entry : values.entrySet()) {
                 String key = entry.getKey();
                 String value = entry.getValue();
                 if (key.matches("[a-zA-Z0-9_.-]{1,64}") &&
-                        value.indexOf('\\n') < 0 && value.indexOf('\\r') < 0) {
-                    data.append(key).append('=').append(value).append('\\n');
+                        value.indexOf((char) 10) < 0 && value.indexOf((char) 13) < 0) {
+                    data.append(key).append('=').append(value).append((char) 10);
                 }
             }
             byte[] updatedGameplay = data.toString().getBytes(StandardCharsets.UTF_8);
@@ -195,8 +196,6 @@ public final class ModManager {
                 manifest.put("sha256", sha256(updatedGameplay));
                 if (!writeAtomically(packageManifest,
                         manifest.toString().getBytes(StandardCharsets.UTF_8))) {
-                    // Keep the installed package internally consistent if the
-                    // manifest update fails after the payload was replaced.
                     writeAtomically(info.file, previousGameplay);
                     return false;
                 }
