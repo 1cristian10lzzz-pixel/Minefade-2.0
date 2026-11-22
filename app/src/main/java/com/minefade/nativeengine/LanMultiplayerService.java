@@ -214,6 +214,7 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     public void startHost(String nickname, Listener callback) {
+        stopDiscovery();
         stopSession();
         listener = callback;
         playerName = safeField(nickname, "Jugador");
