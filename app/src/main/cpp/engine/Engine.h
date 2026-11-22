@@ -180,6 +180,8 @@ private:
     float starvationTimer_{0.0f};
     float regenerationTimer_{0.0f};
     float hostileDamageCooldown_{0.0f};
+    float hostileSpawnTimer_{0.0f};
+    std::uint32_t hostileSpawnSequence_{0u};
     bool starterChestEnabled_{false};
     bool starterChestOpen_{false};
     Vec3 starterChestPosition_{};
