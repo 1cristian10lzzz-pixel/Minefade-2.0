@@ -2429,6 +2429,15 @@ void Engine::RefreshInventoryUi() {
         markup+="<button class='inventory-row' id='inventory-slot-"+std::to_string(i)+"'>"+icon+"<span>";
         markup+=name;
         if(quantity>0u)markup+=" × "+std::to_string(quantity);
+        const std::uint16_t itemMaxDurability = inventory_.SlotItemMaxDurability(i);
+        const std::uint16_t itemDurability = inventory_.SlotItemDurability(i);
+        if (itemMaxDurability > 0u) {
+            const int percent = std::clamp(
+                static_cast<int>((static_cast<unsigned int>(itemDurability) * 100u) /
+                                 static_cast<unsigned int>(itemMaxDurability)), 0, 100);
+            markup += "<span class='inventory-durability'><span style='width:" +
+                std::to_string(percent) + "%'></span></span>";
+        }
         markup+="</span></button>";
 
         std::string slotMarkup="·";
@@ -2436,6 +2445,13 @@ void Engine::RefreshInventoryUi() {
             slotMarkup="<img src='minefade://block/"+std::to_string(itemId)+"'/>";
             if(quantity>1u)slotMarkup+="<span class='slot-count'>"+
                 std::to_string(quantity)+"</span>";
+            if (itemMaxDurability > 0u) {
+                const int percent = std::clamp(
+                    static_cast<int>((static_cast<unsigned int>(itemDurability) * 100u) /
+                                     static_cast<unsigned int>(itemMaxDurability)), 0, 100);
+                slotMarkup += "<span class='slot-durability'><span style='width:" +
+                    std::to_string(percent) + "%'></span></span>";
+            }
         }
         ui_.SetQuickbarSlot(static_cast<int>(i),slotMarkup,i==inventory_.selectedSlot);
     }
@@ -2484,8 +2500,18 @@ void Engine::RefreshInventoryUi() {
     const BlockDefinition* selectedDefinition =
         GetBlockDefinition(static_cast<BlockId>(selectedId));
     if (selectedDefinition != nullptr && selectedId > 0u) {
-        ui_.SetSelectedItem("<img src='minefade://block/" + std::to_string(selectedId) +
-            "'/><span>" + selectedDefinition->nameEs + "</span>");
+        std::string selectedMarkup = "<img src='minefade://block/" +
+            std::to_string(selectedId) + "'/><span>" + selectedDefinition->nameEs + "</span>";
+        const std::uint16_t maximum = inventory_.SelectedItemMaxDurability();
+        if (maximum > 0u) {
+            const std::uint16_t remaining = inventory_.SelectedItemDurability();
+            const int percent = std::clamp(
+                static_cast<int>((static_cast<unsigned int>(remaining) * 100u) /
+                                 static_cast<unsigned int>(maximum)), 0, 100);
+            selectedMarkup += "<span class='selected-durability'>Durabilidad " +
+                std::to_string(remaining) + "/" + std::to_string(maximum) + "</span>";
+        }
+        ui_.SetSelectedItem(selectedMarkup);
     } else {
         ui_.SetSelectedItem({});
     }
