@@ -667,7 +667,7 @@ int main() {
                                       sheepModelBytes.size(), modelError));
     assert(sheepVisuals.IsSheepReady());
     std::vector<WorldVertex> maesMesh;
-    sheepVisuals.AppendMesh(entities.Entities(), maesMesh, nullptr);
+    sheepVisuals.AppendMesh(entities.Entities(), maesMesh, nullptr, false);
     assert(!maesMesh.empty());
     assert(maesMesh.size() % 3u == 0u);
     for (const WorldVertex& vertex : maesMesh) {
