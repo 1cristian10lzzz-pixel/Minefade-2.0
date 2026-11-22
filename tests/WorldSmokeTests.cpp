@@ -1,5 +1,12 @@
 #include "../app/src/main/cpp/world/VoxelWorld.h"
 #include "../app/src/main/cpp/game/Player.h"
+#include "../app/src/main/cpp/entity/ModelLoader.h"
+#include "../app/src/main/cpp/entity/ModelValidator.h"
+#include "../app/src/main/cpp/entity/EntityDefinition.h"
+#include "../app/src/main/cpp/entity/LegacyModelAdapter.h"
+#include "../app/src/main/cpp/entity/Skeleton.h"
+#include "../app/src/main/cpp/entity/AnimationController.h"
+#include "../app/src/main/cpp/entity/EntityVisualSystem.h"
 
 #include <algorithm>
 #include <array>
@@ -8,6 +15,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <vector>
 #include <iostream>
 
 using namespace minefade;
@@ -582,6 +592,87 @@ int main() {
     std::vector<WorldVertex> asyncMesh;
     asyncWorld.BuildMesh(asyncMesh, 32, 32, 1);
     assert(!asyncMesh.empty());
+    // MAES Phase 1: validate and render the first external entity model while
+    // preserving every historical kind and the old visual fallback.
+    const std::filesystem::path sheepModelPath =
+        "app/src/main/assets/entities/sheep/sheep.mfmodel";
+    std::ifstream sheepModelFile(sheepModelPath, std::ios::binary);
+    assert(sheepModelFile.good());
+    std::vector<char> sheepModelChars((std::istreambuf_iterator<char>(sheepModelFile)),
+                                      std::istreambuf_iterator<char>());
+    std::vector<std::uint8_t> sheepModelBytes(sheepModelChars.size());
+    for (std::size_t i = 0; i < sheepModelChars.size(); ++i)
+        sheepModelBytes[i] = static_cast<std::uint8_t>(static_cast<unsigned char>(sheepModelChars[i]));
+    ModelData sheepModel;
+    std::string modelError;
+    assert(ModelLoader::Load(sheepModelBytes.data(), sheepModelBytes.size(), sheepModel, modelError));
+    assert(sheepModel.versionMajor == 1u);
+    assert(sheepModel.bones.size() >= 8u);
+    assert(sheepModel.cubes.size() >= 10u);
+    assert(sheepModel.materials.size() == 1u);
+    assert(sheepModel.clips.size() >= 3u);
+    assert(sheepModel.states.size() >= 3u);
+    assert(ModelValidator::Validate(sheepModel, modelError));
+
+    // CRC corruption must reject only the optional visual resource.
+    std::vector<std::uint8_t> corruptSheep = sheepModelBytes;
+    corruptSheep.back() ^= 0x40u;
+    ModelData rejectedModel;
+    assert(!ModelLoader::Load(corruptSheep.data(), corruptSheep.size(), rejectedModel, modelError));
+
+    EntityRegistry entityRegistry;
+    assert(entityRegistry.Register(MakeSheepEntityDefinition(), modelError));
+    assert(entityRegistry.Exists("minefade:sheep"));
+    assert(entityRegistry.FindByLegacyKind(0) != nullptr);
+    EntityDefinition duplicateSheep = MakeSheepEntityDefinition();
+    assert(!entityRegistry.Register(duplicateSheep, modelError));
+    EntityDefinition unsafeSheep = MakeSheepEntityDefinition();
+    unsafeSheep.identifier = "minefade:unsafe";
+    unsafeSheep.modelPath = "../outside.mfmodel";
+    assert(!entityRegistry.Register(unsafeSheep, modelError));
+
+    LegacyModelAdapter legacyAuto;
+    LegacyModelAdapter legacyOnly(LegacyModelMode::Legacy);
+    assert(legacyAuto.UseMaes(true));
+    assert(!legacyAuto.UseMaes(false));
+    assert(!legacyOnly.UseMaes(true));
+
+    EntityAnimationState idlePose;
+    idlePose.condition = 0u;
+    idlePose.previousCondition = 0u;
+    idlePose.time = 0.35f;
+    std::vector<AnimatedBonePose> evaluatedPose;
+    assert(AnimationController::Evaluate(sheepModel, idlePose, evaluatedPose));
+    assert(evaluatedPose.size() == sheepModel.bones.size());
+    std::vector<ModelVec3> boneTranslations;
+    std::vector<ModelQuaternion> boneRotations;
+    std::vector<ModelVec3> boneScales;
+    for (const auto& bonePose : evaluatedPose) {
+        boneTranslations.push_back(bonePose.translation);
+        boneRotations.push_back(bonePose.rotation);
+        boneScales.push_back(bonePose.scale);
+    }
+    std::vector<ModelMatrix> boneMatrices;
+    assert(Skeleton::BuildMatrices(sheepModel, boneTranslations, boneRotations,
+                                    boneScales, boneMatrices));
+    assert(boneMatrices.size() == sheepModel.bones.size());
+
+    EntityVisualSystem sheepVisuals;
+    assert(sheepVisuals.LoadSheepModel(sheepModelBytes.data(),
+                                      sheepModelBytes.size(), modelError));
+    assert(sheepVisuals.IsSheepReady());
+    std::vector<WorldVertex> maesMesh;
+    sheepVisuals.AppendMesh(entities.Entities(), maesMesh, nullptr);
+    assert(!maesMesh.empty());
+    assert(maesMesh.size() % 3u == 0u);
+    for (const WorldVertex& vertex : maesMesh) {
+        assert(std::isfinite(vertex.x) && std::isfinite(vertex.y) &&
+               std::isfinite(vertex.z) && std::isfinite(vertex.nx) &&
+               std::isfinite(vertex.ny) && std::isfinite(vertex.nz));
+    }
+    sheepVisuals.Clear();
+    assert(!sheepVisuals.IsSheepReady());
+
     std::cout << "Minefade world smoke tests passed.\n";
     return 0;
 }
