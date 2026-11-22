@@ -71,6 +71,14 @@ struct Entity {
     int kind{0};
     int behavior{0}; // 0 wander, 1 flee, 2 graze/eat, 3 pursue
     float behaviorTimer{0.0f};
+
+    // Visual-only data. These fields never enter the Rust ABI or world save format.
+    float yaw{0.0f};
+    float movementAmount{0.0f};
+    float animationClock{0.0f};
+    std::uint8_t visualState{0}; // 0 idle, 1 moving, 2 eating
+    std::uint8_t previousVisualState{0};
+    float visualTransitionSeconds{0.0f};
 };
 
 struct DroppedItem {
@@ -102,6 +110,9 @@ public:
     void SpawnInitial(const VoxelWorld& world);
     void Update(const VoxelWorld& world, const Player& player, float deltaSeconds);
     void AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum = nullptr) const;
+    void AppendLegacyMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum,
+                          int excludedKind) const;
+    const std::vector<Entity>& Entities() const { return entities_; }
     void SetContactShadows(bool enabled) { contactShadows_ = enabled; }
     void SetSpeedMultiplier(float multiplier);
     void SetModOptions(float passiveSpeed, float hostileSpeed, float fleeRadius,
