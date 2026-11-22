@@ -605,7 +605,12 @@ int main() {
         sheepModelBytes[i] = static_cast<std::uint8_t>(static_cast<unsigned char>(sheepModelChars[i]));
     ModelData sheepModel;
     std::string modelError;
-    assert(ModelLoader::Load(sheepModelBytes.data(), sheepModelBytes.size(), sheepModel, modelError));
+    const bool sheepModelLoaded = ModelLoader::Load(
+        sheepModelBytes.data(), sheepModelBytes.size(), sheepModel, modelError);
+    if (!sheepModelLoaded)
+        std::cerr << "MAES .mfmodel load failed: " << modelError
+                  << " (bytes=" << sheepModelBytes.size() << ")\\n";
+    assert(sheepModelLoaded);
     assert(sheepModel.versionMajor == 1u);
     assert(sheepModel.bones.size() >= 8u);
     assert(sheepModel.cubes.size() >= 10u);
