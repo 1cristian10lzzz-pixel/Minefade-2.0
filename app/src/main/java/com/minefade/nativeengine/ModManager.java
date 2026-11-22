@@ -3,7 +3,18 @@ package com.minefade.nativeengine;
 import android.content.Context;
 import android.net.Uri;
 import android.system.Os;
+import org.json.JSONObject;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -60,9 +71,16 @@ public final class ModManager {
         File[] files = modsDirectory.listFiles();
         if (files == null) return result;
         for (File file : files) {
-            if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".mfmod")) continue;
-            ModInfo info = read(file);
-            if (info != null) result.add(info);
+            if (file.isFile() && file.getName().toLowerCase(Locale.ROOT).endsWith(".mfmod")) {
+                ModInfo info = read(file);
+                if (info != null) result.add(info);
+            } else if (file.isDirectory()) {
+                File manifest = new File(file, "manifest.json");
+                File gameplay = new File(new File(file, "data"), "gameplay.mfmod");
+                if (!manifest.isFile() || !gameplay.isFile()) continue;
+                ModInfo info = read(gameplay);
+                if (info != null && file.getName().equals(info.id)) result.add(info);
+            }
         }
         result.sort(Comparator.comparing(m -> m.name.toLowerCase(Locale.ROOT)));
         return result;
@@ -72,6 +90,7 @@ public final class ModManager {
         if (uri == null) return null;
         String raw = new File(uri.getLastPathSegment() == null ? "paquete.mfmod"
                 : uri.getLastPathSegment()).getName();
+        if (raw.toLowerCase(Locale.ROOT).endsWith(".mfmod2")) return importMod2(uri);
         String safe = raw.replaceAll("[^a-zA-Z0-9._-]", "_");
         String lowerName = safe.toLowerCase(Locale.ROOT);
         if (!lowerName.endsWith(".mfmod")) safe += ".mfmod";
@@ -137,6 +156,214 @@ public final class ModManager {
             return writeAtomically(info.file, data.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+
+    /**
+     * Installs a bounded, data-only MFMod v2 ZIP package.
+     * Supported entries are deliberately limited to manifest.json and
+     * data/gameplay.mfmod. Executable files, scripts and arbitrary resources
+     * are rejected until their registries and sandboxed loaders exist.
+     */
+    private ModInfo importMod2(Uri uri) {
+        File temporaryRoot = null;
+        try {
+            final Map<String, byte[]> entries = new LinkedHashMap<>();
+            final Set<String> seen = new HashSet<>();
+            int totalExpanded = 0;
+            int entryCount = 0;
+            try (InputStream raw = context.getContentResolver().openInputStream(uri);
+                 ZipInputStream zip = raw == null ? null : new ZipInputStream(raw)) {
+                if (zip == null) return null;
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (++entryCount > 3) throw new IOException("Demasiadas entradas.");
+                    String name = entry.getName();
+                    if ("data/".equals(name) && entry.isDirectory()) {
+                        zip.closeEntry();
+                        continue;
+                    }
+                    if (entry.isDirectory() || name == null || name.startsWith("/") ||
+                            name.indexOf('\\\\') >= 0 || name.indexOf(':') >= 0 ||
+                            name.contains("../") || name.equals("..") ||
+                            !(name.equals("manifest.json") || name.equals("data/gameplay.mfmod")) ||
+                            !seen.add(name)) {
+                        throw new IOException("Ruta o entrada no permitida.");
+                    }
+                    final int maxEntry = name.equals("manifest.json") ? 8192 : 32768;
+                    ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maxEntry, 4096));
+                    byte[] buffer = new byte[2048];
+                    int count;
+                    while ((count = zip.read(buffer)) != -1) {
+                        if (output.size() + count > maxEntry || totalExpanded + count > 40960) {
+                            throw new IOException("El paquete supera el límite de tamaño.");
+                        }
+                        output.write(buffer, 0, count);
+                        totalExpanded += count;
+                    }
+                    entries.put(name, output.toByteArray());
+                    zip.closeEntry();
+                }
+            }
+            byte[] manifestBytes = entries.get("manifest.json");
+            byte[] gameplayBytes = entries.get("data/gameplay.mfmod");
+            if (manifestBytes == null || gameplayBytes == null || gameplayBytes.length == 0) return null;
+
+            JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
+            Set<String> allowedManifestKeys = new HashSet<>();
+            allowedManifestKeys.add("format");
+            allowedManifestKeys.add("id");
+            allowedManifestKeys.add("name");
+            allowedManifestKeys.add("version");
+            allowedManifestKeys.add("engine_min");
+            allowedManifestKeys.add("engine_max");
+            allowedManifestKeys.add("entry");
+            allowedManifestKeys.add("sha256");
+            Iterator<String> keys = manifest.keys();
+            while (keys.hasNext()) {
+                if (!allowedManifestKeys.contains(keys.next())) return null;
+            }
+            if (manifest.length() != allowedManifestKeys.size() ||
+                    manifest.optInt("format", -1) != 2 ||
+                    !"data/gameplay.mfmod".equals(manifest.optString("entry", ""))) return null;
+
+            String id = manifest.getString("id");
+            String name = manifest.getString("name");
+            String packageVersion = manifest.getString("version");
+            String minimumEngine = manifest.getString("engine_min");
+            String maximumEngine = manifest.getString("engine_max");
+            String expectedHash = manifest.getString("sha256").toLowerCase(Locale.ROOT);
+            if (!id.matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
+                    name.trim().isEmpty() || name.length() > 96 ||
+                    !isSemanticVersion(packageVersion) ||
+                    !isSemanticVersion(minimumEngine) || !isSemanticVersion(maximumEngine) ||
+                    compareVersions(minimumEngine, BuildConfig.VERSION_NAME) > 0 ||
+                    compareVersions(BuildConfig.VERSION_NAME, maximumEngine) > 0 ||
+                    !expectedHash.matches("[0-9a-f]{64}") ||
+                    !expectedHash.equals(sha256(gameplayBytes))) return null;
+
+            File checkRoot = new File(modsDirectory, "." + id + "-" + System.nanoTime() + ".part");
+            if (!checkRoot.mkdirs()) return null;
+            temporaryRoot = checkRoot;
+            File dataDirectory = new File(checkRoot, "data");
+            if (!dataDirectory.mkdirs()) return null;
+            File gameplayFile = new File(dataDirectory, "gameplay.mfmod");
+            try (FileOutputStream output = new FileOutputStream(gameplayFile, false)) {
+                output.write(gameplayBytes);
+                output.flush();
+                output.getFD().sync();
+            }
+            ModInfo validated = read(gameplayFile);
+            if (validated == null || !id.equals(validated.id) ||
+                    !name.equals(validated.name) || !"false".equals(validated.settings.get("enabled"))) {
+                return null;
+            }
+            try (FileOutputStream output = new FileOutputStream(new File(checkRoot, "manifest.json"), false)) {
+                output.write(manifestBytes);
+                output.flush();
+                output.getFD().sync();
+            }
+
+            for (ModInfo existing : listMods()) {
+                if (existing.id.equalsIgnoreCase(id)) return existing;
+            }
+            File destination = new File(modsDirectory, id);
+            if (destination.exists()) return null;
+            Os.rename(checkRoot.getAbsolutePath(), destination.getAbsolutePath());
+            temporaryRoot = null;
+            return read(new File(new File(destination, "data"), "gameplay.mfmod"));
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (temporaryRoot != null) deleteTree(temporaryRoot);
+        }
+    }
+
+    private static void deleteTree(File file) {
+        if (file == null || !file.exists()) return;
+        File[] children = file.listFiles();
+        if (children != null) for (File child : children) deleteTree(child);
+        file.delete();
+    }
+
+    private static boolean isSemanticVersion(String value) {
+        return value != null && value.matches("[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}");
+    }
+
+    private static int compareVersions(String left, String right) {
+        try {
+            String[] a = left.split("\\\\.");
+            String[] b = right.split("\\\\.");
+            for (int i = 0; i < 3; i++) {
+                int difference = Integer.compare(Integer.parseInt(a[i]), Integer.parseInt(b[i]));
+                if (difference != 0) return difference;
+            }
+        } catch (Exception ignored) { return Integer.MAX_VALUE; }
+        return 0;
+    }
+
+    private static String sha256(byte[] data) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(data);
+        StringBuilder hex = new StringBuilder(digest.length * 2);
+        for (byte value : digest) hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return hex.toString();
+    }
+
+    /** Stable digest of the enabled settings mods, shared by world and LAN checks. */
+    public synchronized String enabledModsFingerprint() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            ArrayList<ModInfo> enabled = new ArrayList<>();
+            for (ModInfo info : listMods()) if (info.enabled) enabled.add(info);
+            enabled.sort(Comparator.comparing(info -> info.id));
+            for (ModInfo info : enabled) {
+                digest.update(info.id.getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+                digest.update(info.version.getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+                try (InputStream input = new FileInputStream(info.file)) {
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+                }
+                digest.update((byte) 0xff);
+            }
+            byte[] result = digest.digest();
+            StringBuilder hex = new StringBuilder(result.length * 2);
+            for (byte value : result) hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+            return hex.toString();
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    /**
+     * Pins the enabled settings-mod set for an existing world. A mismatch is
+     * reported but never silently overwrites the saved fingerprint.
+     */
+    public synchronized String pinOrCompareWorldMods(String worldPath) {
+        if (worldPath == null || worldPath.trim().isEmpty()) return "";
+        String fingerprint = enabledModsFingerprint();
+        if (fingerprint.isEmpty()) return "No se pudo calcular la huella de los mods activos.";
+        File sidecar = new File(worldPath + ".mods");
+        try {
+            if (sidecar.isFile()) {
+                byte[] bytes = new byte[(int) Math.min(sidecar.length(), 256L)];
+                try (InputStream input = new FileInputStream(sidecar)) {
+                    int count = input.read(bytes);
+                    if (count <= 0) return "El manifiesto de mods del mundo está dañado.";
+                    String pinned = new String(bytes, 0, count, StandardCharsets.UTF_8).trim();
+                    if (!pinned.equals(fingerprint)) {
+                        return "Este mundo fue guardado con otro conjunto de mods. Restaura esos mods antes de seguir jugando.";
+                    }
+                    return "";
+                }
+            }
+            return writeAtomically(sidecar, (fingerprint + "\\n").getBytes(StandardCharsets.UTF_8))
+                    ? "" : "No se pudo guardar el manifiesto de mods del mundo.";
+        } catch (Exception error) {
+            return "No se pudo comprobar el manifiesto de mods del mundo.";
         }
     }
 
