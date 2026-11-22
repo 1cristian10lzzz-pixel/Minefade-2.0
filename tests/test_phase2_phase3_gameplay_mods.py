@@ -127,6 +127,28 @@ def test_lan_fingerprint_errors_fail_closed_and_incompatible_games_are_filtered(
     assert "!contentFingerprint.equals(game.contentFingerprint)" in LAN
 
 
+
+def test_hostile_entities_spawn_at_night_with_a_population_cap():
+    assert "hostileSpawnTimer_ >= 48.0f" in ENGINE
+    assert "environment_.Daylight() < 0.22f" in ENGINE
+    assert "hostileCount < 4u" in ENGINE
+    assert "hostileSpawnSequence_" in ENGINE
+    assert "entities_.SpawnEntity(anchor, kind, world_)" in ENGINE
+    assert "hostileSpawnTimer_ = 0.0f;" in ENGINE
+
+
+def test_loaded_tool_durability_is_clamped_to_its_material_maximum():
+    assert "remaining = std::min(remaining, maximum);" in PLAYER
+    assert "std::uint16_t SelectedItemMaxDurability() const;" in PLAYER_H
+    assert "std::uint16_t SlotItemDurability(std::size_t slot) const;" in PLAYER_H
+
+
+def test_installed_mfmod2_packages_are_revalidated_during_library_scan():
+    assert "isValidInstalledV2Package(file, values)" in MODS
+    assert "compareVersions(minimum, BuildConfig.VERSION_NAME) > 0" in MODS
+    assert "expected.equals(sha256(payload))" in MODS
+
+
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
               if name.startswith("test_") and callable(value)]
