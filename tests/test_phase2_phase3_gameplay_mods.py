@@ -148,6 +148,18 @@ def test_installed_mfmod2_packages_are_revalidated_during_library_scan():
     assert "compareVersions(minimum, BuildConfig.VERSION_NAME) > 0" in MODS
     assert "expected.equals(sha256(payload))" in MODS
 
+def test_mod_toggle_writes_valid_java_line_endings():
+    method_start = MODS.index("public synchronized boolean setEnabled(")
+    method_end = MODS.index("Installs a bounded", method_start)
+    method = MODS[method_start:method_end]
+    assert "new StringBuilder(\"# Minefade data mod v1\")" in method
+    assert "data.append((char) 10);" in method
+    assert "value.indexOf((char) 10) < 0" in method
+    assert "value.indexOf((char) 13) < 0" in method
+    assert "append((char) 10)" in method
+    assert "indexOf('\\\\n')" not in method
+    assert "indexOf('\\\\r')" not in method
+
 
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
