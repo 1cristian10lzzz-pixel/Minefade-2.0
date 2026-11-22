@@ -4,6 +4,7 @@
 #include "../ui/RmlUiRuntime.h"
 #include "../world/VoxelWorld.h"
 #include "../render/WorldMeshRenderer.h"
+#include "../entity/EntityVisualSystem.h"
 
 #include <GLES3/gl3.h>
 
@@ -20,7 +21,7 @@ namespace minefade {
 
 class Engine {
 public:
-    bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight);
+    bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight, const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize);
     std::string LastInitError() const;
     bool IsUiReady() const;
     void FallbackAction(int action, bool pressed);
