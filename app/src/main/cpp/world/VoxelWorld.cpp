@@ -561,6 +561,13 @@ VoxelWorld::Chunk* VoxelWorld::FindChunk(int chunkX,int chunkZ) {
 
 void VoxelWorld::InvalidateChunkMesh(int chunkX, int chunkZ) {
     dirtyChunkMeshes_.insert({chunkX, chunkZ});
+    // Neighbour edits affect this mesh too. Advance every resident chunk's
+    // revision so asynchronous results based on older neighbour voxels are
+    // rejected, not just results for the chunk containing the edited block.
+    if (Chunk* chunk = FindChunk(chunkX, chunkZ)) {
+        chunk->revision = chunk->revision == std::numeric_limits<std::uint64_t>::max()
+            ? 1u : chunk->revision + 1u;
+    }
 }
 
 void VoxelWorld::InvalidateChunkAndNeighbors(int chunkX, int chunkZ) {
@@ -746,8 +753,6 @@ bool VoxelWorld::SetBlock(int x,int y,int z,BlockId block) {
     BlockId& stored = chunk->blocks[Index(localX, y, localZ)];
     if (stored == block) return true;
     stored = block;
-    chunk->revision = chunk->revision == std::numeric_limits<std::uint64_t>::max()
-        ? 1u : chunk->revision + 1u;
     InvalidateChunkMesh(chunk->x, chunk->z);
     if (localX == 0) InvalidateChunkMesh(chunk->x - 1, chunk->z);
     if (localX == kChunkSize - 1) InvalidateChunkMesh(chunk->x + 1, chunk->z);
