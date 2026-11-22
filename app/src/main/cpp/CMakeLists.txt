@@ -96,6 +96,13 @@ add_library(minefade_native SHARED
     engine/Engine.cpp
     render/WorldMeshRenderer.cpp
     game/Player.cpp
+    entity/ModelLoader.cpp
+    entity/ModelValidator.cpp
+    entity/EntityDefinition.cpp
+    entity/LegacyModelAdapter.cpp
+    entity/Skeleton.cpp
+    entity/AnimationController.cpp
+    entity/EntityVisualSystem.cpp
     world/VoxelWorld.cpp
     blocks/BlockRegistry.cpp
     ui/RmlUiOpenGLES.cpp
