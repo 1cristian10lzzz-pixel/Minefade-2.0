@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Phase 2/3 integration checks for survival, data mods and LAN compatibility."""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CPP = ROOT / "app/src/main/cpp"
+JAVA = ROOT / "app/src/main/java/com/minefade/nativeengine"
+ENGINE = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+ENGINE_H = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+PLAYER = (CPP / "game/Player.cpp").read_text(encoding="utf-8")
+PLAYER_H = (CPP / "game/Player.h").read_text(encoding="utf-8")
+RML = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
+MODS = (JAVA / "ModManager.java").read_text(encoding="utf-8")
+LAN = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
+MAIN = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+
+
+def test_survival_stats_are_sidecar_data_not_mfvox_format_changes():
+    assert "float playerHealth_{20.0f};" in ENGINE_H
+    assert "float playerHunger_{20.0f};" in ENGINE_H
+    assert 'storagePath_ + ".survival"' in ENGINE
+    assert "0x4D465356u" in ENGINE
+    assert "savedHealth >= 0.0f && savedHealth <= 20.0f" in ENGINE
+    assert "savedHunger >= 0.0f && savedHunger <= 20.0f" in ENGINE
+    assert "world_.Save(storagePath_, player_.position, inventory_.counts)" in ENGINE
+    assert "MFVOX001/002/003" in ENGINE
+
+
+def test_survival_loop_covers_fall_damage_hunger_regeneration_and_starvation():
+    assert "incomingVerticalVelocity < -10.0f" in ENGINE
+    assert "hungerExhaustion_ +=" in ENGINE
+    assert "playerHunger_ >= 18.0f" in ENGINE
+    assert "starvationTimer_ >= 8.0f" in ENGINE
+    assert 'entity.kind != 4 && entity.kind != 5' in ENGINE
+    assert "hostileDamageCooldown_ = 1.25f;" in ENGINE
+
+
+def test_food_consumption_and_survival_hud_are_wired_to_real_inventory():
+    assert 'action == "eat"' in ENGINE
+    assert 'key == "carrots"' in ENGINE and 'key == "potatoes"' in ENGINE
+    assert "inventory_.ConsumeSelected(1u)" in ENGINE
+    assert 'AttachAction("eat", "eat")' in RML
+    assert 'id="eat"' in RML
+    assert "VIDA %.0f/20 · COMIDA %.0f/20" in ENGINE
+
+
+def test_melee_combat_is_forward_limited_and_targets_hostiles_only():
+    assert "bool EntitySystem::DamageNearest(" in PLAYER
+    assert "if (entity.kind != 4 && entity.kind != 5) continue;" in PLAYER
+    assert "if (facing < 0.72f) continue;" in PLAYER
+    assert "target.health = std::max(0.0f, target.health - damage);" in PLAYER
+    assert "bool DamageNearest(" in PLAYER_H
+    assert 'action == "attack"' in ENGINE
+    assert 'AttachAction("attack", "attack")' in RML
+    assert 'id="attack"' in RML
+
+
+def test_mfmod2_is_a_bounded_data_only_container():
+    assert 'endsWith(".mfmod2")' in MODS
+    assert 'name.equals("manifest.json") || name.equals("data/gameplay.mfmod")' in MODS
+    assert 'name.indexOf(\'\\\\\')' in MODS
+    assert "entryCount > 3" in MODS
+    assert "totalExpanded + count > 40960" in MODS
+    assert "expectedHash.equals(sha256(gameplayBytes))" in MODS
+    assert '!"false".equals(validated.settings.get("enabled"))' in MODS
+    assert "org.json.JSONObject" in MODS
+    assert "ZipInputStream" in MODS
+
+
+def test_legacy_mfmod_and_installed_v2_payloads_are_both_loaded():
+    assert 'endsWith(".mfmod")' in MODS
+    assert 'new File(new File(file, "data"), "gameplay.mfmod")' in MODS
+    assert "recursive_directory_iterator" in ENGINE
+    assert 'entry.path().parent_path().filename() == "data"' in ENGINE
+    assert 'packageRoot / "manifest.json"' in ENGINE
+
+
+def test_worlds_pin_enabled_mod_fingerprint_without_silently_overwriting_it():
+    assert "enabledModsFingerprint()" in MODS
+    assert "pinOrCompareWorldMods(String worldPath)" in MODS
+    assert 'new File(worldPath + ".mods")' in MODS
+    assert "if (!pinned.equals(fingerprint))" in MODS
+    assert "pinOrCompareWorldMods(world.getPath())" in MAIN
+
+
+def test_lan_protocol_v3_requires_matching_content_on_both_sides():
+    assert "PROTOCOL_VERSION = 3" in LAN
+    assert 'service.setAttribute("content"' in LAN
+    assert 'info.getAttributes().get("content")' in LAN
+    assert "contentFingerprint.equals(game.contentFingerprint)" in LAN
+    assert '"HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|"' in LAN
+    assert "helloFields.length != 4" in LAN
+    assert "contentFingerprint.equals(helloFields[2])" in LAN
+    assert '"WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName + "|"' in LAN
+    assert "contentFingerprint.equals(fields[4])" in LAN
+    assert "setContentFingerprint(new ModManager(this).enabledModsFingerprint())" in MAIN
+
+
+if __name__ == "__main__":
+    checks = [value for name, value in globals().items()
+              if name.startswith("test_") and callable(value)]
+    for check in checks:
+        check()
+    print(f"Minefade phase 2/3 integration checks passed ({len(checks)} checks).")
