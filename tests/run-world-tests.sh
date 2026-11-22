@@ -11,6 +11,9 @@ command -v cargo >/dev/null 2>&1 || {
   exit 1
 }
 
+echo "[0/4] Compiling and validating MAES sheep resource"
+python3 "$ROOT/tools/mfmodelc.py"
+
 echo "[1/3] Running Rust simulation and animation unit tests"
 CARGO_TARGET_DIR="$RUST_TARGET_DIR" cargo test --manifest-path "$ROOT/rust-core/Cargo.toml"
 
