@@ -204,6 +204,7 @@ private:
     Inventory inventory_;
     DroppedItemSystem droppedItems_;
     EntitySystem entities_;
+    EntityVisualSystem entityVisuals_;
     EnvironmentSystem environment_;
     RmlUiRuntime ui_;
     // Scratch output is kept empty in normal play: BuildMesh updates only the
