@@ -58,7 +58,7 @@ def test_melee_combat_is_forward_limited_and_targets_hostiles_only():
 def test_mfmod2_is_a_bounded_data_only_container():
     assert 'endsWith(".mfmod2")' in MODS
     assert 'name.equals("manifest.json") || name.equals("data/gameplay.mfmod")' in MODS
-    assert r"""name.indexOf('\\\\')""" in MODS
+    assert r"""name.indexOf('\\')""" in MODS
     assert "entryCount > 3" in MODS
     assert "totalExpanded + count > 40960" in MODS
     assert "expectedHash.equals(sha256(gameplayBytes))" in MODS
