@@ -80,7 +80,7 @@ def test_avatar_editor_uses_one_model_and_persistent_style_actions():
     assert "new AvatarOptionView(getContext(), avatarModuleIndex, choice)" in avatar
 
 
-def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():
+def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():
     assert "worldRenderer_.TransparentVertexCount() > 0" in ENGINE
     assert "result.lod>=2 &&" in WORLD
     assert "def->shape==BlockShape::CrossPlant" in WORLD
