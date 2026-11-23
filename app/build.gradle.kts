@@ -41,6 +41,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keyStorePath = System.getenv("MINEFADE_RELEASE_KEYSTORE_PATH")
+            if (!keyStorePath.isNullOrBlank()) {
+                storeFile = file(keyStorePath)
+                storePassword = System.getenv("MINEFADE_RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("MINEFADE_RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("MINEFADE_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -48,6 +60,8 @@ android {
         }
         release {
             isMinifyEnabled = false
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

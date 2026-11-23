@@ -26,6 +26,17 @@ def test_write_permission_is_isolated_to_tag_prerelease_job():
     assert "contents: write" not in build_job
 
 
+def test_release_uses_persistent_signing_key_and_tags_build_production():
+    assert 'signingConfig = signingConfigs.getByName("release")' in GRADLE
+    assert "MINEFADE_RELEASE_KEYSTORE_PATH" in GRADLE
+    assert "assembleRelease" in WORKFLOW
+    assert "MINEFADE_RELEASE_KEYSTORE_BASE64" in WORKFLOW
+    assert "MINEFADE_RELEASE_KEY_ALIAS" in WORKFLOW
+    assert "application-debuggable" in WORKFLOW
+    assert "refs/tags/v" in WORKFLOW
+
+
+def test_android_version_and_release_documentation_match():
 def test_android_version_and_release_documentation_match():
     assert "versionCode = 28" in GRADLE
     assert 'versionName = "2.2.4"' in GRADLE

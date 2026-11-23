@@ -12,7 +12,7 @@ El flujo está en `.github/workflows/android-apk.yml` y se ejecuta:
 
 El job de compilación usa permisos de solo lectura. El job separado que crea borradores de prerelease recibe permiso de escritura únicamente en tags `v*`. Los generadores se ejecutan en modo de verificación: si producen diferencias, CI falla y pide actualizar los recursos en el mismo commit; no modifica `main` con commits bot fuera de la revisión probada.
 
-El runner configura JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1, Rust stable con targets Android y Gradle 9.6.0. Ejecuta primero las pruebas Python y Rust/C++, y después construye un APK debug que incluye `arm64-v8a` y `armeabi-v7a`.
+El runner configura JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 28.2.13676358, CMake 3.22.1, Rust stable con targets Android y Gradle 9.6.0. Ejecuta primero las pruebas Python y Rust/C++. Los PR y pushes normales producen un APK debug de validación; los tags `v*` producen un APK release firmado con la clave persistente, para `arm64-v8a` y `armeabi-v7a`.
 
 Cada compilación correcta publica un artefacto APK descargable en el resumen de ejecución de Actions, con un SHA-256. El artefacto se conserva 90 días.
 
@@ -41,9 +41,17 @@ Si la ejecución está fallida, el APK no se publica. Abre los logs de la ejecuc
 
 El módulo conserva `applicationId = com.minefade.nativeengine`, `versionCode = 28` y `versionName = 2.2.4`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
 
-El APK de CI es debug y está firmado por la clave debug que genera cada runner. Es instalable como primera instalación, pero **no se garantiza que Android permita instalarlo encima de otra copia de Minefade**: para actualizaciones sucesivas sin desinstalar se necesita una clave de distribución persistente y privada. Nunca guardar un keystore o contraseñas en Git.
+Los APK de PR y validación normal son debug y no se deben usar como actualizaciones de producción. Los tags `v*` generan `app-release.apk`, firmado con la clave privada persistente del proyecto y con `debuggable=false`.
 
-Los tags `v*` crean un borrador de prerelease. No se publica automáticamente como versión estable: primero debe probarse en Android físico, confirmar que abre los mundos y validar la actualización. La firma estable debe configurarse mediante GitHub Actions Secrets antes de producir paquetes de distribución.
+Para activar la firma, añade estos cuatro secretos en GitHub: **Settings > Secrets and variables > Actions > New repository secret**:
+- `MINEFADE_RELEASE_KEYSTORE_BASE64`
+- `MINEFADE_RELEASE_STORE_PASSWORD`
+- `MINEFADE_RELEASE_KEY_ALIAS`
+- `MINEFADE_RELEASE_KEY_PASSWORD`
+
+El almacén PKCS#12 y los valores correspondientes se entregan al propietario del proyecto por separado. Nunca los subas a Git ni los muestres en logs. No regeneres la clave para próximas versiones: todas deben conservar el mismo certificado y `applicationId = com.minefade.nativeengine`. Si pierdes el almacén privado, no podrás firmar una actualización compatible sobre las instalaciones existentes.
+
+Los tags `v*` crean un borrador de prerelease firmado. Antes de declarar estable, prueba instalarlo encima de la versión anterior, abrir/guardar mundos y validar el juego en Android físico.
 
 ## Criterios antes de una Release estable
 
