@@ -38,7 +38,9 @@ def test_joystick_hit_box_is_shared_when_rmlui_is_unavailable():
     update = RML.index("void RmlUiRuntime::UpdateAndRender()", touch)
     assert helper < touch < update
     assert "if (IsInMovementPad(x, y))" in RML[touch:update]
-    assert "ui_.IsInMovementPad(x, y)" in ENGINE
+    assert "ui_.MovementVectorAt(x, y, moveX, moveY)" in ENGINE
+    assert "state.movementPad = true;" in ENGINE
+    assert "UpdateTouchMovement();" in ENGINE
 
 
 def test_phase_two_navigation_and_layout_regressions():
