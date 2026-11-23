@@ -1,5 +1,9 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.2.4 — creación, LAN y personalización
+- La creación de mundo se organiza en General, Avanzado y Trucos, usando los campos reales que persiste WorldManager.
+- El multijugador coloca Crear y Unirse junto a la salida y filtra las partidas LAN descubiertas por nombre o anfitrión.
+- El avatar añade Aleatorio y Restablecer, miniaturas más grandes y un visor 3D compartido por las seis categorías.
 ## Actualización 2.2.4 — recuperación de agua y lava lejana
 - El LOD2 conserva alturas independientes para terreno y fluidos; agua y lava vuelven a dibujarse en la capa transparente.
 - Se incorpora una regresión nativa que verifica que un bloque de agua mantiene su superficie en un chunk distante.

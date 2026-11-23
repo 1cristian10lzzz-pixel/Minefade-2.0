@@ -27,6 +27,12 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Se añade una prueba nativa para un bloque de agua en LOD2.
 - La firma persistente de distribución sigue siendo necesaria para una actualización in-place.
 
+## Actualización técnica 2.2.4 — creación, LAN y avatar
+- Creación de mundo organizada en pestañas General, Avanzado y Trucos, conectadas al nombre, modo, semilla, cofre y comandos que el juego persiste.
+- Multijugador local: módulos Crear/Unirse junto a Salir y buscador que filtra sesiones NSD descubiertas por nombre/anfitrión.
+- Editor de avatar con acciones Aleatorio y Restablecer, miniaturas más legibles y el mismo modelo 3D interactivo.
+- La búsqueda es solo para partidas LAN descubiertas; no hay aún un backend de servidores públicos.
+
 ## Actualización técnica 2.2.3 — renderer voxel y carga de terreno
 
 - La oclusión de bloques ahora respeta formas parciales: una losa, escalera o valla ya no oculta una cara completa del cubo vecino.

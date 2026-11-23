@@ -76,6 +76,8 @@ public final class MinefadeHomeScreen extends FrameLayout {
     private LinearLayout pageHeader;
     private TextView multiplayerStatus;
     private LinearLayout multiplayerGames;
+    private EditText multiplayerSearch;
+    private final List<LanMultiplayerService.GameInfo> nearbyGameCache = new ArrayList<>();
 
     public MinefadeHomeScreen(Context context, Listener listener, Runnable clickSound) {
         super(context);
@@ -462,20 +464,38 @@ public final class MinefadeHomeScreen extends FrameLayout {
     }
 
     private void showCreateWorld() {
-        LinearLayout root = pageRoot("CREAR MUNDO","Configura tu partida antes de generar el terreno.");
+        LinearLayout root = pageRoot("CREAR MUNDO", "Configura tu mundo por secciones.");
+        LinearLayout tabBar = row();
+        tabBar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams tabBarParams = new LinearLayout.LayoutParams(-1, dp(38));
+        tabBarParams.topMargin = dp(5);
+        root.addView(tabBar, tabBarParams);
+
         ScrollView scroll = new ScrollView(getContext());
         scroll.setFillViewport(false);
         scroll.setClipChildren(true);
         scroll.setClipToPadding(true);
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1,0,1f);
-        scrollParams.topMargin = dp(8);
-        root.addView(scroll,scrollParams);
-        LinearLayout form = column();
-        form.setPadding(dp(11),dp(10),dp(11),dp(12));
-        form.setBackground(shape(new int[]{0x44243f52,0x22101d2b},15,0x55466378));
-        scroll.addView(form,new ScrollView.LayoutParams(-1,-2));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        scrollParams.topMargin = dp(6);
+        root.addView(scroll, scrollParams);
 
-        form.addView(text("NOMBRE DEL MUNDO",9,0xffd8eaf0,true));
+        LinearLayout card = column();
+        card.setPadding(dp(12), dp(12), dp(12), dp(14));
+        card.setBackground(shape(new int[]{0xff1a3043, 0xff102235}, 15, 0x66516e83));
+        scroll.addView(card, new ScrollView.LayoutParams(-1, -2));
+
+        LinearLayout general = column();
+        LinearLayout advanced = column();
+        LinearLayout tricks = column();
+        FrameLayout panelHost = new FrameLayout(getContext());
+        card.addView(panelHost, new LinearLayout.LayoutParams(-1, -2));
+        panelHost.addView(general, new FrameLayout.LayoutParams(-1, -2));
+        panelHost.addView(advanced, new FrameLayout.LayoutParams(-1, -2));
+        panelHost.addView(tricks, new FrameLayout.LayoutParams(-1, -2));
+        advanced.setVisibility(View.GONE);
+        tricks.setVisibility(View.GONE);
+
+        general.addView(text("NOMBRE DEL MUNDO", 9, 0xffd8eaf0, true));
         EditText name = new EditText(getContext());
         name.setSingleLine(true);
         name.setText("Mi mundo");
@@ -483,41 +503,46 @@ public final class MinefadeHomeScreen extends FrameLayout {
         name.setTextColor(white);
         name.setHintTextColor(muted);
         name.setHint("Nombre de la partida");
-        name.setPadding(dp(10),0,dp(10),0);
-        name.setBackground(shape(new int[]{0xff1b3042,0xff142638},10,0x665c7a8c));
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1,dp(42));
-        nameParams.topMargin = dp(5);
-        form.addView(name,nameParams);
+        name.setPadding(dp(10), 0, dp(10), 0);
+        name.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, dp(44));
+        nameParams.topMargin = dp(6);
+        general.addView(name, nameParams);
 
-        TextView seedTitle = text("SEMILLA DEL MUNDO",9,0xffd8eaf0,true);
-        LinearLayout.LayoutParams seedTitleParams = new LinearLayout.LayoutParams(-1,-2);
-        seedTitleParams.topMargin = dp(11);
-        form.addView(seedTitle,seedTitleParams);
+        TextView modeTitle = text("MODO DE JUEGO", 9, 0xffd8eaf0, true);
+        LinearLayout.LayoutParams modeTitleParams = new LinearLayout.LayoutParams(-1, -2);
+        modeTitleParams.topMargin = dp(14);
+        general.addView(modeTitle, modeTitleParams);
+        Spinner mode = new Spinner(getContext());
+        ArrayAdapter<String> modes = new ArrayAdapter<>(getContext(),
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"Supervivencia", "Creativo", "Aventura"});
+        mode.setAdapter(modes);
+        mode.setSelection(WorldManager.SURVIVAL);
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(-1, dp(44));
+        modeParams.topMargin = dp(5);
+        general.addView(mode, modeParams);
+        TextView modeNote = text("Supervivencia para reunir recursos, Creativo para construir libremente o Aventura para explorar con restricciones.",
+                8, muted, false);
+        modeNote.setMaxLines(3);
+        LinearLayout.LayoutParams modeNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        modeNoteParams.topMargin = dp(10);
+        general.addView(modeNote, modeNoteParams);
+
+        advanced.addView(text("SEMILLA DEL MUNDO", 9, 0xffd8eaf0, true));
         EditText seed = new EditText(getContext());
         seed.setSingleLine(true);
         seed.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
         seed.setText(Long.toString(System.currentTimeMillis() / 1000L));
         seed.setTextSize(11);
         seed.setTextColor(white);
-        seed.setPadding(dp(10),0,dp(10),0);
-        seed.setBackground(shape(new int[]{0xff1b3042,0xff142638},10,0x665c7a8c));
-        LinearLayout.LayoutParams seedParams = new LinearLayout.LayoutParams(-1,dp(40));
-        seedParams.topMargin = dp(5);
-        form.addView(seed,seedParams);
-
-        TextView modeTitle = text("MODO DE JUEGO",9,0xffd8eaf0,true);
-        LinearLayout.LayoutParams modeTitleParams = new LinearLayout.LayoutParams(-1,-2);
-        modeTitleParams.topMargin = dp(11);
-        form.addView(modeTitle,modeTitleParams);
-        Spinner mode = new Spinner(getContext());
-        ArrayAdapter<String> modes = new ArrayAdapter<>(getContext(),
-                android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"Supervivencia","Creativo","Aventura"});
-        mode.setAdapter(modes);
-        mode.setSelection(WorldManager.SURVIVAL);
-        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(-1,dp(42));
-        modeParams.topMargin = dp(3);
-        form.addView(mode,modeParams);
+        seed.setHintTextColor(muted);
+        seed.setHint("Introduce una semilla numérica");
+        seed.setPadding(dp(10), 0, dp(10), 0);
+        seed.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
+        LinearLayout.LayoutParams seedParams = new LinearLayout.LayoutParams(-1, dp(42));
+        seedParams.topMargin = dp(6);
+        advanced.addView(seed, seedParams);
 
         CheckBox chest = new CheckBox(getContext());
         chest.setText("Cofre inicial con recursos");
@@ -525,9 +550,15 @@ public final class MinefadeHomeScreen extends FrameLayout {
         chest.setTextColor(white);
         chest.setButtonTintList(ColorStateList.valueOf(0xffa9ee70));
         chest.setChecked(true);
-        LinearLayout.LayoutParams chestParams = new LinearLayout.LayoutParams(-1,dp(42));
-        chestParams.topMargin = dp(5);
-        form.addView(chest,chestParams);
+        LinearLayout.LayoutParams chestParams = new LinearLayout.LayoutParams(-1, dp(44));
+        chestParams.topMargin = dp(12);
+        advanced.addView(chest, chestParams);
+        TextView seedNote = text("La semilla determina la generación del terreno. Usa el mismo valor para volver a generar el mismo mundo.",
+                8, muted, false);
+        seedNote.setMaxLines(3);
+        LinearLayout.LayoutParams seedNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        seedNoteParams.topMargin = dp(5);
+        advanced.addView(seedNote, seedNoteParams);
 
         CheckBox cheats = new CheckBox(getContext());
         cheats.setText("Permitir trucos y comandos");
@@ -535,33 +566,59 @@ public final class MinefadeHomeScreen extends FrameLayout {
         cheats.setTextColor(white);
         cheats.setButtonTintList(ColorStateList.valueOf(0xffa9ee70));
         cheats.setChecked(false);
-        LinearLayout.LayoutParams cheatsParams = new LinearLayout.LayoutParams(-1,dp(42));
-        form.addView(cheats,cheatsParams);
+        tricks.addView(cheats, new LinearLayout.LayoutParams(-1, dp(44)));
+        TextView cheatsNote = text("Activa esta opción para usar comandos durante la partida. Si la dejas desactivada, el mundo se crea sin trucos.",
+                8, muted, false);
+        cheatsNote.setMaxLines(3);
+        tricks.addView(cheatsNote, new LinearLayout.LayoutParams(-1, -2));
 
-        TextView note = text("El modo aventura limita la rotura y colocación de bloques. Los trucos se pueden cambiar solo si los activas aquí.",8,muted,false);
-        note.setMaxLines(3);
-        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1,-2);
-        noteParams.topMargin = dp(7);
-        form.addView(note,noteParams);
+        final View[] panels = {general, advanced, tricks};
+        final TextView[] tabs = new TextView[3];
+        String[] labels = {"GENERAL", "AVANZADO", "TRUCOS"};
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            TextView tab = text(labels[i], 8, i == 0 ? white : muted, true);
+            tab.setGravity(Gravity.CENTER);
+            tab.setBackground(shape(i == 0
+                    ? new int[]{0xff39576d, 0xff29465b}
+                    : new int[]{0xff1b3043, 0xff142638}, 9, 0x66516e83));
+            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, dp(32), 1f);
+            if (i > 0) tabParams.leftMargin = dp(5);
+            tabBar.addView(tab, tabParams);
+            tabs[i] = tab;
+            tab.setOnClickListener(v -> {
+                for (int j = 0; j < panels.length; j++) {
+                    panels[j].setVisibility(j == index ? View.VISIBLE : View.GONE);
+                    tabs[j].setBackground(shape(j == index
+                            ? new int[]{0xff39576d, 0xff29465b}
+                            : new int[]{0xff1b3043, 0xff142638}, 9, 0x66516e83));
+                    tabs[j].setTextColor(j == index ? white : muted);
+                }
+                haptic(v);
+            });
+        }
 
-        TextView create = actionButton("CREAR MUNDO",() -> {
+        TextView create = actionButton("CREAR MUNDO", () -> {
             long parsedSeed;
-            try { parsedSeed = Long.parseLong(seed.getText().toString().trim()); }
-            catch (NumberFormatException error) { parsedSeed = System.currentTimeMillis(); }
+            try {
+                parsedSeed = Long.parseLong(seed.getText().toString().trim());
+            } catch (NumberFormatException error) {
+                parsedSeed = System.currentTimeMillis();
+            }
             WorldManager.WorldInfo world = worldManager.createWorld(
-                    name.getText().toString(),parsedSeed,mode.getSelectedItemPosition(),
-                    cheats.isChecked(),chest.isChecked());
+                    name.getText().toString(), parsedSeed, mode.getSelectedItemPosition(),
+                    cheats.isChecked(), chest.isChecked());
             if (world == null) {
                 new AlertDialog.Builder(getContext()).setTitle("No se pudo crear")
                         .setMessage("No se pudo guardar la configuración del mundo. Comprueba el espacio disponible.")
-                        .setPositiveButton("Aceptar",null).show();
+                        .setPositiveButton("Aceptar", null).show();
                 return;
             }
             if (listener != null) listener.onCreateWorld(world);
         });
-        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-1,dp(44));
-        createParams.topMargin = dp(10);
-        form.addView(create,createParams);
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-1, dp(44));
+        createParams.topMargin = dp(7);
+        root.addView(create, createParams);
     }
 
     private void showModsPage() {
@@ -806,6 +863,36 @@ public final class MinefadeHomeScreen extends FrameLayout {
         avatarPreview = new AvatarPreview(getContext());
         previewFrame.addView(avatarPreview, new FrameLayout.LayoutParams(-1, -1));
 
+        TextView rotateHint = text("MANTÉN Y ARRASTRA PARA GIRAR", 7, 0xffc0d5df, true);
+        rotateHint.setGravity(Gravity.CENTER);
+        previewOverlay.addView(rotateHint, new LinearLayout.LayoutParams(-1, dp(17)));
+        LinearLayout avatarActions = row();
+        avatarActions.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams avatarActionsParams = new LinearLayout.LayoutParams(-1, dp(31));
+        avatarActionsParams.topMargin = dp(3);
+        previewOverlay.addView(avatarActions, avatarActionsParams);
+        TextView randomize = actionButton("ALEATORIO", () -> {
+            java.util.Random random = new java.util.Random();
+            for (int i = 0; i < avatarStyles.length; i++) {
+                avatarStyles[i] = random.nextInt(6);
+                preferences.edit().putInt("avatar_" + avatarModules[i], avatarStyles[i]).apply();
+            }
+            showAvatarPage();
+        });
+        randomize.setTextSize(7);
+        avatarActions.addView(randomize, new LinearLayout.LayoutParams(0, -1, 1f));
+        TextView resetAvatar = actionButton("RESTABLECER", () -> {
+            for (int i = 0; i < avatarStyles.length; i++) {
+                avatarStyles[i] = 0;
+                preferences.edit().putInt("avatar_" + avatarModules[i], 0).apply();
+            }
+            showAvatarPage();
+        });
+        resetAvatar.setTextSize(7);
+        LinearLayout.LayoutParams resetAvatarParams = new LinearLayout.LayoutParams(0, -1, 1f);
+        resetAvatarParams.leftMargin = dp(4);
+        avatarActions.addView(resetAvatar, resetAvatarParams);
+
         String[] moduleLabels = {"PIEL", "CABELLO", "OJOS", "ROPA", "ARMADURA", "ACCESORIOS"};
         String[][] optionNames = {
                 {"Marfil", "Arena", "Miel", "Cobre", "Ébano", "Oliva"},
@@ -885,7 +972,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
 
         for (int r = 0; r < 2; r++) {
             LinearLayout line = row();
-            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(-1, dp(76));
+            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(-1, dp(84));
             if (r > 0) lineParams.topMargin = dp(6);
             grid.addView(line, lineParams);
             for (int col = 0; col < 3; col++) {
@@ -1335,11 +1422,41 @@ public final class MinefadeHomeScreen extends FrameLayout {
 
     private void showMultiplayerPage() {
         LinearLayout root = pageRoot("", "");
+        if (pageHeader.getChildCount() > 1) pageHeader.removeViewAt(1);
+
+        multiplayerSearch = new EditText(getContext());
+        multiplayerSearch.setSingleLine(true);
+        multiplayerSearch.setTextSize(9);
+        multiplayerSearch.setTextColor(white);
+        multiplayerSearch.setHintTextColor(muted);
+        multiplayerSearch.setHint("Buscar mundos…");
+        multiplayerSearch.setPadding(dp(8), 0, dp(6), 0);
+        multiplayerSearch.setBackground(shape(new int[]{0xaa132b3e, 0xaa0d1c2c}, 9, 0x665d7a90));
+        LinearLayout.LayoutParams searchHeaderParams = new LinearLayout.LayoutParams(0, dp(31), 1f);
+        searchHeaderParams.leftMargin = dp(5);
+        searchHeaderParams.rightMargin = dp(5);
+        pageHeader.addView(multiplayerSearch, searchHeaderParams);
+
+        TextView createModule = actionButton("CREAR", () -> {
+            if (listener != null) listener.onHostMultiplayer();
+        });
+        createModule.setTextSize(7);
+        pageHeader.addView(createModule, new LinearLayout.LayoutParams(dp(58), dp(31)));
+
+        TextView joinModule = actionButton("UNIRSE", () -> {
+            setMultiplayerStatus("Buscando partidas locales…");
+            if (listener != null) listener.onSearchMultiplayer();
+        });
+        joinModule.setTextSize(7);
+        LinearLayout.LayoutParams joinModuleParams = new LinearLayout.LayoutParams(dp(60), dp(31));
+        joinModuleParams.leftMargin = dp(4);
+        pageHeader.addView(joinModule, joinModuleParams);
+
         multiplayerStatus = text("Buscando partidas en la red local…", 8, 0xffb9cbd6, false);
         multiplayerStatus.setGravity(Gravity.CENTER_VERTICAL);
         multiplayerStatus.setPadding(dp(8), 0, dp(8), 0);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, dp(25));
-        statusParams.topMargin = dp(3);
+        statusParams.topMargin = dp(5);
         root.addView(multiplayerStatus, statusParams);
 
         multiplayerGames = column();
@@ -1357,24 +1474,24 @@ public final class MinefadeHomeScreen extends FrameLayout {
 
         LinearLayout actionRow = row();
         actionRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-1, dp(40));
-        actionParams.topMargin = dp(5);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-1, dp(38));
+        actionParams.topMargin = dp(4);
         root.addView(actionRow, actionParams);
-        TextView host = actionButton("CREAR PARTIDA", () -> {
-            if (listener != null) listener.onHostMultiplayer();
-        });
-        host.setTextSize(8);
-        actionRow.addView(host, new LinearLayout.LayoutParams(dp(112), dp(34)));
-        TextView search = actionButton("BUSCAR", () -> {
+        TextView refresh = actionButton("BUSCAR EN RED LOCAL", () -> {
             setMultiplayerStatus("Buscando partidas en la red local…");
             if (listener != null) listener.onSearchMultiplayer();
         });
-        search.setTextSize(8);
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(dp(88), dp(34));
-        searchParams.leftMargin = dp(6);
-        actionRow.addView(search, searchParams);
+        refresh.setTextSize(8);
+        actionRow.addView(refresh, new LinearLayout.LayoutParams(-1, dp(34)));
 
-        // Discover Wi-Fi LAN sessions as soon as the LOCAL module is opened.
+        multiplayerSearch.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence value, int start, int before, int count) {
+                renderNearbyGames();
+            }
+            @Override public void afterTextChanged(android.text.Editable value) { }
+        });
+
         if (listener != null) listener.onSearchMultiplayer();
     }
 
@@ -1383,15 +1500,36 @@ public final class MinefadeHomeScreen extends FrameLayout {
     }
 
     public void setNearbyGames(List<LanMultiplayerService.GameInfo> games) {
+        nearbyGameCache.clear();
+        if (games != null) nearbyGameCache.addAll(games);
+        renderNearbyGames();
+    }
+
+    private void renderNearbyGames() {
         if (multiplayerGames == null) return;
         multiplayerGames.removeAllViews();
-        if (games == null || games.isEmpty()) {
-            TextView empty = text("No se encontraron partidas en esta red todavía.", 9, muted, false);
+        String query = multiplayerSearch == null ? "" :
+                multiplayerSearch.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+        List<LanMultiplayerService.GameInfo> filtered = new ArrayList<>();
+        for (LanMultiplayerService.GameInfo game : nearbyGameCache) {
+            String name = game.name == null ? "" : game.name;
+            String host = game.host == null ? "" : game.host;
+            if (query.isEmpty() ||
+                    name.toLowerCase(java.util.Locale.ROOT).contains(query) ||
+                    host.toLowerCase(java.util.Locale.ROOT).contains(query)) {
+                filtered.add(game);
+            }
+        }
+        if (filtered.isEmpty()) {
+            String message = nearbyGameCache.isEmpty()
+                    ? "No se encontraron partidas en esta red todavía."
+                    : "No hay mundos cuyo nombre coincida con la búsqueda.";
+            TextView empty = text(message, 9, muted, false);
             empty.setGravity(Gravity.CENTER);
             multiplayerGames.addView(empty, new LinearLayout.LayoutParams(-1, dp(62)));
             return;
         }
-        for (LanMultiplayerService.GameInfo game : games) {
+        for (LanMultiplayerService.GameInfo game : filtered) {
             LinearLayout item = row();
             item.setPadding(dp(10), dp(7), dp(10), dp(7));
             item.setBackground(shape(new int[]{0xff20384b, 0xff14263a}, 11, 0x554d6b80));

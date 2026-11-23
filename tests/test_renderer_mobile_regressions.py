@@ -56,7 +56,31 @@ def test_unified_dpad_and_minimap_shape_are_connected():
     assert 'settingChoice("Tipo de controles"' not in home
 
 
-def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():
+def test_world_creation_and_multiplayer_search_use_existing_world_and_lan_data():
+    home = (ROOT / "app/src/main/java/com/minefade/nativeengine/MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    create = home[home.index("private void showCreateWorld()"):home.index("private void showModsPage()")]
+    multi = home[home.index("private void showMultiplayerPage()"):home.index("private void showAchievementsPage()")]
+    assert '"GENERAL", "AVANZADO", "TRUCOS"' in create
+    assert "worldManager.createWorld(" in create
+    assert "seed.getText()" in create
+    assert "cheats.isChecked()" in create and "chest.isChecked()" in create
+    assert "private void renderNearbyGames()" in multi
+    assert "name.toLowerCase(java.util.Locale.ROOT).contains(query)" in multi
+    assert "listener.onHostMultiplayer()" in multi
+    assert "listener.onSearchMultiplayer()" in multi
+    assert "listener.onJoinMultiplayer(game)" in multi
+
+
+def test_avatar_editor_uses_one_model_and_persistent_style_actions():
+    home = (ROOT / "app/src/main/java/com/minefade/nativeengine/MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    avatar = home[home.index("private void showAvatarPage()"):home.index("private void showSettingsPage()")]
+    assert "new AvatarPreview(getContext())" in avatar
+    assert 'actionButton("ALEATORIO"' in avatar
+    assert 'actionButton("RESTABLECER"' in avatar
+    assert "new AvatarOptionView(getContext(), avatarModuleIndex, choice)" in avatar
+
+
+def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():
     assert "worldRenderer_.TransparentVertexCount() > 0" in ENGINE
     assert "result.lod>=2 &&" in WORLD
     assert "def->shape==BlockShape::CrossPlant" in WORLD
@@ -68,5 +92,7 @@ if __name__ == "__main__":
     test_gpu_mesh_is_swapped_only_after_both_layers_upload()
     test_lod2_keeps_fluid_heightfield_and_transparent_water()
     test_unified_dpad_and_minimap_shape_are_connected()
+    test_world_creation_and_multiplayer_search_use_existing_world_and_lan_data()
+    test_avatar_editor_uses_one_model_and_persistent_style_actions()
     test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation()
     print("Minefade renderer/mobile chunk regression checks passed.")
