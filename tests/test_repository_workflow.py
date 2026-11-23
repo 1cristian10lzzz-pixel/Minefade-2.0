@@ -27,10 +27,10 @@ def test_write_permission_is_isolated_to_tag_prerelease_job():
 
 
 def test_android_version_and_release_documentation_match():
-    assert "versionCode = 26" in GRADLE
-    assert 'versionName = "2.2.2"' in GRADLE
-    assert "versionCode = 26" in BUILD_DOC
-    assert "versionName = 2.2.2" in BUILD_DOC
+    assert "versionCode = 27" in GRADLE
+    assert 'versionName = "2.2.3"' in GRADLE
+    assert "versionCode = 27" in BUILD_DOC
+    assert "versionName = 2.2.3" in BUILD_DOC
 
 
 if __name__ == "__main__":

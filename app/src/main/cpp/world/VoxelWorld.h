@@ -141,6 +141,12 @@ private:
         float maxY{0.0f};
     };
 
+    struct AsyncMeshBuildResult {
+        std::pair<int, int> key;
+        std::uint64_t sourceRevision{0};
+        ChunkMeshCache mesh;
+    };
+
     enum class Biome : std::uint8_t {
         Plains, Forest, Desert, Snow, Ocean, Mountains, Swamp, Savanna, River,
         Beach, Taiga, BirchForest, DarkForest, Jungle, CherryGrove, Badlands,
@@ -156,6 +162,7 @@ private:
     int TerrainHeight(int x, int z) const;
     Chunk MakeChunk(int chunkX, int chunkZ) const;
     void StartNextChunkJob();
+    void DiscardPendingMeshBuild();
     const Chunk* FindChunk(int chunkX, int chunkZ) const;
     Chunk* FindChunk(int chunkX, int chunkZ);
     void InvalidateChunkMesh(int chunkX, int chunkZ);
@@ -171,9 +178,12 @@ private:
         std::pair<int, int> key;
         std::future<Chunk> future;
     };
-    static constexpr std::size_t kChunkWorkerCount = 2;
+    // Reserve CPU for the renderer and the background mesher on mobile devices.
+    static constexpr std::size_t kChunkWorkerCount = 1;
     static constexpr std::size_t kMeshWorkerCount = 2;
     std::vector<ChunkJob> pendingChunkJobs_;
+    mutable std::future<AsyncMeshBuildResult> pendingMeshBuild_;
+    mutable bool asyncMeshBuildDisabled_{false};
     bool asyncGenerationDisabled_{false};
 };
 

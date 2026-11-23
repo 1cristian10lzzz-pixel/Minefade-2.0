@@ -10,6 +10,7 @@
 #include <limits>
 #include <set>
 #include <system_error>
+#include <stdexcept>
 #include <utility>
 
 namespace minefade {
@@ -46,7 +47,16 @@ bool ShouldHideFace(BlockId current, BlockId neighbor) {
     const BlockDefinition* currentDef = GetBlockDefinition(current);
     const BlockDefinition* neighborDef = GetBlockDefinition(neighbor);
     if (neighborDef == nullptr || currentDef == nullptr) return false;
-    if ((neighborDef->flags & BlockOpaque) != 0u) return true;
+
+    // Only a complete opaque cube can hide the whole adjacent cube face.
+    // Partial voxels (slabs, stairs, fences, panes, doors, etc.) do not occupy
+    // the full neighbouring cell and must not make its entire face disappear.
+    const bool fullyOccludingCube = neighborDef->shape == BlockShape::Cube &&
+        (neighborDef->flags & BlockOpaque) != 0u &&
+        (neighborDef->flags & (BlockTransparent | BlockFluid)) == 0u;
+    if (fullyOccludingCube) return true;
+
+    // Suppress the internal shared face between identical transparent blocks.
     return current == neighbor && (currentDef->flags & BlockTransparent) != 0u;
 }
 
@@ -723,7 +733,20 @@ std::size_t VoxelWorld::PendingChunkCount() const {
     return generationQueue_.size() + pendingChunkJobs_.size();
 }
 
+void VoxelWorld::DiscardPendingMeshBuild() {
+    if (!pendingMeshBuild_.valid()) return;
+    // World replacement must not publish a result built from the previous
+    // world, even when the new world happens to reuse the same chunk revision.
+    pendingMeshBuild_.wait();
+    try {
+        (void)pendingMeshBuild_.get();
+    } catch (...) {
+        // A failed background build is safely discarded with the old world.
+    }
+}
+
 void VoxelWorld::GenerateAround(int worldX,int worldZ,int radiusInChunks) {
+    DiscardPendingMeshBuild();
     WaitForChunkGeneration();
     generationQueue_.clear();
     queuedChunks_.clear();
@@ -816,6 +839,179 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
     output.clear();
     if (transparentOutput != nullptr) transparentOutput->clear();
     if (chunkRanges != nullptr) chunkRanges->clear();
+
+    // The gameplay path builds one dirty chunk every mesh tick. Do not perform
+    // that greedy-meshing pass on the GL thread: snapshot only the source chunk
+    // and its four neighbours, then compile one immutable mesh in the background.
+    const bool useBackgroundSingleChunk = meshBuildBudget == 1u && !collectMergedMesh &&
+        transparentOutput == nullptr && chunkRanges == nullptr &&
+        !asyncMeshBuildDisabled_;
+    if (useBackgroundSingleChunk) {
+        const int centerChunkX = FloorDiv(centerWorldX, kChunkSize);
+        const int centerChunkZ = FloorDiv(centerWorldZ, kChunkSize);
+        const auto pruneOutsideRadius = [this, centerChunkX, centerChunkZ, radiusInChunks]() {
+            if (radiusInChunks < 0) return;
+            for (auto it = chunkMeshCache_.begin(); it != chunkMeshCache_.end();) {
+                if (std::abs(it->first.first - centerChunkX) > radiusInChunks ||
+                    std::abs(it->first.second - centerChunkZ) > radiusInChunks) {
+                    it = chunkMeshCache_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            for (auto it = dirtyChunkMeshes_.begin(); it != dirtyChunkMeshes_.end();) {
+                if (std::abs(it->first - centerChunkX) > radiusInChunks ||
+                    std::abs(it->second - centerChunkZ) > radiusInChunks) {
+                    it = dirtyChunkMeshes_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        };
+
+        if (pendingMeshBuild_.valid()) {
+            if (pendingMeshBuild_.wait_for(std::chrono::seconds(0)) !=
+                std::future_status::ready) {
+                pruneOutsideRadius();
+                return;
+            }
+            try {
+                AsyncMeshBuildResult completed = pendingMeshBuild_.get();
+                const Chunk* current = FindChunk(completed.key.first, completed.key.second);
+                if (current != nullptr && current->revision == completed.sourceRevision) {
+                    chunkMeshCache_[completed.key] = std::move(completed.mesh);
+                    dirtyChunkMeshes_.erase(completed.key);
+                } else if (current != nullptr) {
+                    // A block edit or newly generated neighbour changed the
+                    // source revision while the worker was running.
+                    dirtyChunkMeshes_.insert(completed.key);
+                }
+            } catch (...) {
+                // Retain the safe synchronous builder as a last-resort fallback
+                // for devices that cannot create background worker threads.
+                asyncMeshBuildDisabled_ = true;
+            }
+        }
+
+        if (!asyncMeshBuildDisabled_ && !pendingMeshBuild_.valid()) {
+            std::vector<const Chunk*> candidates;
+            candidates.reserve(chunks_.size());
+            for (const auto& entry : chunks_) {
+                const int cx = entry.first.first;
+                const int cz = entry.first.second;
+                if (radiusInChunks >= 0 &&
+                    (std::abs(cx - centerChunkX) > radiusInChunks ||
+                     std::abs(cz - centerChunkZ) > radiusInChunks)) continue;
+                candidates.push_back(&entry.second);
+            }
+            std::sort(candidates.begin(), candidates.end(),
+                [centerChunkX, centerChunkZ](const Chunk* a, const Chunk* b) {
+                    const int da = std::max(std::abs(a->x - centerChunkX),
+                                            std::abs(a->z - centerChunkZ));
+                    const int db = std::max(std::abs(b->x - centerChunkX),
+                                            std::abs(b->z - centerChunkZ));
+                    if (da != db) return da < db;
+                    if (a->x != b->x) return a->x < b->x;
+                    return a->z < b->z;
+                });
+
+            const Chunk* target = nullptr;
+            int targetLod = 0;
+            bool targetOuterBorder = false;
+            for (const Chunk* chunk : candidates) {
+                const int distance = std::max(std::abs(chunk->x - centerChunkX),
+                                              std::abs(chunk->z - centerChunkZ));
+                const int expectedLod = distance <= 2 ? 0 : (distance == 3 ? 1 : 2);
+                const bool outerBorder = radiusInChunks >= 0 && distance >= radiusInChunks;
+                const auto key = std::make_pair(chunk->x, chunk->z);
+                const auto cached = chunkMeshCache_.find(key);
+                const bool needsBuild = cached == chunkMeshCache_.end() ||
+                    dirtyChunkMeshes_.find(key) != dirtyChunkMeshes_.end() ||
+                    cached->second.lod != expectedLod ||
+                    cached->second.outerBorder != outerBorder;
+                if (needsBuild) {
+                    target = chunk;
+                    targetLod = expectedLod;
+                    targetOuterBorder = outerBorder;
+                    break;
+                }
+            }
+
+            if (target != nullptr) {
+                const auto targetKey = std::make_pair(target->x, target->z);
+                const std::uint64_t sourceRevision = target->revision;
+                std::map<std::pair<int, int>, Chunk> snapshotChunks;
+                std::map<std::pair<int, int>, ChunkMeshCache> snapshotCaches;
+                std::set<std::pair<int, int>> snapshotDirty;
+                const std::array<std::pair<int, int>, 5> neighbourhood{{
+                    targetKey,
+                    {target->x - 1, target->z},
+                    {target->x + 1, target->z},
+                    {target->x, target->z - 1},
+                    {target->x, target->z + 1}
+                }};
+
+                for (const auto& key : neighbourhood) {
+                    const int distance = std::max(std::abs(key.first - centerChunkX),
+                                                  std::abs(key.second - centerChunkZ));
+                    if (radiusInChunks >= 0 && distance > radiusInChunks) continue;
+                    const Chunk* source = FindChunk(key.first, key.second);
+                    if (source == nullptr) continue;
+                    snapshotChunks.emplace(key, *source);
+
+                    ChunkMeshCache placeholder;
+                    const int neighbourLod = distance <= 2 ? 0 : (distance == 3 ? 1 : 2);
+                    const bool neighbourOuter = radiusInChunks >= 0 && distance >= radiusInChunks;
+                    const auto previous = chunkMeshCache_.find(key);
+                    placeholder.lod = neighbourLod;
+                    placeholder.outerBorder = neighbourOuter;
+                    placeholder.revision = previous == chunkMeshCache_.end()
+                        ? 0u : previous->second.revision;
+                    snapshotCaches.emplace(key, std::move(placeholder));
+                    if (key == targetKey) snapshotDirty.insert(key);
+                }
+
+                if (snapshotChunks.find(targetKey) != snapshotChunks.end()) {
+                    const std::uint32_t snapshotSeed = seed_;
+                    try {
+                        pendingMeshBuild_ = std::async(std::launch::async,
+                            [snapshotSeed, targetKey, sourceRevision, centerWorldX, centerWorldZ,
+                             radiusInChunks, targetLod, targetOuterBorder,
+                             snapshotChunks = std::move(snapshotChunks),
+                             snapshotCaches = std::move(snapshotCaches),
+                             snapshotDirty = std::move(snapshotDirty)]() mutable {
+                                VoxelWorld snapshot(snapshotSeed);
+                                snapshot.chunks_ = std::move(snapshotChunks);
+                                snapshot.chunkMeshCache_ = std::move(snapshotCaches);
+                                snapshot.dirtyChunkMeshes_ = std::move(snapshotDirty);
+                                // The worker must execute the original one-chunk
+                                // mesher, not schedule a nested task of its own.
+                                snapshot.asyncMeshBuildDisabled_ = true;
+                                std::vector<WorldVertex> unusedMergedMesh;
+                                snapshot.BuildMesh(unusedMergedMesh, centerWorldX, centerWorldZ,
+                                                   radiusInChunks, nullptr, nullptr, 1u, false);
+                                const auto built = snapshot.chunkMeshCache_.find(targetKey);
+                                if (built == snapshot.chunkMeshCache_.end() ||
+                                    snapshot.dirtyChunkMeshes_.find(targetKey) !=
+                                        snapshot.dirtyChunkMeshes_.end() ||
+                                    built->second.lod != targetLod ||
+                                    built->second.outerBorder != targetOuterBorder) {
+                                    throw std::runtime_error("background mesh did not produce a valid chunk");
+                                }
+                                return AsyncMeshBuildResult{
+                                    targetKey, sourceRevision, std::move(built->second)};
+                            });
+                    } catch (const std::system_error&) {
+                        asyncMeshBuildDisabled_ = true;
+                    }
+                }
+            }
+        }
+
+        pruneOutsideRadius();
+        if (!asyncMeshBuildDisabled_ || pendingMeshBuild_.valid()) return;
+        // If worker creation is unavailable, fall through to the legacy safe path.
+    }
 
     const int centerChunkX=FloorDiv(centerWorldX,kChunkSize);
     const int centerChunkZ=FloorDiv(centerWorldZ,kChunkSize);
@@ -1127,8 +1323,8 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
                         (def->flags&(BlockTransparent|BlockFluid))==0u;
                     if (opaqueCube) continue;
 
-                    if (result.lod>=1 && def->shape==BlockShape::CrossPlant) continue;
-                    if (result.lod>=2 && def->shape==BlockShape::Thin) continue;
+                    if (result.lod>=2 &&
+                        (def->shape==BlockShape::CrossPlant || def->shape==BlockShape::Thin)) continue;
 
                     const int wx=baseX+x, wz=baseZ+z;
                     const bool transparent=(def->flags&(BlockTransparent|BlockFluid))!=0u;
@@ -1356,6 +1552,7 @@ bool VoxelWorld::Save(const std::string& filePath,const Vec3& playerPosition,
 
 bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
                       std::array<std::uint32_t,36>& inventory) {
+    DiscardPendingMeshBuild();
     WaitForChunkGeneration();
     generationQueue_.clear();
     queuedChunks_.clear();

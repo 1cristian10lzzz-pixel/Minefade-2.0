@@ -1,5 +1,15 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.2.3 — renderizado voxel y fluidez de chunks
+- Se corrige la oclusión de caras: solo un cubo opaco completo puede ocultar una cara entera; losas, escaleras, vallas y otras formas parciales dejan visibles las partes no cubiertas.
+- La construcción de la malla de un chunk se traslada a una tarea de fondo con snapshots de solo lectura; el resultado se publica únicamente si la revisión del chunk sigue vigente.
+- La generación de terreno usa un trabajador concurrente para reducir la competencia por CPU con la malla en móviles.
+- Las plantas pequeñas se conservan en el anillo LOD cercano.
+- La subida GPU usa buffers de staging y reemplaza juntas las capas opaca/transparente solo cuando ambas subidas se completan; si falla, se mantiene el chunk visible anterior.
+- Se dibuja también el mundo cuando el único contenido cargado es transparente.
+- Se añaden pruebas nativas para losas junto a cubos y para la ruta asíncrona de meshing.
+- Android versionCode 27 / versionName 2.2.3. Sigue pendiente probar el APK en dispositivos físicos y medir FPS/jank reales.
+
 ## Actualización 2.2.2 — interfaz, controles, fabricación y LAN
 - Se corrige la compilación Android del descubrimiento NSD: Android entrega atributos del servicio como `byte[]`; Minefade los decodifica como UTF-8 con límite de tamaño y validación.
 - La fabricación se ejecuta sobre una copia temporal del inventario. Ingredientes y resultado se confirman juntos; si algo falla, el inventario original no cambia.

@@ -72,7 +72,7 @@ bool WorldMeshRenderer::UploadPass(GLuint& vao, GLuint& vbo,
             newCapacity = requiredBytes;
         }
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(newCapacity),
-                     nullptr, GL_DYNAMIC_DRAW);
+                     nullptr, GL_STREAM_DRAW);
         capacityBytes = newCapacity;
     }
     glBufferSubData(GL_ARRAY_BUFFER, 0,
@@ -186,23 +186,40 @@ bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews,
         ++attemptedUploads;
         const ChunkMeshView& view = *candidate.view;
         const auto key = std::make_pair(view.chunkX, view.chunkZ);
-        GpuChunk& gpu = chunks_[key];
-        const bool opaqueOk = UploadPass(gpu.opaqueVao, gpu.opaqueVbo,
-            gpu.opaqueCapacityBytes, gpu.opaqueCount, *view.opaque, 0u, view.opaque->size());
-        const bool transparentOk = UploadPass(gpu.transparentVao, gpu.transparentVbo,
-            gpu.transparentCapacityBytes, gpu.transparentCount,
+
+        // Build both render passes into fresh GPU buffers. Never invalidate the
+        // currently visible chunk if either new pass fails: the previous opaque
+        // and transparent meshes remain a coherent pair until both uploads pass.
+        GpuChunk staged{};
+        const bool opaqueOk = UploadPass(staged.opaqueVao, staged.opaqueVbo,
+            staged.opaqueCapacityBytes, staged.opaqueCount, *view.opaque, 0u, view.opaque->size());
+        const bool transparentOk = UploadPass(staged.transparentVao, staged.transparentVbo,
+            staged.transparentCapacityBytes, staged.transparentCount,
             *view.transparent, 0u, view.transparent->size());
         if (!opaqueOk || !transparentOk) {
-            gpu.revision = 0u;
-            gpu.opaqueCount = 0;
-            gpu.transparentCount = 0;
+            ReleasePass(staged.opaqueVao, staged.opaqueVbo,
+                        staged.opaqueCapacityBytes, staged.opaqueCount);
+            ReleasePass(staged.transparentVao, staged.transparentVbo,
+                        staged.transparentCapacityBytes, staged.transparentCount);
             success = false;
             continue;
         }
 
-        gpu.revision = view.revision;
-        gpu.minY = view.minY;
-        gpu.maxY = view.maxY;
+        staged.revision = view.revision;
+        staged.minY = view.minY;
+        staged.maxY = view.maxY;
+        const auto existing = chunks_.find(key);
+        if (existing == chunks_.end()) {
+            chunks_.emplace(key, staged);
+        } else {
+            GpuChunk previous = existing->second;
+            existing->second = staged;
+            ReleasePass(previous.opaqueVao, previous.opaqueVbo,
+                        previous.opaqueCapacityBytes, previous.opaqueCount);
+            ReleasePass(previous.transparentVao, previous.transparentVbo,
+                        previous.transparentCapacityBytes, previous.transparentCount);
+        }
+
         lastUploadBytes_ = addSaturated(lastUploadBytes_, candidate.uploadBytes);
         ++lastUploadCount_;
     }

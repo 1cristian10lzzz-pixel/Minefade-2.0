@@ -17,6 +17,8 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
+#include <chrono>
 #include <vector>
 #include <iostream>
 
@@ -290,6 +292,40 @@ int main() {
     assert(testFrustum.IntersectsAabb(-1.0f,-1.0f,-1.0f,1.0f,1.0f,1.0f));
     assert(!testFrustum.IntersectsAabb(8.0f,0.0f,0.0f,10.0f,1.0f,1.0f));
     assert(!testFrustum.IntersectsAabb(-1.0f,-1.0f,8.0f,1.0f,1.0f,10.0f));
+
+    // A partial opaque shape must not erase the entire neighbouring cube face.
+    VoxelWorld shapeWorld(0x53484150u);
+    shapeWorld.GenerateAround(8, 8, 0);
+    assert(shapeWorld.SetBlock(8, 50, 8, BlockId::Stone));
+    assert(shapeWorld.SetBlock(9, 50, 8, BlockId::StoneSlab));
+    std::vector<WorldVertex> shapeMesh;
+    shapeWorld.BuildMesh(shapeMesh, 8, 8, 0);
+    const auto hasUpperEastFace = [&shapeMesh]() {
+        return std::any_of(shapeMesh.begin(), shapeMesh.end(), [](const WorldVertex& vertex) {
+            return std::abs(vertex.x - 9.0f) < 0.001f &&
+                   vertex.nx > 0.9f && vertex.y > 50.75f;
+        });
+    };
+    assert(hasUpperEastFace());
+    assert(shapeWorld.SetBlock(9, 50, 8, BlockId::Stone));
+    shapeWorld.BuildMesh(shapeMesh, 8, 8, 0);
+    assert(!hasUpperEastFace());
+
+    // Exercise the actual 1-chunk mobile path: CPU meshing completes off-thread,
+    // then the render-side poll publishes the cached section on a later tick.
+    VoxelWorld asyncMeshWorld(0x4153594eu);
+    asyncMeshWorld.GenerateAround(8, 8, 0);
+    std::vector<WorldVertex> asyncScratch;
+    std::vector<ChunkMeshView> asyncViews;
+    bool asyncMeshReady = false;
+    for (int attempt = 0; attempt < 1000 && !asyncMeshReady; ++attempt) {
+        asyncMeshWorld.BuildMesh(asyncScratch, 8, 8, 0, nullptr, nullptr, 1u, false);
+        asyncMeshWorld.GetChunkMeshViews(8, 8, 0, asyncViews);
+        asyncMeshReady = !asyncViews.empty() && asyncViews.front().revision > 0u &&
+            asyncViews.front().opaque != nullptr && !asyncViews.front().opaque->empty();
+        if (!asyncMeshReady) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    assert(asyncMeshReady);
 
     // A generated but excluded chunk must not hide the last visible ring's
     // boundary surfaces, as if its neighbour were unloaded.
