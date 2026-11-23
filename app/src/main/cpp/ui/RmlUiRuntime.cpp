@@ -118,6 +118,7 @@ body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-
 #stats { color: #f3f8fb; font-size: 9dp; background: #1c344acb; padding: 7dp 10dp; border: 1dp #d7e8ef66; border-radius: 10dp; text-shadow: none; }
 #minimap { position: absolute; z-index: 5; top: 54dp; left: 10dp; width: 88dp; padding: 5dp; background: #1a344bc9; border: 1dp #d7e8ef88; border-radius: 10dp; }
 #minimap-grid { width: 78dp; height: 78dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1dp; border: 1dp #e2f0f4aa; border-radius: 5dp; overflow: hidden; background: #173047; }
+#minimap-north { position: absolute; right: 4dp; top: 3dp; width: 15dp; height: 15dp; text-align: center; color: #ffffff; font-size: 9dp; background: #142638cc; border-radius: 8dp; }
 .map-tile { width: 10dp; height: 10dp; border-radius: 1dp; }
 .map-low { background: #6c8064; }
 .map-mid { background: #52805b; }
@@ -154,7 +155,7 @@ button:active { background: #47789b; }
 .selected-durability { font-size: 8dp; color: #c9e3ad; margin-left: 5dp; }
 .inventory-row { display: flex; align-items: center; gap: 7dp; color: #e0e8ed; font-size: 12dp; padding: 5dp 2dp; border-bottom: 1dp #43576a; }
 .inventory-icon { width: 19dp; height: 19dp; }
-#inventory, #pause, #perspective { width: 38dp; min-width: 38dp; height: 38dp; padding: 0dp; text-align: center; background: #142638cc; border: 1dp #d8e6ee77; border-radius: 11dp; }
+#inventory, #pause, #perspective, #chat { width: 38dp; min-width: 38dp; height: 38dp; padding: 0dp; text-align: center; background: #142638cc; border: 1dp #d8e6ee77; border-radius: 11dp; }
 #movement-pad { position: absolute; z-index: 6; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; background: transparent; border: none; pointer-events: none; }
 .pad-arrow { position: absolute; width: 42dp; height: 42dp; display: flex; align-items: center; justify-content: center; text-align: center; color: #f5fbff; font-size: 21dp; font-weight: bold; text-shadow: 0dp 1dp 2dp #071321; border: 1dp #d7e8ef88; border-radius: 11dp; background: #1b3850dd; }
 #move-up { left: 45dp; top: 2dp; }
@@ -209,12 +210,13 @@ button:active { background: #47789b; }
     <div id="stats">FPS -- · Chunks --</div>
     <button id="starter-chest-open">COFRE</button>
     <button id="chat">✉</button>
+    <button id="chat">✉</button>
     <button id="inventory">▦</button>
     <button id="perspective">◉</button>
     <button id="pause">Ⅱ</button>
   </div>
 </div>
-<div id="minimap"><div id="minimap-grid"></div><div id="minimap-coords">X 0 · Z 0</div></div>
+<div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
 <div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div></div>
 <div id="movement-pad">
   <div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div>
@@ -394,8 +396,10 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #topbar { position: absolute; top: 8dp; right: 8dp; display: flex; }
 #topbar button { width: 38dp; height: 38dp; margin-left: 4dp; }
 #stats { position: absolute; left: 10dp; top: 10dp; display: block; font-size: 10dp; color: #ffffff; }
-#movement-pad { position: absolute; left: 14dp; bottom: 54dp; width: 108dp; height: 108dp; border: 2dp solid #e1efb8; border-radius: 54dp; background-color: rgba(25, 50, 73, 0.70); }
-#movement-pad-inner { position: absolute; left: 35dp; top: 35dp; width: 36dp; height: 36dp; border-radius: 18dp; background-color: rgba(154, 181, 154, 0.75); }
+#movement-pad { position: absolute; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; }
+.pad-arrow { position: absolute; width: 42dp; height: 42dp; text-align: center; background: rgba(25, 50, 73, 0.88); border: 1dp solid #e1efb8; border-radius: 11dp; font-size: 20dp; }
+#move-up { left: 45dp; top: 2dp; } #move-down { left: 45dp; bottom: 2dp; }
+#move-left { left: 2dp; top: 45dp; } #move-right { right: 2dp; top: 45dp; }
 #quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; gap: 2dp; padding: 4dp; background: #1b3044d9; border: 1dp #dcebf088; border-radius: 11dp; }
 .slot { width: 30dp; min-width: 30dp; height: 39dp; margin-right: 0dp; padding: 2dp; background: #2a4259ed; border: 1dp #d8e6ee99; border-radius: 7dp; }
 .slot img { width: 22dp; height: 22dp; }
@@ -414,12 +418,13 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <body>
 <div id="topbar">
 <div id="stats"></div>
+<button id="chat">✉</button>
 <button id="inventory">▦</button>
 <button id="perspective">◉</button>
 <button id="pause">Ⅱ</button>
 </div>
-<div id="minimap"><div id="minimap-grid"></div><div id="minimap-coords">X 0 · Z 0</div></div>
-<div id="movement-pad"><div id="movement-pad-inner"></div></div>
+<div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
+<div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div></div>
 <div id="quickbar">
 <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
 <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
@@ -454,6 +459,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
         }
     }
 
+    AttachAction("chat", "chat");
     AttachAction("chat", "chat");
     AttachAction("inventory", "inventory");
     AttachAction("inventory-close", "inventory-close");

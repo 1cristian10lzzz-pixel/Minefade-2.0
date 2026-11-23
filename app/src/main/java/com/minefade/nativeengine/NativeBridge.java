@@ -15,6 +15,7 @@ public final class NativeBridge {
     public static native void nativeResize(int width, int height);
     public static native void nativeRender();
     public static native boolean nativeConsumeEngineFailure();
+    public static native boolean nativeConsumeChatRequest();
     public static native void nativeTouch(int action, int pointerId, float x, float y);
     public static native void nativePause();
     public static native void nativeResume();
@@ -29,6 +30,7 @@ public final class NativeBridge {
     public static native void nativeSetShaderOptions(boolean lavaAnimations, boolean leafWind, float leafWindStrength);
     public static native void nativeSetInputOptions(float sensitivityX, float sensitivityY, float joystickDeadzone, boolean invertLookY, boolean leftHanded, int controlMode, boolean autoJump);
     public static native void nativeSetHudOptions(boolean showStats);
+    public static native void nativeSetMinimapShape(int shape);
     public static native void nativeSetAnimationOptions(int quality, boolean enabled);
     public static native void nativeSetAvatarAppearance(int[] choices);
     public static native float[] nativeGetPlayerState();

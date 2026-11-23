@@ -44,6 +44,18 @@ def test_lod2_keeps_fluid_heightfield_and_transparent_water():
     assert "farWaterSurfaceVisible" in NATIVE_TESTS
 
 
+def test_unified_dpad_and_minimap_shape_are_connected():
+    header = (CPP / "ui/RmlUiRuntime.h").read_text(encoding="utf-8")
+    rml = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
+    home = (ROOT / "app/src/main/java/com/minefade/nativeengine/MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    assert "MovementVectorAt(float x, float y" in header
+    assert "state.movementPad = true;" in ENGINE
+    assert "UpdateTouchMovement();" in ENGINE
+    assert 'AttachAction("chat", "chat")' in rml
+    assert '"minimap_shape"' in home
+    assert 'settingChoice("Tipo de controles"' not in home
+
+
 def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():
     assert "worldRenderer_.TransparentVertexCount() > 0" in ENGINE
     assert "result.lod>=2 &&" in WORLD
@@ -55,5 +67,6 @@ if __name__ == "__main__":
     test_mobile_single_chunk_meshing_uses_immutable_background_snapshot()
     test_gpu_mesh_is_swapped_only_after_both_layers_upload()
     test_lod2_keeps_fluid_heightfield_and_transparent_water()
+    test_unified_dpad_and_minimap_shape_are_connected()
     test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation()
     print("Minefade renderer/mobile chunk regression checks passed.")

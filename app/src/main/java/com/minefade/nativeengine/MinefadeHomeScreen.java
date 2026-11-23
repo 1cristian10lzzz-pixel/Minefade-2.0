@@ -1027,10 +1027,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
                         "touch_sensitivity_x", 35, 150, legacyTouch, "%"));
                 settingsCards.add(settingSlider("Sensibilidad vertical", "Velocidad de giro de arriba abajo.",
                         "touch_sensitivity_y", 35, 150, legacyTouch, "%"));
-                settingsCards.add(settingSlider("Zona muerta del joystick", "Filtra movimientos accidentales cerca del centro.",
-                        "joystick_deadzone", 5, 30, 12, "%"));
-                settingsCards.add(settingChoice("Tipo de controles", "Elige el esquema táctil inspirado en Bedrock.",
-                        "control_mode", new String[]{"Joystick clásico", "D-pad direccional", "Joystick + mira"}, 0));
+                // All worlds use the same four-direction D-pad.
                 settingsCards.add(settingSwitch("Salto automático", "Salta al avanzar contra obstáculos bajos si hay espacio libre.",
                         "auto_jump", true));
                 settingsCards.add(settingSwitch("Invertir eje vertical", "Invierte el movimiento arriba y abajo.",
@@ -1044,6 +1041,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
                             preferences.edit().putInt("touch_sensitivity", 100)
                                     .putInt("touch_sensitivity_x", 100).putInt("touch_sensitivity_y", 100)
                                     .putInt("joystick_deadzone", 12).putInt("control_mode", 0)
+                                    .putInt("minimap_shape", 0)
                                     .putBoolean("invert_look_y", false).putBoolean("left_handed_controls", false)
                                     .putBoolean("menu_haptics", true).apply();
                             showSettingsPage();
@@ -1051,6 +1049,8 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 break;
             case "interface":
                 settingsHeading(content, "INTERFAZ Y HUD", "Preferencias visuales de menús y pantalla de juego.");
+                settingsCards.add(settingChoice("Forma del minimapa", "Elige el recorte del mapa durante la partida.",
+                        "minimap_shape", new String[]{"Cuadrado", "Circular"}, 0));
                 settingsCards.add(settingSwitch("Animaciones de interfaz", "Entradas y transiciones suaves.",
                         "menu_animations", true));
                 settingsCards.add(settingSwitch("Mostrar información superior", "FPS, chunks y datos de estado en el HUD.",

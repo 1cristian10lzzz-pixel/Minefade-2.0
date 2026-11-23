@@ -406,7 +406,10 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                 float joystickDeadzone = preferences.getInt("joystick_deadzone", 12) / 100.0f;
                 boolean invertLookY = preferences.getBoolean("invert_look_y", false);
                 boolean leftHanded = preferences.getBoolean("left_handed_controls", false);
-                int controlMode = Math.max(0, Math.min(2, preferences.getInt("control_mode", 0)));
+                int controlMode = 0;
+                preferences.edit().putInt("control_mode", 0).apply();
+                int minimapShape = Math.max(0, Math.min(1, preferences.getInt("minimap_shape", 0)));
+                NativeBridge.nativeSetMinimapShape(minimapShape);
                 boolean showHudStats = preferences.getBoolean("show_hud_stats", true);
                 float hudScale = preferences.getInt("hud_scale", 100) / 100.0f;
                 NativeBridge.nativeSetGraphicsOptions(quality, renderDistance, waterWaves,
@@ -499,6 +502,13 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                     NativeBridge.nativeConsumeBlockEdits();
                 }
                 NativeBridge.nativeRender();
+                if (NativeBridge.nativeConsumeChatRequest()) {
+                    MinefadeSurfaceView.this.post(() -> {
+                        if (MinefadeSurfaceView.this.getContext() instanceof MainActivity) {
+                            ((MainActivity) MinefadeSurfaceView.this.getContext()).showCommandDialog();
+                        }
+                    });
+                }
                 if (NativeBridge.nativeConsumeEngineFailure()) {
                     nativeReady = false;
                     Log.e(TAG, "Native engine reported a recoverable render failure");

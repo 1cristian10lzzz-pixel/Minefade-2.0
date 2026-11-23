@@ -147,8 +147,8 @@ Java_com_minefade_nativeengine_NativeBridge_nativeRender(JNIEnv*, jclass) {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_minefade_nativeengine_NativeBridge_nativeConsumeEngineFailure(JNIEnv*, jclass) {
-    return gEngineFailure.exchange(false, std::memory_order_acq_rel) ? JNI_TRUE : JNI_FALSE;
+Java_com_minefade_nativeengine_NativeBridge_nativeConsumeChatRequest(JNIEnv*, jclass) {
+    return minefade::GetEngine().ConsumeChatRequest() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -244,8 +244,8 @@ Java_com_minefade_nativeengine_NativeBridge_nativeSetInputOptions(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_minefade_nativeengine_NativeBridge_nativeSetHudOptions(JNIEnv*, jclass, jboolean showStats) {
-    minefade::GetEngine().SetHudOptions(showStats == JNI_TRUE);
+Java_com_minefade_nativeengine_NativeBridge_nativeSetMinimapShape(JNIEnv*, jclass, jint shape) {
+    minefade::GetEngine().SetMinimapShape(static_cast<int>(shape));
 }
 
 extern "C" JNIEXPORT void JNICALL
