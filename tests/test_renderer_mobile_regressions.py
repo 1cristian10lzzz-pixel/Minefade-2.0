@@ -32,7 +32,9 @@ def test_gpu_mesh_is_swapped_only_after_both_layers_upload():
     assert "existing->second = staged;" in RENDERER
     failure_branch = RENDERER.split("if (!opaqueOk || !transparentOk)", 1)[1].split("staged.revision", 1)[0]
     assert "gpu.opaqueCount = 0" not in failure_branch
-    assert "GL_STREAM_DRAW" in RENDERER
+    assert "GL_DYNAMIC_DRAW" in RENDERER
+    assert "staged.minY = view.minY;" in RENDERER
+    assert "staged.maxY = view.maxY;" in RENDERER
 
 
 def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():

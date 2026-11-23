@@ -72,7 +72,7 @@ bool WorldMeshRenderer::UploadPass(GLuint& vao, GLuint& vbo,
             newCapacity = requiredBytes;
         }
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(newCapacity),
-                     nullptr, GL_STREAM_DRAW);
+                     nullptr, GL_DYNAMIC_DRAW);
         capacityBytes = newCapacity;
     }
     glBufferSubData(GL_ARRAY_BUFFER, 0,

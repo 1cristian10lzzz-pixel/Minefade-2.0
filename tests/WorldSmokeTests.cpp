@@ -296,6 +296,9 @@ int main() {
     // A partial opaque shape must not erase the entire neighbouring cube face.
     VoxelWorld shapeWorld(0x53484150u);
     shapeWorld.GenerateAround(8, 8, 0);
+    for (int z = 6; z <= 10; ++z)
+        for (int x = 6; x <= 11; ++x)
+            assert(shapeWorld.SetBlock(x, 50, z, BlockId::Air));
     assert(shapeWorld.SetBlock(8, 50, 8, BlockId::Stone));
     assert(shapeWorld.SetBlock(9, 50, 8, BlockId::StoneSlab));
     std::vector<WorldVertex> shapeMesh;

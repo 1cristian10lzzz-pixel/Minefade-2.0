@@ -53,8 +53,9 @@ def test_frustum_uses_real_mesh_height_bounds():
     assert "float maxY{0.0f};" in WORLD_H
     assert "range.minY=data.minY;" in WORLD
     assert "range.maxY=data.maxY;" in WORLD
-    assert "gpu.minY = view.minY;" in RENDERER
-    assert "gpu.maxY = view.maxY;" in RENDERER
+    assert "staged.minY = view.minY;" in RENDERER
+    assert "staged.maxY = view.maxY;" in RENDERER
+    assert "existing->second = staged;" in RENDERER
 
 
 def test_chunk_mesh_work_is_budgeted_and_nearby_first():

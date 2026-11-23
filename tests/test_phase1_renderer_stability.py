@@ -69,6 +69,8 @@ def test_gpu_upload_budget_and_dynamic_vbo_reuse_are_wired():
     assert "glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(newCapacity)" in RENDERER
     assert "glBufferSubData" in RENDERER
     assert "GL_DYNAMIC_DRAW" in RENDERER
+    assert "GpuChunk staged{};" in RENDERER
+    assert "existing->second = staged;" in RENDERER
     assert "GL_VERTEX_ARRAY_BINDING" in RENDERER
     assert "GL_ARRAY_BUFFER_BINDING" in RENDERER
     assert "glBindVertexArray(static_cast<GLuint>(previousVertexArray))" in RENDERER
