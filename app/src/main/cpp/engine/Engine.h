@@ -37,6 +37,10 @@ public:
     void SetModsDirectory(std::string path);
     std::string ExecuteCommand(const std::string& command);
     bool ConsumeExitRequest();
+    bool ConsumeChatRequest() noexcept {
+        return chatRequested_.exchange(false, std::memory_order_acq_rel);
+    }
+    void SetMinimapShape(int shape);
     std::uint32_t ConsumeSoundEvents();
     void SetMultiplayerMode(bool enabled, int playerSlot);
     void SetGraphicsOptions(int quality, int renderDistanceChunks, bool waterWaves, float fieldOfView, bool contactShadows);
@@ -60,6 +64,9 @@ private:
         double startedAt{0.0};
         bool uiHandled{false};
         bool joystick{false};
+        bool movementPad{false};
+        float movementX{0.0f};
+        float movementY{0.0f};
         bool moved{false};
         bool mining{false};
     };
@@ -80,6 +87,7 @@ private:
     void UploadMaesEntityMesh();
     void UploadItemMesh();
     void HandleUiAction(const std::string& action);
+    void UpdateTouchMovement();
     void SaveWorld();
     void LoadEnabledMods();
     void OpenStarterChest();
@@ -162,6 +170,7 @@ private:
     float pendingJoystickDeadzone_{0.12f};
     bool showHudStats_{true};
     bool pendingShowHudStats_{true};
+    int minimapShape_{0};
     int animationQuality_{2};
     int pendingAnimationQuality_{2};
     bool animationsEnabled_{true};
@@ -259,6 +268,7 @@ private:
     int framesSinceStats_{0};
     float fps_{0.0f};
     std::atomic_bool exitRequested_{false};
+    std::atomic_bool chatRequested_{false};
     std::atomic<std::uint32_t> soundEvents_{0};
     // Kept after GL cleanup so Java can show the exact native startup failure.
     std::string lastInitError_;

@@ -994,6 +994,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     paused_ = false;
     thirdPerson_ = false;
     ui_.SetPerspectiveEnabled(false);
+    ui_.SetMinimapShape(minimapShape_);
     ui_.SetChestButtonVisible(starterChestEnabled_ && !multiplayerMode_);
     RefreshInventoryUi();
     ENGINE_LOGI("World ready: %zu chunks, %d GPU vertices, seed=%u",
@@ -1711,28 +1712,79 @@ void Engine::Render() {
     glDisable(GL_SCISSOR_TEST);
 }
 
+void Engine::UpdateTouchMovement() {
+    float moveX = 0.0f;
+    float moveY = 0.0f;
+    for (const auto& entry : touches_) {
+        const TouchState& touch = entry.second;
+        if (!touch.movementPad) continue;
+        moveX += touch.movementX;
+        moveY += touch.movementY;
+    }
+    const float magnitude = std::sqrt(moveX * moveX + moveY * moveY);
+    if (magnitude > 1.0f) {
+        moveX /= magnitude;
+        moveY /= magnitude;
+    }
+    player_.SetMovement(std::clamp(moveX, -1.0f, 1.0f),
+                        std::clamp(moveY, -1.0f, 1.0f));
+}
+
 void Engine::Touch(int action, int pointerId, float x, float y) {
     constexpr int kDown = 0;
     constexpr int kUp = 1;
     constexpr int kMove = 2;
     constexpr int kCancel = 3;
-    const bool uiUnhandled = ui_.Touch(action, x, y);
 
+    if (action == kDown) {
+        float moveX = 0.0f;
+        float moveY = 0.0f;
+        if (ui_.MovementVectorAt(x, y, moveX, moveY)) {
+            TouchState state;
+            state.startX = state.lastX = x;
+            state.startY = state.lastY = y;
+            state.startedAt = ElapsedSeconds();
+            state.movementPad = true;
+            state.movementX = moveX;
+            state.movementY = moveY;
+            state.moved = true;
+            touches_[pointerId] = state;
+            UpdateTouchMovement();
+            return;
+        }
+    }
+
+    auto found = touches_.find(pointerId);
+    if (action != kDown && found == touches_.end()) return;
+    if (action != kDown && found != touches_.end() && found->second.movementPad) {
+        if (action == kMove) {
+            float moveX = 0.0f;
+            float moveY = 0.0f;
+            const bool inside = ui_.MovementVectorAt(x, y, moveX, moveY);
+            found->second.movementX = inside ? moveX : 0.0f;
+            found->second.movementY = inside ? moveY : 0.0f;
+            found->second.lastX = x;
+            found->second.lastY = y;
+            UpdateTouchMovement();
+        } else if (action == kUp || action == kCancel) {
+            touches_.erase(found);
+            UpdateTouchMovement();
+        }
+        return;
+    }
+
+    const bool uiUnhandled = ui_.Touch(action, x, y);
     if (action == kDown) {
         TouchState state;
         state.startX = state.lastX = x;
         state.startY = state.lastY = y;
         state.startedAt = ElapsedSeconds();
         state.uiHandled = !uiUnhandled;
-        state.joystick = uiUnhandled && ui_.IsInMovementPad(x, y);
-        state.mining = uiUnhandled && !state.joystick && gameMode_ != 2;
+        state.mining = uiUnhandled && gameMode_ != 2;
         touches_[pointerId] = state;
-        if (state.joystick) player_.SetMovement(0.0f, 0.0f);
         return;
     }
 
-    auto found = touches_.find(pointerId);
-    if (found == touches_.end()) return;
     TouchState& state = found->second;
     if (state.uiHandled) {
         if (action == kUp || action == kCancel) touches_.erase(found);
@@ -1740,58 +1792,30 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
     }
 
     if (action == kMove) {
-        if (state.joystick) {
-            const float dx = (x - state.startX) / 48.0f;
-            const float dy = (state.startY - y) / 48.0f;
-            const float magnitude = std::sqrt(dx * dx + dy * dy);
+        const float deltaX = x - state.lastX;
+        const float deltaY = y - state.lastY;
+        if (std::abs(x - state.startX) + std::abs(y - state.startY) > 7.0f) {
             state.moved = true;
-            if (magnitude <= joystickDeadzone_) {
-                player_.SetMovement(0.0f, 0.0f);
-            } else if (controlMode_ == 1) {
-                // D-pad mode quantises movement to four directions (including clean diagonals).
-                const float nx = dx / std::max(magnitude, 0.0001f);
-                const float ny = dy / std::max(magnitude, 0.0001f);
-                float moveX = std::abs(nx) > 0.34f ? (nx > 0.0f ? 1.0f : -1.0f) : 0.0f;
-                float moveY = std::abs(ny) > 0.34f ? (ny > 0.0f ? 1.0f : -1.0f) : 0.0f;
-                if (std::abs(nx) > std::abs(ny) * 1.65f) moveY = 0.0f;
-                else if (std::abs(ny) > std::abs(nx) * 1.65f) moveX = 0.0f;
-                player_.SetMovement(moveX, moveY);
-            } else {
-                // Analogue joystick: ease the usable range beyond the dead zone to [0, 1].
-                const float intensity = std::clamp(
-                    (magnitude - joystickDeadzone_) / (1.0f - joystickDeadzone_), 0.0f, 1.0f);
-                const float factor = intensity / std::max(magnitude, 0.0001f);
-                player_.SetMovement(dx * factor, dy * factor);
-            }
-        } else {
-            const float deltaX = x - state.lastX;
-            const float deltaY = y - state.lastY;
-            if (std::abs(x - state.startX) + std::abs(y - state.startY) > 7.0f) {
-                state.moved = true;
-                state.mining = false;
-            }
-            if (state.moved) {
-                const float verticalDirection = invertLookY_ ? -1.0f : 1.0f;
-                player_.Rotate(deltaX * lookSensitivityX_,
-                               deltaY * lookSensitivityY_ * verticalDirection);
-            }
+            state.mining = false;
+        }
+        if (state.moved && uiUnhandled) {
+            const float verticalDirection = invertLookY_ ? -1.0f : 1.0f;
+            player_.Rotate(deltaX * lookSensitivityX_,
+                           deltaY * lookSensitivityY_ * verticalDirection);
         }
         state.lastX = x;
         state.lastY = y;
     } else if (action == kUp || action == kCancel) {
-        if (state.joystick) {
-            player_.SetMovement(0.0f, 0.0f);
-        } else if (action == kUp && !state.moved &&
-                   ElapsedSeconds() - state.startedAt < 0.22) {
-            // A brief tap is reserved for placing the selected block. Mining requires
-            // a stationary hold; moving the finger turns the gesture into camera look.
+        if (action == kUp && !state.moved &&
+            ElapsedSeconds() - state.startedAt < 0.22) {
             const std::uint16_t selected = inventory_.SelectedItemId();
             Vec3 placed{};
-            if (gameMode_ != 2 && selected > 0 && world_.PlaceRay(ViewPosition(), ViewDirection(), 6.0f,
-                                                static_cast<BlockId>(selected), &placed)) {
+            if (gameMode_ != 2 && selected > 0 &&
+                world_.PlaceRay(ViewPosition(), ViewDirection(), 6.0f,
+                                static_cast<BlockId>(selected), &placed)) {
                 pendingBlockEdits_.insert(pendingBlockEdits_.end(), {
-                    static_cast<int>(placed.x), static_cast<int>(placed.y), static_cast<int>(placed.z),
-                    static_cast<int>(selected)
+                    static_cast<int>(placed.x), static_cast<int>(placed.y),
+                    static_cast<int>(placed.z), static_cast<int>(selected)
                 });
                 if (gameMode_ != 1) inventory_.ConsumeSelected();
                 RefreshInventoryUi();
@@ -1826,7 +1850,9 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
 
 void Engine::HandleUiAction(const std::string& action) {
     soundEvents_.fetch_or(4u, std::memory_order_release);
-    if (action == "perspective") {
+    if (action == "chat") {
+        chatRequested_.store(true, std::memory_order_release);
+    } else if (action == "perspective") {
         thirdPerson_ = !thirdPerson_;
         ui_.SetPerspectiveEnabled(thirdPerson_);
         RebuildEntityMesh();
@@ -3141,7 +3167,8 @@ void Engine::SetInputOptions(float sensitivityX, float sensitivityY, float joyst
     lookSensitivityY_ = pendingLookSensitivityY_;
     invertLookY_ = pendingInvertLookY_;
     leftHandedControls_ = pendingLeftHandedControls_;
-    controlMode_ = std::clamp(controlMode, 0, 2);
+    // Keep the legacy argument for old preferences; the visible scheme is now one D-pad.
+    controlMode_ = 0;
     pendingAutoJump_ = autoJump;
     autoJump_ = autoJump;
     if (!autoJump_) autoJumpCooldown_ = 0.0f;
@@ -3153,6 +3180,11 @@ void Engine::SetHudOptions(bool showStats) {
     pendingShowHudStats_ = showStats;
     showHudStats_ = showStats;
     ui_.SetStatusVisible(showHudStats_);
+}
+
+void Engine::SetMinimapShape(int shape) {
+    minimapShape_ = std::clamp(shape, 0, 1);
+    ui_.SetMinimapShape(minimapShape_);
 }
 
 void Engine::SetAnimationOptions(int quality, bool enabled) {

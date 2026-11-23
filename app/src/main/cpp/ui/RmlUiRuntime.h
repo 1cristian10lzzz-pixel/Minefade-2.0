@@ -26,6 +26,7 @@ public:
     void SetBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int width, int height);
     bool Touch(int action, float x, float y);
     bool IsInMovementPad(float x, float y) const;
+    bool MovementVectorAt(float x, float y, float& moveX, float& moveY) const;
     void UpdateAndRender();
     void SetStatus(const std::string& status);
     void SetLeftHanded(bool enabled) { leftHanded_ = enabled; }
@@ -39,6 +40,7 @@ public:
     void SetChestContents(const std::string& markup);
     void SetChatMessage(const std::string& message);
     void SetMinimap(const std::string& gridMarkup, const std::string& coordinates);
+    void SetMinimapShape(int shape);
     void SetChestButtonVisible(bool visible);
     void SetQuickbarSlot(int slot, const std::string& label, bool selected);
     void SetInventoryContents(const std::string& markup);
@@ -100,6 +102,7 @@ private:
     bool mouseCaptured_{false};
     bool leftHanded_{false};
     int controlMode_{0};
+    int minimapShape_{0};
     bool showStats_{true};
     std::string lastError_;
 };

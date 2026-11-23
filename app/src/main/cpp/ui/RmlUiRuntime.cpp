@@ -117,7 +117,7 @@ body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-
 #brand { display: none; }
 #stats { color: #f3f8fb; font-size: 9dp; background: #1c344acb; padding: 7dp 10dp; border: 1dp #d7e8ef66; border-radius: 10dp; text-shadow: none; }
 #minimap { position: absolute; z-index: 5; top: 54dp; left: 10dp; width: 88dp; padding: 5dp; background: #1a344bc9; border: 1dp #d7e8ef88; border-radius: 10dp; }
-#minimap-grid { width: 78dp; height: 78dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1dp; }
+#minimap-grid { width: 78dp; height: 78dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1dp; border: 1dp #e2f0f4aa; border-radius: 5dp; overflow: hidden; background: #173047; }
 .map-tile { width: 10dp; height: 10dp; border-radius: 1dp; }
 .map-low { background: #6c8064; }
 .map-mid { background: #52805b; }
@@ -155,14 +155,12 @@ button:active { background: #47789b; }
 .inventory-row { display: flex; align-items: center; gap: 7dp; color: #e0e8ed; font-size: 12dp; padding: 5dp 2dp; border-bottom: 1dp #43576a; }
 .inventory-icon { width: 19dp; height: 19dp; }
 #inventory, #pause, #perspective { width: 38dp; min-width: 38dp; height: 38dp; padding: 0dp; text-align: center; background: #142638cc; border: 1dp #d8e6ee77; border-radius: 11dp; }
-#movement-pad { position: absolute; z-index: 6; left: 14dp; bottom: 54dp; width: 108dp; height: 108dp; border-radius: 54dp; border: 2dp #d9e9a4dd; background: #1b3850cc; pointer-events: none; }
-#movement-pad-inner { position: absolute; left: 35dp; top: 35dp; width: 36dp; height: 36dp; border-radius: 18dp; border: 2dp #e7f4c4ee; background: #739d88dd; }
-#movement-pad-cross { display: none; position: absolute; left: 52dp; top: 15dp; width: 2dp; height: 78dp; background: #ffffff44; }
-.pad-arrow { display: none; position: absolute; width: 24dp; height: 22dp; text-align: center; color: #f2f8f5; font-size: 14dp; font-weight: bold; text-shadow: 0dp 1dp 2dp #071321; }
-#move-up { left: 42dp; top: 3dp; }
-#move-down { left: 42dp; bottom: 3dp; }
-#move-left { left: 3dp; top: 42dp; }
-#move-right { right: 3dp; top: 42dp; }
+#movement-pad { position: absolute; z-index: 6; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; background: transparent; border: none; pointer-events: none; }
+.pad-arrow { position: absolute; width: 42dp; height: 42dp; display: flex; align-items: center; justify-content: center; text-align: center; color: #f5fbff; font-size: 21dp; font-weight: bold; text-shadow: 0dp 1dp 2dp #071321; border: 1dp #d7e8ef88; border-radius: 11dp; background: #1b3850dd; }
+#move-up { left: 45dp; top: 2dp; }
+#move-down { left: 45dp; bottom: 2dp; }
+#move-left { left: 2dp; top: 45dp; }
+#move-right { right: 2dp; top: 45dp; }
 #jump { position: absolute; z-index: 7; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; padding: 2dp; text-align: center; border-radius: 18dp; background: #2f6479f2; border: 2dp #d9e9a4ee; color: #ffffff; font-size: 20dp; }
 #attack { position: absolute; z-index: 7; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; padding: 1dp; text-align: center; border-radius: 16dp; background: #7d3d36ee; border: 2dp #f0c1a1cc; color: #fff7f0; font-size: 17dp; }
 #crouch { position: absolute; z-index: 7; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; padding: 1dp; text-align: center; border-radius: 14dp; background: #20394ce8; border: 1dp #c3d8e888; color: #f5fbff; font-size: 17dp; }
@@ -210,6 +208,7 @@ button:active { background: #47789b; }
   <div class="actions">
     <div id="stats">FPS -- · Chunks --</div>
     <button id="starter-chest-open">COFRE</button>
+    <button id="chat">✉</button>
     <button id="inventory">▦</button>
     <button id="perspective">◉</button>
     <button id="pause">Ⅱ</button>
@@ -218,9 +217,8 @@ button:active { background: #47789b; }
 <div id="minimap"><div id="minimap-grid"></div><div id="minimap-coords">X 0 · Z 0</div></div>
 <div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div></div>
 <div id="movement-pad">
-  <div id="movement-pad-cross"></div><div id="movement-pad-inner"></div>
-  <div id="move-up" class="pad-arrow">▲</div><div id="move-down" class="pad-arrow">▼</div>
-  <div id="move-left" class="pad-arrow">◀</div><div id="move-right" class="pad-arrow">▶</div>
+  <div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div>
+  <div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div>
 </div>
 <div id="hint"></div>
 <div id="quickbar">
@@ -369,21 +367,6 @@ bool RmlUiRuntime::Initialise(int width, int height, float displayDensity, Actio
         if (statsPosition != std::string::npos)
             hudMarkup.replace(statsPosition, statsRule.size(), "#stats { display: none; color:");
     }
-    if (controlMode_ == 1) {
-        const std::string padCross = "#movement-pad-cross { display: none;";
-        const std::string arrows = ".pad-arrow { display: none;";
-        const std::string padInner = "#movement-pad-inner { position: absolute;";
-        if (std::size_t position = hudMarkup.find(padCross); position != std::string::npos)
-            hudMarkup.replace(position, padCross.size(), "#movement-pad-cross { display: block;");
-        if (std::size_t position = hudMarkup.find(arrows); position != std::string::npos)
-            hudMarkup.replace(position, arrows.size(), ".pad-arrow { display: block;");
-        if (std::size_t position = hudMarkup.find(padInner); position != std::string::npos)
-            hudMarkup.replace(position, padInner.size(), "#movement-pad-inner { display: none; position: absolute;");
-    } else if (controlMode_ == 2) {
-        const std::string crosshair = "#crosshair { display: none;";
-        if (std::size_t position = hudMarkup.find(crosshair); position != std::string::npos)
-            hudMarkup.replace(position, crosshair.size(), "#crosshair { display: block;");
-    }
     if (leftHanded_) {
         const auto replaceStyle = [&hudMarkup](const std::string& from, const std::string& to) {
             const std::size_t position = hudMarkup.find(from);
@@ -471,6 +454,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
         }
     }
 
+    AttachAction("chat", "chat");
     AttachAction("inventory", "inventory");
     AttachAction("inventory-close", "inventory-close");
     AttachAction("crafting-open", "crafting-open");
@@ -501,6 +485,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     document_->Show();
     context_->Update();
     ready_ = true;
+    SetMinimapShape(minimapShape_);
     __android_log_print(ANDROID_LOG_INFO, kTag, "RmlUi %s initialised with OpenGL ES backend", Rml::GetVersion().c_str());
     return true;
 }
@@ -559,7 +544,7 @@ void RmlUiRuntime::Resize(int width, int height) {
 }
 
 bool RmlUiRuntime::IsInMovementPad(float x, float y) const {
-    const float padSize = 108.0f * density_;
+    const float padSize = 132.0f * density_;
     const float padMargin = 14.0f * density_;
     const float padBottom = 54.0f * density_;
     const float padLeft = leftHanded_
@@ -567,6 +552,27 @@ bool RmlUiRuntime::IsInMovementPad(float x, float y) const {
     const float padTop = static_cast<float>(height_) - padBottom - padSize;
     return x >= padLeft && x <= padLeft + padSize &&
            y >= padTop && y <= static_cast<float>(height_) - padBottom;
+}
+
+bool RmlUiRuntime::MovementVectorAt(float x, float y, float& moveX, float& moveY) const {
+    moveX = 0.0f;
+    moveY = 0.0f;
+    if (!IsInMovementPad(x, y)) return false;
+    const float size = 132.0f * density_;
+    const float margin = 14.0f * density_;
+    const float bottom = 54.0f * density_;
+    const float left = leftHanded_ ? static_cast<float>(width_) - margin - size : margin;
+    const float top = static_cast<float>(height_) - bottom - size;
+    const float button = 42.0f * density_;
+    const float offset = 45.0f * density_;
+    const auto hit = [x,y,button](float l, float t) {
+        return x >= l && x <= l + button && y >= t && y <= t + button;
+    };
+    if (hit(left + offset, top + 2.0f * density_)) moveY = 1.0f;
+    else if (hit(left + offset, top + size - button - 2.0f * density_)) moveY = -1.0f;
+    else if (hit(left + 2.0f * density_, top + offset)) moveX = -1.0f;
+    else if (hit(left + size - button - 2.0f * density_, top + offset)) moveX = 1.0f;
+    return true;
 }
 
 bool RmlUiRuntime::Touch(int action, float x, float y) {
@@ -603,7 +609,17 @@ void RmlUiRuntime::UpdateAndRender() {
 }
 
 void RmlUiRuntime::SetControlMode(int mode) {
-    controlMode_ = std::clamp(mode, 0, 2);
+    (void)mode;
+    controlMode_ = 0;
+}
+
+void RmlUiRuntime::SetMinimapShape(int shape) {
+    minimapShape_ = std::clamp(shape, 0, 1);
+    if (document_ == nullptr) return;
+    if (Rml::Element* grid = document_->GetElementById("minimap-grid")) {
+        grid->SetProperty("border-radius", minimapShape_ == 1 ? "50%" : "5dp");
+        grid->SetProperty("overflow", "hidden");
+    }
 }
 
 void RmlUiRuntime::SetStatus(const std::string& status) {
