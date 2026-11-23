@@ -429,7 +429,7 @@ public final class MainActivity extends Activity {
         dialog.show();
     }
 
-    private void showCommandDialog() {
+    void showCommandDialog() {
         if (surfaceView == null || !engineReady) {
             Toast.makeText(this, "El mundo todavía se está preparando.", Toast.LENGTH_SHORT).show();
             return;
