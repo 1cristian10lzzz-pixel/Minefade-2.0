@@ -37,6 +37,13 @@ def test_gpu_mesh_is_swapped_only_after_both_layers_upload():
     assert "staged.maxY = view.maxY;" in RENDERER
 
 
+def test_lod2_keeps_fluid_heightfield_and_transparent_water():
+    assert "fluidHeights" in WORLD
+    assert "def->shape == BlockShape::Fluid" in WORLD
+    assert "AddFace(result.transparent, fluidTop, fluidShade" in WORLD
+    assert "farWaterSurfaceVisible" in NATIVE_TESTS
+
+
 def test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation():
     assert "worldRenderer_.TransparentVertexCount() > 0" in ENGINE
     assert "result.lod>=2 &&" in WORLD
@@ -47,5 +54,6 @@ if __name__ == "__main__":
     test_partial_opaque_voxels_do_not_cull_whole_cube_faces()
     test_mobile_single_chunk_meshing_uses_immutable_background_snapshot()
     test_gpu_mesh_is_swapped_only_after_both_layers_upload()
+    test_lod2_keeps_fluid_heightfield_and_transparent_water()
     test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation()
     print("Minefade renderer/mobile chunk regression checks passed.")

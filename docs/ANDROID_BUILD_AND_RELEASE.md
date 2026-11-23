@@ -39,7 +39,7 @@ Si la ejecución está fallida, el APK no se publica. Abre los logs de la ejecuc
 
 ## Versionado y firma
 
-El módulo conserva `applicationId = com.minefade.nativeengine`, `versionCode = 27` y `versionName = 2.2.3`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
+El módulo conserva `applicationId = com.minefade.nativeengine`, `versionCode = 28` y `versionName = 2.2.4`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
 
 El APK de CI es debug y está firmado por la clave debug que genera cada runner. Es instalable como primera instalación, pero **no se garantiza que Android permita instalarlo encima de otra copia de Minefade**: para actualizaciones sucesivas sin desinstalar se necesita una clave de distribución persistente y privada. Nunca guardar un keystore o contraseñas en Git.
 

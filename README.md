@@ -22,6 +22,11 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - RmlUi 6.3 y FreeType 2.13.3.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
 
+## Actualización técnica 2.2.4 — recuperación de fluidos LOD2
+- El LOD lejano usa alturas separadas de terreno y fluidos y vuelve a construir las superficies de agua/lava.
+- Se añade una prueba nativa para un bloque de agua en LOD2.
+- La firma persistente de distribución sigue siendo necesaria para una actualización in-place.
+
 ## Actualización técnica 2.2.3 — renderer voxel y carga de terreno
 
 - La oclusión de bloques ahora respeta formas parciales: una losa, escalera o valla ya no oculta una cara completa del cubo vecino.
@@ -54,7 +59,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Diagnóstico del HUD con chunks pendientes y recursos GPU residentes/pendientes.
 - GitHub Actions valida los pull requests y no crea commits automáticos de recursos.
 
-**Versión Android:** versionCode 27 / versionName 2.2.3. Es una compilación de validación hasta probarla en dispositivos Android reales.
+**Versión Android:** versionCode 28 / versionName 2.2.4. Es una compilación de validación hasta probarla en dispositivos Android reales.
 
 ## Sistemas presentes
 

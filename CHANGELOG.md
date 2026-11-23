@@ -1,5 +1,10 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.2.4 — recuperación de agua y lava lejana
+- El LOD2 conserva alturas independientes para terreno y fluidos; agua y lava vuelven a dibujarse en la capa transparente.
+- Se incorpora una regresión nativa que verifica que un bloque de agua mantiene su superficie en un chunk distante.
+- Android versionCode 28 / versionName 2.2.4. La firma persistente y las pruebas físicas siguen pendientes.
+
 ## Actualización 2.2.3 — renderizado voxel y fluidez de chunks
 - Se corrige la oclusión de caras: solo un cubo opaco completo puede ocultar una cara entera; losas, escaleras, vallas y otras formas parciales dejan visibles las partes no cubiertas.
 - La construcción de la malla de un chunk se traslada a una tarea de fondo con snapshots de solo lectura; el resultado se publica únicamente si la revisión del chunk sigue vigente.

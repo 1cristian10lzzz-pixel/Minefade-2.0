@@ -281,6 +281,30 @@ int main() {
     assert(largestFarMesh > 0u);
     assert(largestFarMesh <= 7680u); // 256 top quads + at most four exposed sides per column.
 
+    // Water must remain visible in a distant LOD2 chunk.
+    for (int y = 0; y < VoxelWorld::kWorldHeight; ++y)
+        if (y != 20 && y != 34)
+            assert(lodWorld.SetBlock(64, y, 8, BlockId::Air));
+    assert(lodWorld.SetBlock(64, 20, 8, BlockId::Stone));
+    assert(lodWorld.SetBlock(64, 34, 8, BlockId::Water));
+    std::vector<WorldVertex> farTransparentMesh;
+    lodWorld.BuildMesh(lodMesh, 8, 8, 4, &farTransparentMesh, &lodRanges);
+    bool farWaterSurfaceVisible = false;
+    for (const ChunkMeshRange& range : lodRanges) {
+        if (range.chunkX != 4 || range.chunkZ != 0 || range.lodLevel != 2) continue;
+        for (std::size_t i = range.transparentFirst;
+             i < range.transparentFirst + range.transparentCount; ++i) {
+            const WorldVertex& vertex = farTransparentMesh[i];
+            if (std::abs(vertex.y - 35.0f) < 0.001f && vertex.r < -0.5f &&
+                vertex.x >= 64.0f && vertex.x <= 65.0f &&
+                vertex.z >= 8.0f && vertex.z <= 9.0f) {
+                farWaterSurfaceVisible = true;
+                break;
+            }
+        }
+    }
+    assert(farWaterSurfaceVisible);
+
     // Frustum AABB tests use a simple [-4,+4] cube around the camera.
     CameraFrustum testFrustum;
     testFrustum.valid = true;

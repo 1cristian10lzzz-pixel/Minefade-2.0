@@ -1139,28 +1139,40 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         result.lod = chunkDistance<=2 ? 0 : (chunkDistance==3 ? 1 : 2);
         result.outerBorder = radiusInChunks >= 0 && chunkDistance >= radiusInChunks;
 
-        // Distant-Horizons-inspired far terrain path: store a compact height/material
-        // view for distant chunks instead of retaining every hidden voxel face.
+        // Far LOD keeps separate height fields for terrain and fluids. Water and
+        // lava use BlockShape::Fluid (not Cube); omitting them here exposed the sky
+        // across distant oceans and rivers even though their chunks were generated.
         if (result.lod >= 2) {
             constexpr int kGridSize = kChunkSize + 2;
             std::array<int, kGridSize * kGridSize> heights{};
             std::array<BlockId, kGridSize * kGridSize> surfaceBlocks{};
+            std::array<int, kGridSize * kGridSize> fluidHeights{};
+            std::array<BlockId, kGridSize * kGridSize> fluidBlocks{};
             heights.fill(-1);
             surfaceBlocks.fill(BlockId::Air);
+            fluidHeights.fill(-1);
+            fluidBlocks.fill(BlockId::Air);
             const auto gridIndex = [](int x, int z) {
                 return static_cast<std::size_t>((z + 1) * kGridSize + (x + 1));
             };
             for (int z = -1; z <= kChunkSize; ++z) {
                 for (int x = -1; x <= kChunkSize; ++x) {
+                    const std::size_t cell = gridIndex(x, z);
                     for (int y = kWorldHeight - 1; y >= 0; --y) {
                         const BlockId candidate = getMeshBlock(baseX + x, y, baseZ + z);
                         if (candidate == BlockId::Air) continue;
                         const BlockDefinition* def = GetBlockDefinition(candidate);
-                        if (def == nullptr || def->shape != BlockShape::Cube ||
-                            (def->flags & (BlockOpaque | BlockFluid | BlockTransparent)) == 0u) continue;
-                        heights[gridIndex(x, z)] = y;
-                        surfaceBlocks[gridIndex(x, z)] = candidate;
-                        break;
+                        if (def == nullptr) continue;
+                        if (fluidHeights[cell] < 0 && def->shape == BlockShape::Fluid &&
+                            (def->flags & (BlockFluid | BlockTransparent)) != 0u) {
+                            fluidHeights[cell] = y;
+                            fluidBlocks[cell] = candidate;
+                        } else if (heights[cell] < 0 && def->shape == BlockShape::Cube &&
+                            (def->flags & (BlockOpaque | BlockTransparent)) != 0u) {
+                            heights[cell] = y;
+                            surfaceBlocks[cell] = candidate;
+                        }
+                        if (fluidHeights[cell] >= 0 && heights[cell] >= 0) break;
                     }
                 }
             }
@@ -1168,35 +1180,71 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
                 for (int x = 0; x < kChunkSize; ++x) {
                     const std::size_t cell = gridIndex(x, z);
                     const int topY = heights[cell];
-                    if (topY < 0) continue;
-                    const BlockId topBlock = surfaceBlocks[cell];
-                    const BlockDefinition* def = GetBlockDefinition(topBlock);
-                    if (def == nullptr) continue;
-                    const bool transparent = (def->flags & (BlockTransparent | BlockFluid)) != 0u;
-                    std::vector<WorldVertex>& target = transparent ? result.transparent : result.opaque;
+                    if (topY >= 0) {
+                        const BlockDefinition* def = GetBlockDefinition(surfaceBlocks[cell]);
+                        if (def != nullptr) {
+                            const float wx = static_cast<float>(baseX + x);
+                            const float wz = static_cast<float>(baseZ + z);
+                            const float top = static_cast<float>(topY + 1);
+                            const std::array<Vec3,4> topPoints{{
+                                {wx,top,wz+1.0f},{wx+1.0f,top,wz+1.0f},
+                                {wx+1.0f,top,wz},{wx,top,wz}
+                            }};
+                            AddFace(result.opaque, topPoints, FaceShade(2), TileForFace(*def, 2));
+                            for (int face : {0,1,4,5}) {
+                                int nx=x, nz=z;
+                                if (face==0) ++nx;
+                                else if (face==1) --nx;
+                                else if (face==4) ++nz;
+                                else --nz;
+                                const int neighborY = heights[gridIndex(nx,nz)];
+                                if (neighborY >= topY) continue;
+                                const float bottom = static_cast<float>(neighborY + 1);
+                                std::array<Vec3,4> points{};
+                                for (std::size_t v=0;v<4;++v) {
+                                    const Vec3& p=faces[static_cast<std::size_t>(face)][v];
+                                    points[v]={wx+p.x, bottom+p.y*(top-bottom), wz+p.z};
+                                }
+                                AddFace(result.opaque, points, FaceShade(face), TileForFace(*def, face));
+                            }
+                        }
+                    }
+                    const int fluidY = fluidHeights[cell];
+                    if (fluidY < 0 || fluidY <= topY) continue;
+                    const BlockId fluidBlock = fluidBlocks[cell];
+                    const BlockDefinition* fluidDef = GetBlockDefinition(fluidBlock);
+                    if (fluidDef == nullptr) continue;
+                    const bool lava = fluidBlock == BlockId::Lava || fluidBlock == BlockId::FlowingLava;
+                    const std::array<float,3> fluidShade = lava
+                        ? std::array<float,3>{-2.0f,0.0f,0.0f}
+                        : std::array<float,3>{-1.0f,0.0f,0.0f};
                     const float wx = static_cast<float>(baseX + x);
                     const float wz = static_cast<float>(baseZ + z);
-                    const float top = static_cast<float>(topY + 1);
-                    const std::array<Vec3,4> topPoints{{
+                    const float top = static_cast<float>(fluidY + 1);
+                    const std::array<Vec3,4> fluidTop{{
                         {wx,top,wz+1.0f},{wx+1.0f,top,wz+1.0f},
                         {wx+1.0f,top,wz},{wx,top,wz}
                     }};
-                    AddFace(target, topPoints, FaceShade(2), TileForFace(*def, 2));
+                    AddFace(result.transparent, fluidTop, fluidShade, TileForFace(*fluidDef, 2));
                     for (int face : {0,1,4,5}) {
                         int nx=x, nz=z;
                         if (face==0) ++nx;
                         else if (face==1) --nx;
                         else if (face==4) ++nz;
                         else --nz;
-                        const int neighborY = heights[gridIndex(nx,nz)];
-                        if (neighborY >= topY) continue;
-                        const float bottom = static_cast<float>(neighborY + 1);
+                        const std::size_t neighbourCell = gridIndex(nx,nz);
+                        const int neighbourFluid = fluidHeights[neighbourCell];
+                        if (neighbourFluid >= fluidY) continue;
+                        const int neighbourSolid = heights[neighbourCell];
+                        const int bottomY = std::max({topY, neighbourFluid, neighbourSolid});
+                        if (bottomY >= fluidY) continue;
+                        const float bottom = static_cast<float>(bottomY + 1);
                         std::array<Vec3,4> points{};
                         for (std::size_t v=0;v<4;++v) {
                             const Vec3& p=faces[static_cast<std::size_t>(face)][v];
                             points[v]={wx+p.x, bottom+p.y*(top-bottom), wz+p.z};
                         }
-                        AddFace(target, points, FaceShade(face), TileForFace(*def, face));
+                        AddFace(result.transparent, points, fluidShade, TileForFace(*fluidDef, face));
                     }
                 }
             }
