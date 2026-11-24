@@ -30,7 +30,7 @@ public:
     void Resize(int width, int height);
     void Render();
     void Touch(int action, int pointerId, float x, float y);
-    void Pause();
+    bool Pause();
     void Resume();
     void SetStoragePath(std::string path);
     void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed);
