@@ -60,12 +60,13 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
     }
 
     /** Pause and save on the GL thread; Engine/world state is not thread-safe. */
-    public void pauseNativeEngine() {
-        if (!nativeReady) return;
+    public boolean pauseNativeEngine() {
+        if (!nativeReady) return true;
         final CountDownLatch completed = new CountDownLatch(1);
+        final boolean[] saveSucceeded = {false};
         queueEvent(() -> {
             try {
-                NativeBridge.nativePause();
+                saveSucceeded[0] = NativeBridge.nativePause();
             } catch (LinkageError | RuntimeException error) {
                 Log.e(TAG, "Could not pause native engine", error);
             } finally {
@@ -75,10 +76,17 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         try {
             if (!completed.await(5, TimeUnit.SECONDS)) {
                 Log.w(TAG, "Timed out waiting for native save on GL thread");
+                return false;
             }
+            if (!saveSucceeded[0]) {
+                Log.e(TAG, "Native engine reported that the world could not be saved");
+                return false;
+            }
+            return true;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             Log.w(TAG, "Interrupted while waiting for native pause", interrupted);
+            return false;
         }
     }
 
