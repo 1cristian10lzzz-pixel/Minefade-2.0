@@ -123,7 +123,7 @@ def test_secondary_pointer_over_hud_button_is_consumed_not_sent_to_world():
     assert "context_->GetElementAtPoint" in branch
     assert 'hit->Closest("button")' in branch
     assert "return hit == nullptr || hit->Closest(\"button\") == nullptr;" in branch
-    assert "return true;" in RML[owner:normal_press]
+    # The handler returns false for HUD buttons (consumed) and true only\n    # for non-UI touches; it must not synthesize a normal mouse-down here.\n    assert "context_->ProcessMouseButtonDown" not in branch
 
 
 if __name__ == "__main__":
