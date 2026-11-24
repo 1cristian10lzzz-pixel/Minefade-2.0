@@ -141,6 +141,10 @@ private:
     int multiplayerSlot_{0};
     bool pendingMultiplayerMode_{false};
     int pendingMultiplayerSlot_{0};
+    int pendingGameMode_{0};
+    bool pendingAllowCheats_{false};
+    bool pendingStarterChestEnabled_{false};
+    std::uint32_t pendingWorldSeed_{0x4D464445u};
     int graphicsQuality_{1};
     int pendingGraphicsQuality_{1};
     int renderDistanceChunks_{2};
