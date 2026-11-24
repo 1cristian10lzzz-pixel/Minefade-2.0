@@ -435,32 +435,221 @@ public final class MinefadeHomeScreen extends FrameLayout {
     }
 
     private void showWorldActions(WorldManager.WorldInfo world, View anchor) {
-        PopupMenu menu = new PopupMenu(getContext(),anchor);
-        menu.getMenu().add("Renombrar");
-        menu.getMenu().add("Eliminar mundo");
-        menu.setOnMenuItemClickListener(item -> {
-            if ("Renombrar".contentEquals(item.getTitle())) {
-                EditText name = new EditText(getContext());
-                name.setSingleLine(true);
-                name.setText(world.name);
-                name.setSelection(name.length());
-                new AlertDialog.Builder(getContext()).setTitle("Renombrar mundo")
-                        .setView(name).setNegativeButton("Cancelar",null)
-                        .setPositiveButton("Guardar",(dialog,which) -> {
-                            if (worldManager.renameWorld(world,name.getText().toString())) showWorlds();
-                        }).show();
-            } else {
-                new AlertDialog.Builder(getContext()).setTitle("Eliminar mundo")
-                        .setMessage("Se eliminará «"+world.name+"» y su partida guardada. No se puede deshacer.")
-                        .setNegativeButton("Cancelar",null)
-                        .setPositiveButton("Eliminar",(dialog,which) -> {
-                            worldManager.deleteWorld(world);
-                            showWorlds();
-                        }).show();
+        haptic(anchor);
+        showWorldSettings(world);
+    }
+
+    private void showWorldSettings(WorldManager.WorldInfo world) {
+        if (world == null) return;
+        LinearLayout root = pageRoot("CONFIGURAR MUNDO", world.name);
+
+        LinearLayout tabBar = row();
+        LinearLayout.LayoutParams tabBarParams = new LinearLayout.LayoutParams(-1, dp(36));
+        tabBarParams.topMargin = dp(6);
+        root.addView(tabBar, tabBarParams);
+
+        ScrollView settingsScroll = new ScrollView(getContext());
+        settingsScroll.setFillViewport(false);
+        settingsScroll.setVerticalScrollBarEnabled(true);
+        settingsScroll.setClipToPadding(false);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        scrollParams.topMargin = dp(7);
+        root.addView(settingsScroll, scrollParams);
+
+        LinearLayout panelHost = column();
+        panelHost.setPadding(dp(12), dp(11), dp(12), dp(12));
+        panelHost.setBackground(shape(new int[]{0xee1b3347, 0xee102235}, 15, 0x665a7a8f));
+        settingsScroll.addView(panelHost, new ScrollView.LayoutParams(-1, -2));
+
+        LinearLayout gamePanel = column();
+        LinearLayout worldPanel = column();
+        LinearLayout cheatsPanel = column();
+        panelHost.addView(gamePanel, new LinearLayout.LayoutParams(-1, -2));
+        panelHost.addView(worldPanel, new LinearLayout.LayoutParams(-1, -2));
+        panelHost.addView(cheatsPanel, new LinearLayout.LayoutParams(-1, -2));
+        worldPanel.setVisibility(View.GONE);
+        cheatsPanel.setVisibility(View.GONE);
+
+        gamePanel.addView(text("AJUSTES GENERALES", 9, 0xffd9eaf0, true));
+        TextView nameLabel = text("NOMBRE DEL MUNDO", 8, 0xffc7d9e2, true);
+        LinearLayout.LayoutParams nameLabelParams = new LinearLayout.LayoutParams(-1, -2);
+        nameLabelParams.topMargin = dp(12);
+        gamePanel.addView(nameLabel, nameLabelParams);
+        EditText name = new EditText(getContext());
+        name.setSingleLine(true);
+        name.setText(world.name);
+        name.setSelection(name.length());
+        name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(28)});
+        name.setTextSize(12);
+        name.setTextColor(white);
+        name.setHintTextColor(muted);
+        name.setPadding(dp(10), 0, dp(10), 0);
+        name.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, dp(42));
+        nameParams.topMargin = dp(5);
+        gamePanel.addView(name, nameParams);
+
+        TextView modeLabel = text("MODO DE JUEGO", 8, 0xffc7d9e2, true);
+        LinearLayout.LayoutParams modeLabelParams = new LinearLayout.LayoutParams(-1, -2);
+        modeLabelParams.topMargin = dp(13);
+        gamePanel.addView(modeLabel, modeLabelParams);
+        Spinner mode = new Spinner(getContext());
+        ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(),
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"Supervivencia", "Creativo", "Aventura"});
+        mode.setAdapter(modeAdapter);
+        mode.setSelection(Math.max(WorldManager.SURVIVAL, Math.min(WorldManager.ADVENTURE, world.gameMode)));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(-1, dp(42));
+        modeParams.topMargin = dp(5);
+        gamePanel.addView(mode, modeParams);
+        TextView modeNote = text("El cambio se aplicará la próxima vez que entres en este mundo.",
+                8, muted, false);
+        modeNote.setMaxLines(2);
+        LinearLayout.LayoutParams modeNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        modeNoteParams.topMargin = dp(7);
+        gamePanel.addView(modeNote, modeNoteParams);
+
+        worldPanel.addView(text("GENERACIÓN DEL MUNDO", 9, 0xffd9eaf0, true));
+        TextView seedLabel = text("SEMILLA ORIGINAL", 8, 0xffc7d9e2, true);
+        LinearLayout.LayoutParams seedLabelParams = new LinearLayout.LayoutParams(-1, -2);
+        seedLabelParams.topMargin = dp(12);
+        worldPanel.addView(seedLabel, seedLabelParams);
+        TextView seedValue = text(Long.toString(world.seed), 10, white, true);
+        seedValue.setPadding(dp(10), 0, dp(10), 0);
+        seedValue.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
+        worldPanel.addView(seedValue, new LinearLayout.LayoutParams(-1, dp(40)));
+        TextView seedNote = text("La semilla no se puede cambiar en una partida ya generada.",
+                8, muted, false);
+        LinearLayout.LayoutParams seedNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        seedNoteParams.topMargin = dp(5);
+        worldPanel.addView(seedNote, seedNoteParams);
+
+        TextView typeLabel = text("TIPO DE MUNDO", 8, 0xffc7d9e2, true);
+        LinearLayout.LayoutParams typeLabelParams = new LinearLayout.LayoutParams(-1, -2);
+        typeLabelParams.topMargin = dp(14);
+        worldPanel.addView(typeLabel, typeLabelParams);
+        TextView typeValue = text(world.flatWorld ? "Mundo plano · Classic Flat" : "Mundo infinito",
+                10, world.flatWorld ? 0xffb9f27c : white, true);
+        typeValue.setPadding(dp(10), 0, dp(10), 0);
+        typeValue.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
+        LinearLayout.LayoutParams typeValueParams = new LinearLayout.LayoutParams(-1, dp(40));
+        typeValueParams.topMargin = dp(5);
+        worldPanel.addView(typeValue, typeValueParams);
+        TextView typeNote = text("El tipo y las capas del terreno quedan fijados al crear el mundo para proteger las construcciones existentes.",
+                8, muted, false);
+        typeNote.setMaxLines(3);
+        LinearLayout.LayoutParams typeNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        typeNoteParams.topMargin = dp(5);
+        worldPanel.addView(typeNote, typeNoteParams);
+        CheckBox chest = new CheckBox(getContext());
+        chest.setText("Cofre de bonificación");
+        chest.setTextSize(9);
+        chest.setTextColor(white);
+        chest.setButtonTintList(ColorStateList.valueOf(0xffa9ee70));
+        chest.setChecked(world.starterChest);
+        chest.setEnabled(false);
+        LinearLayout.LayoutParams chestParams = new LinearLayout.LayoutParams(-1, dp(42));
+        chestParams.topMargin = dp(13);
+        worldPanel.addView(chest, chestParams);
+        TextView chestNote = text("El cofre de bonificación solo se configura al crear la partida.",
+                8, muted, false);
+        worldPanel.addView(chestNote, new LinearLayout.LayoutParams(-1, -2));
+
+        cheatsPanel.addView(text("TRUCOS Y COMANDOS", 9, 0xffd9eaf0, true));
+        CheckBox cheats = new CheckBox(getContext());
+        cheats.setText("Permitir trucos y comandos");
+        cheats.setTextSize(9);
+        cheats.setTextColor(white);
+        cheats.setButtonTintList(ColorStateList.valueOf(0xffffc46e));
+        cheats.setChecked(world.allowCheats);
+        LinearLayout.LayoutParams cheatsParams = new LinearLayout.LayoutParams(-1, dp(44));
+        cheatsParams.topMargin = dp(11);
+        cheatsPanel.addView(cheats, cheatsParams);
+        TextView cheatsHint = text("Al activar esta opción podrás usar comandos en esta partida. El cambio se aplicará al volver a entrar.",
+                8, muted, false);
+        cheatsHint.setMaxLines(3);
+        cheatsPanel.addView(cheatsHint, new LinearLayout.LayoutParams(-1, -2));
+
+        final LinearLayout[] panels = {gamePanel, worldPanel, cheatsPanel};
+        final TextView[] tabs = new TextView[3];
+        final String[] labels = {"JUEGO", "MUNDO", "TRUCOS"};
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            TextView tab = text(labels[i], 8, i == 0 ? white : muted, true);
+            tab.setGravity(Gravity.CENTER);
+            tab.setBackground(shape(i == 0
+                    ? new int[]{0xff395b49, 0xff20483a}
+                    : new int[]{0xff20384b, 0xff142638}, 9,
+                    i == 0 ? 0xff95d780 : 0x66536f83));
+            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, -1, 1f);
+            if (i > 0) tabParams.leftMargin = dp(6);
+            tabBar.addView(tab, tabParams);
+            tabs[i] = tab;
+            tab.setOnClickListener(v -> {
+                for (int j = 0; j < panels.length; j++) {
+                    panels[j].setVisibility(j == index ? View.VISIBLE : View.GONE);
+                    tabs[j].setBackground(shape(j == index
+                            ? new int[]{0xff395b49, 0xff20483a}
+                            : new int[]{0xff20384b, 0xff142638}, 9,
+                            j == index ? 0xff95d780 : 0x66536f83));
+                    tabs[j].setTextColor(j == index ? white : muted);
+                }
+                settingsScroll.scrollTo(0, 0);
+                haptic(v);
+            });
+        }
+
+        LinearLayout footer = row();
+        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, dp(42));
+        footerParams.topMargin = dp(7);
+        root.addView(footer, footerParams);
+        TextView delete = text("ELIMINAR", 8, 0xffffc3b7, true);
+        delete.setGravity(Gravity.CENTER);
+        delete.setBackground(shape(new int[]{0xff59362f, 0xff3d2829}, 10, 0xffb98276));
+        footer.addView(delete, new LinearLayout.LayoutParams(0, -1, 0.78f));
+        delete.setOnClickListener(v -> new AlertDialog.Builder(getContext())
+                .setTitle("Eliminar mundo")
+                .setMessage("Se eliminará «" + world.name + "» y su partida guardada. No se puede deshacer.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Eliminar", (dialog, which) -> {
+                    worldManager.deleteWorld(world);
+                    showWorlds();
+                }).show());
+
+        TextView save = actionButton("GUARDAR", () -> {
+            if (!worldManager.updateWorldSettings(world, name.getText().toString(),
+                    mode.getSelectedItemPosition(), cheats.isChecked(), world.starterChest)) {
+                new AlertDialog.Builder(getContext()).setTitle("No se pudieron guardar los cambios")
+                        .setMessage("Comprueba el espacio disponible e inténtalo otra vez.")
+                        .setPositiveButton("Aceptar", null).show();
+                return;
             }
-            return true;
+            showWorlds();
         });
-        menu.show();
+        save.setTextSize(8);
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, -1, 1f);
+        saveParams.leftMargin = dp(6);
+        footer.addView(save, saveParams);
+
+        TextView play = actionButton("JUGAR", () -> {
+            String updatedName = name.getText().toString();
+            if (!worldManager.updateWorldSettings(world, updatedName,
+                    mode.getSelectedItemPosition(), cheats.isChecked(), world.starterChest)) {
+                new AlertDialog.Builder(getContext()).setTitle("No se pudieron guardar los cambios")
+                        .setMessage("No se cambiará de mundo para proteger tus datos.")
+                        .setPositiveButton("Aceptar", null).show();
+                return;
+            }
+            WorldManager.WorldInfo updated = null;
+            for (WorldManager.WorldInfo candidate : worldManager.listWorlds()) {
+                if (candidate.id.equals(world.id)) { updated = candidate; break; }
+            }
+            if (updated != null && listener != null) listener.onPlayWorld(updated);
+        });
+        play.setTextSize(8);
+        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(0, -1, 1.05f);
+        playParams.leftMargin = dp(6);
+        footer.addView(play, playParams);
     }
 
     private void showCreateWorld() {
