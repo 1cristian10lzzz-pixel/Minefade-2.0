@@ -43,7 +43,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         setPreserveEGLContextOnPause(true);
         setRenderer(new EngineRenderer(context, soundEffects, displayDensity,
                 multiplayerMode, playerSlot, storagePath, modsDirectory, worldSeed,
-                gameMode, allowCheats, starterChest, multiplayer));
+                gameMode, allowCheats, starterChest, flatWorld, multiplayer));
         setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         setFocusable(true);
         setFocusableInTouchMode(true);
@@ -385,6 +385,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         private final int gameMode;
         private final boolean allowCheats;
         private final boolean starterChest;
+        private final boolean flatWorld;
         private final LanMultiplayerService multiplayer;
 
         EngineRenderer(Context context, SoundEffects soundEffects, float displayDensity,
@@ -403,6 +404,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             this.gameMode = Math.max(0, Math.min(2, gameMode));
             this.allowCheats = allowCheats;
             this.starterChest = starterChest;
+            this.flatWorld = flatWorld;
             this.multiplayer = multiplayer;
         }
 
@@ -419,7 +421,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                 // Set mode and storage on the same GL thread as nativeInit/render.
                 NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
                 NativeBridge.nativeSetStoragePath(storagePath);
-                NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed);
+                NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld);
                 NativeBridge.nativeSetModsDirectory(modsDirectory);
                 int quality = Math.max(0, Math.min(2, preferences.getInt("graphics_quality", 1)));
                 int renderDistance = Math.max(1, Math.min(3,
