@@ -2684,7 +2684,7 @@ void Engine::RefreshCraftingUi() {
     ui_.SetCraftingContents(markup);
 }
 
-void Engine::SaveWorld() {
+bool Engine::SaveWorld() {
     if (multiplayerMode_) return; // LAN sessions are transient until full host-world persistence is added.
     if (storagePath_.empty()) {
         ENGINE_LOGE("Cannot save: Android private storage path has not been supplied");
