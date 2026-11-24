@@ -459,7 +459,6 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     }
 
     AttachAction("chat", "chat");
-    AttachAction("chat", "chat");
     AttachAction("inventory", "inventory");
     AttachAction("inventory-close", "inventory-close");
     AttachAction("crafting-open", "crafting-open");
