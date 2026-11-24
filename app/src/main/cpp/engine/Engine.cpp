@@ -2685,10 +2685,10 @@ void Engine::RefreshCraftingUi() {
 }
 
 bool Engine::SaveWorld() {
-    if (multiplayerMode_) return; // LAN sessions are transient until full host-world persistence is added.
+    if (multiplayerMode_) return true; // LAN sessions are transient until full host-world persistence is added.
     if (storagePath_.empty()) {
         ENGINE_LOGE("Cannot save: Android private storage path has not been supplied");
-        return;
+        return false;
     }
     // Persistence errors must never be reported as a graphics/world startup failure.
     // A user should still be able to enter and play while the storage problem is visible
@@ -2696,6 +2696,7 @@ bool Engine::SaveWorld() {
     try {
         if (!world_.Save(storagePath_, player_.position, inventory_.counts)) {
             ENGINE_LOGE("Failed to save world to %s", storagePath_.c_str());
+            return false;
         } else {
             ENGINE_LOGI("World saved to private app storage");
             {
@@ -2816,14 +2817,17 @@ bool Engine::SaveWorld() {
         ENGINE_LOGE("World save raised an exception: %s", error.what());
     } catch (...) {
         ENGINE_LOGE("World save raised an unknown exception");
+        return false;
     }
+    return true;
 }
 
 bool Engine::Pause() {
-    if (!ready_) return;
-    SaveWorld();
+    if (!ready_) return true;
+    const bool saved = SaveWorld();
     paused_ = true;
     player_.SetMovement(0.0f, 0.0f);
+    return saved;
 }
 
 void Engine::Resume() {
