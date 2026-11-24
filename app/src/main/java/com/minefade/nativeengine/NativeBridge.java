@@ -17,7 +17,7 @@ public final class NativeBridge {
     public static native boolean nativeConsumeEngineFailure();
     public static native boolean nativeConsumeChatRequest();
     public static native void nativeTouch(int action, int pointerId, float x, float y);
-    public static native void nativePause();
+    public static native boolean nativePause();
     public static native void nativeResume();
     public static native void nativeSetStoragePath(String path);
     public static native void nativeSetWorldOptions(int gameMode, boolean allowCheats, boolean starterChest, long seed);
