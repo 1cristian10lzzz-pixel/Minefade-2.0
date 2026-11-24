@@ -464,38 +464,55 @@ public final class MinefadeHomeScreen extends FrameLayout {
     }
 
     private void showCreateWorld() {
-        LinearLayout root = pageRoot("CREAR MUNDO", "Configura tu mundo por secciones.");
+        LinearLayout root = pageRoot("NUEVO MUNDO", "Configura tu partida antes de entrar.");
+
+        TextView intro = text("ELIGE CÓMO QUIERES JUGAR. TUS AJUSTES SE GUARDAN CON ESTE MUNDO.",
+                8, 0xffb6cbd7, true);
+        LinearLayout.LayoutParams introParams = new LinearLayout.LayoutParams(-1, dp(18));
+        introParams.leftMargin = dp(6);
+        introParams.topMargin = dp(2);
+        root.addView(intro, introParams);
+
         LinearLayout tabBar = row();
-        tabBar.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams tabBarParams = new LinearLayout.LayoutParams(-1, dp(38));
+        LinearLayout.LayoutParams tabBarParams = new LinearLayout.LayoutParams(-1, dp(36));
         tabBarParams.topMargin = dp(5);
         root.addView(tabBar, tabBarParams);
 
-        ScrollView scroll = new ScrollView(getContext());
-        scroll.setFillViewport(false);
-        scroll.setClipChildren(true);
-        scroll.setClipToPadding(true);
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
-        scrollParams.topMargin = dp(6);
-        root.addView(scroll, scrollParams);
+        LinearLayout workspace = row();
+        LinearLayout.LayoutParams workspaceParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        workspaceParams.topMargin = dp(7);
+        root.addView(workspace, workspaceParams);
 
-        LinearLayout card = column();
-        card.setPadding(dp(12), dp(12), dp(12), dp(14));
-        card.setBackground(shape(new int[]{0xff1a3043, 0xff102235}, 15, 0x66516e83));
-        scroll.addView(card, new ScrollView.LayoutParams(-1, -2));
+        ScrollView settingsScroll = new ScrollView(getContext());
+        settingsScroll.setFillViewport(true);
+        settingsScroll.setVerticalScrollBarEnabled(true);
+        settingsScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        settingsScroll.setClipToPadding(false);
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(0, -1, 1.36f);
+        settingsParams.rightMargin = dp(8);
+        workspace.addView(settingsScroll, settingsParams);
 
+        LinearLayout settingsCard = column();
+        settingsCard.setPadding(dp(12), dp(11), dp(12), dp(12));
+        settingsCard.setBackground(shape(new int[]{0xee1b3347, 0xee102235}, 15, 0x665a7a8f));
+        settingsScroll.addView(settingsCard, new ScrollView.LayoutParams(-1, -2));
+
+        FrameLayout panelHost = new FrameLayout(getContext());
+        settingsCard.addView(panelHost, new LinearLayout.LayoutParams(-1, -2));
         LinearLayout general = column();
         LinearLayout advanced = column();
         LinearLayout tricks = column();
-        FrameLayout panelHost = new FrameLayout(getContext());
-        card.addView(panelHost, new LinearLayout.LayoutParams(-1, -2));
         panelHost.addView(general, new FrameLayout.LayoutParams(-1, -2));
         panelHost.addView(advanced, new FrameLayout.LayoutParams(-1, -2));
         panelHost.addView(tricks, new FrameLayout.LayoutParams(-1, -2));
         advanced.setVisibility(View.GONE);
         tricks.setVisibility(View.GONE);
 
-        general.addView(text("NOMBRE DEL MUNDO", 9, 0xffd8eaf0, true));
+        LinearLayout summary = column();
+        summary.setPadding(dp(10), dp(10), dp(10), dp(10));
+        summary.setBackground(shape(new int[]{0xdd172d40, 0xdd102235}, 15, 0x66536f83));
+        workspace.addView(summary, new LinearLayout.LayoutParams(0, -1, 0.72f));
+
         EditText name = new EditText(getContext());
         name.setSingleLine(true);
         name.setText("Mi mundo");
@@ -503,122 +520,349 @@ public final class MinefadeHomeScreen extends FrameLayout {
         name.setTextColor(white);
         name.setHintTextColor(muted);
         name.setHint("Nombre de la partida");
+        name.setFilters(new android.text.InputFilter[]{
+                new android.text.InputFilter.LengthFilter(28)});
         name.setPadding(dp(10), 0, dp(10), 0);
         name.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, dp(44));
-        nameParams.topMargin = dp(6);
+
+        final int[] selectedMode = {WorldManager.SURVIVAL};
+        final LinearLayout[] modeCards = new LinearLayout[3];
+        final TextView[] modeTitles = new TextView[3];
+        final TextView[] modeIcons = new TextView[3];
+        final TextView[] modeDescriptions = new TextView[3];
+        final String[] modeNames = {"SUPERVIVENCIA", "CREATIVO", "AVENTURA"};
+        final String[] modeIconsText = {"⚒", "✦", "◆"};
+        final String[] modeShort = {
+                "Reúne recursos y sobrevive",
+                "Construye sin límites",
+                "Explora con restricciones"
+        };
+        final String[] modeLong = {
+                "Consigue materiales, fabrica herramientas y mantente con vida. Es la experiencia clásica de Minefade.",
+                "Accede a los recursos para construir y experimentar sin depender de la minería ni de la supervivencia.",
+                "Recorre el mundo y juega con las limitaciones propias del modo Aventura."
+        };
+
+        general.addView(text("CONFIGURACIÓN DEL JUEGO", 9, 0xffd9eaf0, true));
+        LinearLayout nameLabelRow = row();
+        LinearLayout.LayoutParams nameLabelParams = new LinearLayout.LayoutParams(-1, -2);
+        nameLabelParams.topMargin = dp(11);
+        general.addView(nameLabelRow, nameLabelParams);
+        nameLabelRow.addView(text("NOMBRE DEL MUNDO", 8, 0xffc7d9e2, true),
+                new LinearLayout.LayoutParams(0, -2, 1f));
+        nameLabelRow.addView(text("MÁX. 28", 7, muted, false));
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, dp(42));
+        nameParams.topMargin = dp(5);
         general.addView(name, nameParams);
 
-        TextView modeTitle = text("MODO DE JUEGO", 9, 0xffd8eaf0, true);
-        LinearLayout.LayoutParams modeTitleParams = new LinearLayout.LayoutParams(-1, -2);
-        modeTitleParams.topMargin = dp(14);
-        general.addView(modeTitle, modeTitleParams);
-        Spinner mode = new Spinner(getContext());
-        ArrayAdapter<String> modes = new ArrayAdapter<>(getContext(),
-                android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"Supervivencia", "Creativo", "Aventura"});
-        mode.setAdapter(modes);
-        mode.setSelection(WorldManager.SURVIVAL);
-        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(-1, dp(44));
-        modeParams.topMargin = dp(5);
-        general.addView(mode, modeParams);
-        TextView modeNote = text("Supervivencia para reunir recursos, Creativo para construir libremente o Aventura para explorar con restricciones.",
-                8, muted, false);
-        modeNote.setMaxLines(3);
-        LinearLayout.LayoutParams modeNoteParams = new LinearLayout.LayoutParams(-1, -2);
-        modeNoteParams.topMargin = dp(10);
-        general.addView(modeNote, modeNoteParams);
+        TextView modeHeading = text("MODO DE JUEGO", 8, 0xffc7d9e2, true);
+        LinearLayout.LayoutParams modeHeadingParams = new LinearLayout.LayoutParams(-1, -2);
+        modeHeadingParams.topMargin = dp(13);
+        general.addView(modeHeading, modeHeadingParams);
 
-        advanced.addView(text("SEMILLA DEL MUNDO", 9, 0xffd8eaf0, true));
+        LinearLayout modeRow = row();
+        LinearLayout.LayoutParams modeRowParams = new LinearLayout.LayoutParams(-1, dp(98));
+        modeRowParams.topMargin = dp(6);
+        general.addView(modeRow, modeRowParams);
+        for (int i = 0; i < modeNames.length; i++) {
+            final int modeIndex = i;
+            LinearLayout card = column();
+            card.setGravity(Gravity.CENTER);
+            card.setPadding(dp(5), dp(6), dp(5), dp(6));
+            card.setBackground(shape(i == 0
+                    ? new int[]{0xff385a48, 0xff1d4038}
+                    : new int[]{0xff20384b, 0xff15283a}, 11,
+                    i == 0 ? 0xffa9ee70 : 0x66536f83));
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -1, 1f);
+            if (i > 0) cardParams.leftMargin = dp(6);
+            modeRow.addView(card, cardParams);
+            modeCards[i] = card;
+
+            TextView icon = text(modeIconsText[i], 19,
+                    i == 0 ? 0xffc4f49a : 0xffa9c3d2, true);
+            icon.setGravity(Gravity.CENTER);
+            card.addView(icon, new LinearLayout.LayoutParams(-1, dp(25)));
+            modeIcons[i] = icon;
+
+            TextView title = text(modeNames[i], 7, white, true);
+            title.setGravity(Gravity.CENTER);
+            title.setMaxLines(1);
+            card.addView(title, new LinearLayout.LayoutParams(-1, dp(17)));
+            modeTitles[i] = title;
+
+            TextView description = text(modeShort[i], 6, 0xffb8cbd5, false);
+            description.setGravity(Gravity.CENTER);
+            description.setMaxLines(2);
+            card.addView(description, new LinearLayout.LayoutParams(-1, -2));
+            modeDescriptions[i] = description;
+            card.setOnClickListener(v -> {
+                selectedMode[0] = modeIndex;
+                updateModeCards(modeCards, modeTitles, modeIcons, modeDescriptions,
+                        selectedMode[0], modeNames, modeShort);
+                haptic(v);
+            });
+        }
+
+        TextView modeExplanation = text(modeLong[0], 8, muted, false);
+        modeExplanation.setMaxLines(3);
+        LinearLayout.LayoutParams modeExplanationParams = new LinearLayout.LayoutParams(-1, -2);
+        modeExplanationParams.topMargin = dp(7);
+        general.addView(modeExplanation, modeExplanationParams);
+
+        TextView worldBasics = text("El mundo se creará con un terreno nuevo y conservará esta configuración al volver a entrar.",
+                8, 0xffa9c2cf, false);
+        worldBasics.setMaxLines(2);
+        LinearLayout.LayoutParams worldBasicsParams = new LinearLayout.LayoutParams(-1, -2);
+        worldBasicsParams.topMargin = dp(11);
+        general.addView(worldBasics, worldBasicsParams);
+
+        advanced.addView(text("GENERACIÓN DEL MUNDO", 9, 0xffd9eaf0, true));
+        TextView seedLabel = text("SEMILLA", 8, 0xffc7d9e2, true);
+        LinearLayout.LayoutParams seedLabelParams = new LinearLayout.LayoutParams(-1, -2);
+        seedLabelParams.topMargin = dp(12);
+        advanced.addView(seedLabel, seedLabelParams);
+
+        LinearLayout seedRow = row();
+        LinearLayout.LayoutParams seedRowParams = new LinearLayout.LayoutParams(-1, dp(42));
+        seedRowParams.topMargin = dp(5);
+        advanced.addView(seedRow, seedRowParams);
         EditText seed = new EditText(getContext());
         seed.setSingleLine(true);
         seed.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        seed.setText(Long.toString(System.currentTimeMillis() / 1000L));
+        seed.setText(Long.toString(System.currentTimeMillis()));
         seed.setTextSize(11);
         seed.setTextColor(white);
         seed.setHintTextColor(muted);
-        seed.setHint("Introduce una semilla numérica");
+        seed.setHint("Semilla numérica");
         seed.setPadding(dp(10), 0, dp(10), 0);
         seed.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
-        LinearLayout.LayoutParams seedParams = new LinearLayout.LayoutParams(-1, dp(42));
-        seedParams.topMargin = dp(6);
-        advanced.addView(seed, seedParams);
+        seedRow.addView(seed, new LinearLayout.LayoutParams(0, -1, 1f));
+        TextView randomSeed = actionButton("ALEATORIA", () -> {
+            seed.setText(Long.toString(java.util.concurrent.ThreadLocalRandom.current().nextLong()));
+            seed.setSelection(seed.length());
+        });
+        randomSeed.setTextSize(7);
+        LinearLayout.LayoutParams randomSeedParams = new LinearLayout.LayoutParams(dp(86), -1);
+        randomSeedParams.leftMargin = dp(6);
+        seedRow.addView(randomSeed, randomSeedParams);
+
+        TextView seedHint = text("La semilla determina el terreno. Conserva el número para recrear un mundo con la misma generación.",
+                8, muted, false);
+        seedHint.setMaxLines(3);
+        LinearLayout.LayoutParams seedHintParams = new LinearLayout.LayoutParams(-1, -2);
+        seedHintParams.topMargin = dp(6);
+        advanced.addView(seedHint, seedHintParams);
 
         CheckBox chest = new CheckBox(getContext());
         chest.setText("Cofre inicial con recursos");
-        chest.setTextSize(10);
+        chest.setTextSize(9);
         chest.setTextColor(white);
         chest.setButtonTintList(ColorStateList.valueOf(0xffa9ee70));
         chest.setChecked(true);
-        LinearLayout.LayoutParams chestParams = new LinearLayout.LayoutParams(-1, dp(44));
-        chestParams.topMargin = dp(12);
+        LinearLayout.LayoutParams chestParams = new LinearLayout.LayoutParams(-1, dp(42));
+        chestParams.topMargin = dp(14);
         advanced.addView(chest, chestParams);
-        TextView seedNote = text("La semilla determina la generación del terreno. Usa el mismo valor para volver a generar el mismo mundo.",
+        TextView chestHint = text("Coloca un cofre cerca del punto de aparición al crear una partida nueva.",
                 8, muted, false);
-        seedNote.setMaxLines(3);
-        LinearLayout.LayoutParams seedNoteParams = new LinearLayout.LayoutParams(-1, -2);
-        seedNoteParams.topMargin = dp(5);
-        advanced.addView(seedNote, seedNoteParams);
+        advanced.addView(chestHint, new LinearLayout.LayoutParams(-1, -2));
 
+        tricks.addView(text("OPCIONES DE JUEGO", 9, 0xffd9eaf0, true));
         CheckBox cheats = new CheckBox(getContext());
         cheats.setText("Permitir trucos y comandos");
-        cheats.setTextSize(10);
+        cheats.setTextSize(9);
         cheats.setTextColor(white);
-        cheats.setButtonTintList(ColorStateList.valueOf(0xffa9ee70));
+        cheats.setButtonTintList(ColorStateList.valueOf(0xffffc46e));
         cheats.setChecked(false);
-        tricks.addView(cheats, new LinearLayout.LayoutParams(-1, dp(44)));
-        TextView cheatsNote = text("Activa esta opción para usar comandos durante la partida. Si la dejas desactivada, el mundo se crea sin trucos.",
+        LinearLayout.LayoutParams cheatsParams = new LinearLayout.LayoutParams(-1, dp(44));
+        cheatsParams.topMargin = dp(11);
+        tricks.addView(cheats, cheatsParams);
+        LinearLayout warning = column();
+        warning.setPadding(dp(10), dp(9), dp(10), dp(9));
+        warning.setBackground(shape(new int[]{0xff3b3326, 0xff282a2b}, 10, 0x88c69b57));
+        TextView warningTitle = text("TEN EN CUENTA", 8, 0xffffd18a, true);
+        warning.addView(warningTitle);
+        TextView warningText = text("Los comandos pueden cambiar las reglas de la partida. Mantén esta opción desactivada para jugar sin trucos.",
+                8, 0xffd8cbb4, false);
+        warningText.setMaxLines(3);
+        LinearLayout.LayoutParams warningTextParams = new LinearLayout.LayoutParams(-1, -2);
+        warningTextParams.topMargin = dp(4);
+        warning.addView(warningText, warningTextParams);
+        LinearLayout.LayoutParams warningParams = new LinearLayout.LayoutParams(-1, -2);
+        warningParams.topMargin = dp(8);
+        tricks.addView(warning, warningParams);
+        TextView cheatsNote = text("Esta preferencia queda guardada en los datos del mundo y se aplica al entrar.",
                 8, muted, false);
-        cheatsNote.setMaxLines(3);
-        tricks.addView(cheatsNote, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams cheatsNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        cheatsNoteParams.topMargin = dp(9);
+        tricks.addView(cheatsNote, cheatsNoteParams);
 
-        final View[] panels = {general, advanced, tricks};
+        TextView summaryTitle = text("VISTA PREVIA", 8, 0xffc4d8e1, true);
+        summary.addView(summaryTitle, new LinearLayout.LayoutParams(-1, dp(20)));
+        FrameLayout worldPreview = new FrameLayout(getContext());
+        worldPreview.setBackground(shape(new int[]{0xff315b4a, 0xff142b3a}, 12, 0x667fc18a));
+        worldPreview.setClipToOutline(true);
+        worldPreview.addView(new WorldMarkView(getContext()),
+                new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        previewParams.topMargin = dp(6);
+        previewParams.bottomMargin = dp(7);
+        summary.addView(worldPreview, previewParams);
+
+        TextView previewName = text("Mi mundo", 10, white, true);
+        previewName.setMaxLines(2);
+        summary.addView(previewName, new LinearLayout.LayoutParams(-1, -2));
+        TextView previewMode = text("SUPERVIVENCIA", 7, 0xffa9ee70, true);
+        LinearLayout.LayoutParams previewModeParams = new LinearLayout.LayoutParams(-1, -2);
+        previewModeParams.topMargin = dp(5);
+        summary.addView(previewMode, previewModeParams);
+        TextView previewSeed = text("SEMILLA  " + seed.getText(), 7, muted, false);
+        previewSeed.setMaxLines(2);
+        LinearLayout.LayoutParams previewSeedParams = new LinearLayout.LayoutParams(-1, -2);
+        previewSeedParams.topMargin = dp(5);
+        summary.addView(previewSeed, previewSeedParams);
+        View summaryDivider = new View(getContext());
+        summaryDivider.setBackgroundColor(0x66516d80);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
+        dividerParams.topMargin = dp(9);
+        dividerParams.bottomMargin = dp(7);
+        summary.addView(summaryDivider, dividerParams);
+        TextView previewOptions = text("Cofre inicial · Sin trucos", 7, 0xffb8cbd5, false);
+        previewOptions.setMaxLines(3);
+        summary.addView(previewOptions, new LinearLayout.LayoutParams(-1, -2));
+        TextView readyLabel = text("LISTO PARA CREAR", 7, 0xffa9ee70, true);
+        LinearLayout.LayoutParams readyParams = new LinearLayout.LayoutParams(-1, -2);
+        readyParams.topMargin = dp(9);
+        summary.addView(readyLabel, readyParams);
+
+        name.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String value = s.toString().trim();
+                previewName.setText(value.isEmpty() ? "Nuevo mundo" : value);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) { }
+        });
+        seed.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String value = s.toString().trim();
+                previewSeed.setText(value.isEmpty() ? "SEMILLA ALEATORIA" : "SEMILLA  " + value);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) { }
+        });
+        chest.setOnCheckedChangeListener((button, checked) ->
+                previewOptions.setText((checked ? "Cofre inicial" : "Sin cofre") +
+                        (cheats.isChecked() ? " · Trucos" : " · Sin trucos")));
+        cheats.setOnCheckedChangeListener((button, checked) ->
+                previewOptions.setText((chest.isChecked() ? "Cofre inicial" : "Sin cofre") +
+                        (checked ? " · Trucos" : " · Sin trucos")));
+
+        Runnable refreshModes = () -> updateModeCards(modeCards, modeTitles, modeIcons,
+                modeDescriptions, selectedMode[0], modeNames, modeShort);
+        // Replace the basic mode explanation with the full description for the chosen mode.
+        for (int i = 0; i < modeCards.length; i++) {
+            final int modeIndex = i;
+            modeCards[i].setOnClickListener(v -> {
+                selectedMode[0] = modeIndex;
+                refreshModes.run();
+                modeExplanation.setText(modeLong[modeIndex]);
+                previewMode.setText(modeNames[modeIndex]);
+                haptic(v);
+            });
+        }
+        refreshModes.run();
+
+        final LinearLayout[] panels = {general, advanced, tricks};
         final TextView[] tabs = new TextView[3];
-        String[] labels = {"GENERAL", "AVANZADO", "TRUCOS"};
-        for (int i = 0; i < labels.length; i++) {
+        String[] tabLabels = {"JUEGO", "MUNDO", "TRUCOS"};
+        for (int i = 0; i < tabLabels.length; i++) {
             final int index = i;
-            TextView tab = text(labels[i], 8, i == 0 ? white : muted, true);
+            TextView tab = text(tabLabels[i], 8, i == 0 ? white : muted, true);
             tab.setGravity(Gravity.CENTER);
             tab.setBackground(shape(i == 0
-                    ? new int[]{0xff39576d, 0xff29465b}
-                    : new int[]{0xff1b3043, 0xff142638}, 9, 0x66516e83));
-            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, dp(32), 1f);
-            if (i > 0) tabParams.leftMargin = dp(5);
+                    ? new int[]{0xff395b49, 0xff20483a}
+                    : new int[]{0xff20384b, 0xff142638}, 9,
+                    i == 0 ? 0xff95d780 : 0x66536f83));
+            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, -1, 1f);
+            if (i > 0) tabParams.leftMargin = dp(6);
             tabBar.addView(tab, tabParams);
             tabs[i] = tab;
             tab.setOnClickListener(v -> {
                 for (int j = 0; j < panels.length; j++) {
                     panels[j].setVisibility(j == index ? View.VISIBLE : View.GONE);
                     tabs[j].setBackground(shape(j == index
-                            ? new int[]{0xff39576d, 0xff29465b}
-                            : new int[]{0xff1b3043, 0xff142638}, 9, 0x66516e83));
+                            ? new int[]{0xff395b49, 0xff20483a}
+                            : new int[]{0xff20384b, 0xff142638}, 9,
+                            j == index ? 0xff95d780 : 0x66536f83));
                     tabs[j].setTextColor(j == index ? white : muted);
                 }
+                settingsScroll.scrollTo(0, 0);
                 haptic(v);
             });
         }
 
-        TextView create = actionButton("CREAR MUNDO", () -> {
+        LinearLayout footer = row();
+        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, dp(40));
+        footerParams.topMargin = dp(7);
+        root.addView(footer, footerParams);
+        TextView cancel = text("VOLVER A MUNDOS", 8, 0xffd6e3e9, true);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setBackground(shape(new int[]{0xff2a4255, 0xff1b3043}, 10, 0x665a778b));
+        footer.addView(cancel, new LinearLayout.LayoutParams(0, -1, 0.85f));
+        cancel.setOnClickListener(v -> { haptic(v); showWorlds(); });
+
+        TextView create = actionButton("CREAR Y JUGAR", () -> {
+            String worldName = name.getText().toString().trim();
+            if (worldName.isEmpty()) {
+                new AlertDialog.Builder(getContext()).setTitle("Falta el nombre")
+                        .setMessage("Escribe un nombre para identificar tu mundo antes de crearlo.")
+                        .setPositiveButton("Aceptar", null).show();
+                name.requestFocus();
+                return;
+            }
             long parsedSeed;
+            String rawSeed = seed.getText().toString().trim();
             try {
-                parsedSeed = Long.parseLong(seed.getText().toString().trim());
+                parsedSeed = rawSeed.isEmpty() ? System.currentTimeMillis() : Long.parseLong(rawSeed);
             } catch (NumberFormatException error) {
-                parsedSeed = System.currentTimeMillis();
+                new AlertDialog.Builder(getContext()).setTitle("Semilla no válida")
+                        .setMessage("La semilla debe ser un número entero de 64 bits. Puedes pulsar ALEATORIA para generar otra.")
+                        .setPositiveButton("Aceptar", null).show();
+                seed.requestFocus();
+                return;
             }
             WorldManager.WorldInfo world = worldManager.createWorld(
-                    name.getText().toString(), parsedSeed, mode.getSelectedItemPosition(),
-                    cheats.isChecked(), chest.isChecked());
+                    worldName, parsedSeed, selectedMode[0], cheats.isChecked(), chest.isChecked());
             if (world == null) {
-                new AlertDialog.Builder(getContext()).setTitle("No se pudo crear")
-                        .setMessage("No se pudo guardar la configuración del mundo. Comprueba el espacio disponible.")
+                new AlertDialog.Builder(getContext()).setTitle("No se pudo crear el mundo")
+                        .setMessage("Minefade no pudo guardar los datos iniciales. Comprueba el espacio disponible y vuelve a intentarlo.")
                         .setPositiveButton("Aceptar", null).show();
                 return;
             }
             if (listener != null) listener.onCreateWorld(world);
         });
-        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-1, dp(44));
-        createParams.topMargin = dp(7);
-        root.addView(create, createParams);
+        create.setTextSize(8);
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(0, -1, 1.15f);
+        createParams.leftMargin = dp(7);
+        footer.addView(create, createParams);
+    }
+
+    private void updateModeCards(LinearLayout[] cards, TextView[] titles, TextView[] icons,
+                                 TextView[] descriptions, int selected, String[] names,
+                                 String[] shortDescriptions) {
+        for (int i = 0; i < cards.length; i++) {
+            boolean active = i == selected;
+            cards[i].setBackground(shape(active
+                    ? new int[]{0xff385b49, 0xff1e4038}
+                    : new int[]{0xff20384b, 0xff15283a}, 11,
+                    active ? 0xffa9ee70 : 0x66536f83));
+            cards[i].setElevation(active ? dp(3) : 0);
+            titles[i].setTextColor(active ? 0xffd8ffb6 : white);
+            icons[i].setTextColor(active ? 0xffc4f49a : 0xffa9c3d2);
+            descriptions[i].setTextColor(active ? 0xffd0e3d2 : 0xffb8cbd5);
+            titles[i].setText(names[i]);
+            descriptions[i].setText(shortDescriptions[i]);
+        }
     }
 
     private void showModsPage() {
