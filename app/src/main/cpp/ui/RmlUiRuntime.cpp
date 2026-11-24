@@ -518,6 +518,7 @@ void RmlUiRuntime::Shutdown() {
     rmlInitialised_ = false;
     fontData_.clear();
     mouseCaptured_ = false;
+    mousePointerId_ = -1;
     renderer_.Shutdown();
 }
 
@@ -579,30 +580,38 @@ bool RmlUiRuntime::MovementVectorAt(float x, float y, float& moveX, float& moveY
     return true;
 }
 
-bool RmlUiRuntime::Touch(int action, float x, float y) {
-    // Movement-pad hit testing must also work while the emergency Android HUD
-    // is active and the RmlUi context is unavailable.
-    if (IsInMovementPad(x, y)) {
-        mouseCaptured_ = false;
-        return true;
-    }
+bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
     if (!ready_ || context_ == nullptr) return true;
+
+    // RmlUi's mouse API represents one pointer. Reserve it for the finger that
+    // actually pressed a HUD element; other fingers remain world/camera gestures.
+    // Otherwise a second finger can send MouseUp and release the first finger's
+    // button while the player is trying to move and operate the HUD simultaneously.
+    if (action == 0) {
+        if (mousePointerId_ >= 0 && mousePointerId_ != pointerId) return true;
+        const int px = static_cast<int>(x);
+        const int py = static_cast<int>(y);
+        const bool outside = context_->ProcessMouseMove(px, py, 0);
+        const bool buttonOutside = context_->ProcessMouseButtonDown(0, 0);
+        mouseCaptured_ = !(outside && buttonOutside);
+        mousePointerId_ = mouseCaptured_ ? pointerId : -1;
+        return !mouseCaptured_;
+    }
+
+    // An unrelated pointer must never move, press or release the virtual mouse.
+    if (mousePointerId_ != pointerId || !mouseCaptured_) return true;
 
     const int px = static_cast<int>(x);
     const int py = static_cast<int>(y);
     const bool outside = context_->ProcessMouseMove(px, py, 0);
-    if (action == 0) {
-        const bool buttonOutside = context_->ProcessMouseButtonDown(0, 0);
-        mouseCaptured_ = !(outside && buttonOutside);
-        return !mouseCaptured_;
-    }
     if (action == 1 || action == 3) {
         const bool buttonOutside = context_->ProcessMouseButtonUp(0, 0);
         const bool consumed = mouseCaptured_ || !outside || !buttonOutside;
         mouseCaptured_ = false;
+        mousePointerId_ = -1;
         return !consumed;
     }
-    return !mouseCaptured_ && outside;
+    return false;
 }
 
 void RmlUiRuntime::UpdateAndRender() {
