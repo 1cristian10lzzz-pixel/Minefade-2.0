@@ -717,6 +717,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     allowCheats_ = pendingAllowCheats_;
     starterChestEnabled_ = pendingStarterChestEnabled_;
     requestedWorldSeed_ = pendingWorldSeed_;
+    flatWorld_ = pendingFlatWorld_;
     graphicsQuality_ = pendingGraphicsQuality_;
     renderDistanceChunks_ = pendingRenderDistanceChunks_;
     waterWaves_ = pendingWaterWaves_;
@@ -834,7 +835,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 if (!backupError) ENGINE_LOGE("Unreadable world preserved at %s", backupPath.c_str());
                 else ENGINE_LOGE("Could not preserve unreadable world: %s", backupError.message().c_str());
             }
-            world_ = VoxelWorld(requestedWorldSeed_);
+            world_ = VoxelWorld(requestedWorldSeed_, flatWorld_);
             world_.GenerateAround(8, 8, 0);
             player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
         }
@@ -2843,7 +2844,7 @@ void Engine::SetStoragePath(std::string path) {
         storagePath_ = std::move(path) + "/worlds/default.mfworld";
 }
 
-void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed) {
+void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld) {
     // Setters are called before the next nativeInit, while the previous world may
     // still be ready/paused. Stage these values so they cannot be discarded or
     // applied to the outgoing world during a world transition.
@@ -2851,6 +2852,7 @@ void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, 
     pendingAllowCheats_ = allowCheats;
     pendingStarterChestEnabled_ = starterChest;
     pendingWorldSeed_ = seed == 0u ? 0x4D464445u : seed;
+    pendingFlatWorld_ = flatWorld;
 }
 
 void Engine::SetModsDirectory(std::string path) {
