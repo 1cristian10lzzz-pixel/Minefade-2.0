@@ -24,7 +24,7 @@ public:
     void Shutdown();
     void Resize(int width, int height);
     void SetBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int width, int height);
-    bool Touch(int action, float x, float y);
+    bool Touch(int action, int pointerId, float x, float y);
     bool IsInMovementPad(float x, float y) const;
     bool MovementVectorAt(float x, float y, float& moveX, float& moveY) const;
     void UpdateAndRender();
@@ -100,6 +100,7 @@ private:
     bool ready_{false};
     bool rmlInitialised_{false};
     bool mouseCaptured_{false};
+    int mousePointerId_{-1};
     bool leftHanded_{false};
     int controlMode_{0};
     int minimapShape_{0};
