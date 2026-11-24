@@ -74,3 +74,18 @@ def test_switching_worlds_never_saves_previous_session_to_new_world_path():
     assert "Shutdown(false);" in initialise
     assert "if (saveWorld && ready_) SaveWorld();" in shutdown
     assert "MainActivity has already paused and saved the previous world" in initialise
+
+
+def test_world_options_are_staged_while_previous_world_is_still_ready():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    initialisation = engine[engine.index("bool Engine::Initialise("):
+                            engine.index("void Engine::Shutdown(bool saveWorld)")]
+    setter = engine[engine.index("void Engine::SetWorldOptions("):
+                    engine.index("void Engine::SetModsDirectory(")]
+    for field in ("pendingGameMode_", "pendingAllowCheats_",
+                  "pendingStarterChestEnabled_", "pendingWorldSeed_"):
+        assert field in header
+        assert field in setter
+        assert field in initialisation
+    assert "if (ready_) return;" not in setter
