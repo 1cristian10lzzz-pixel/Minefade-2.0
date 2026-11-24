@@ -588,7 +588,13 @@ bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
     // Otherwise a second finger can send MouseUp and release the first finger's
     // button while the player is trying to move and operate the HUD simultaneously.
     if (action == 0) {
-        if (mousePointerId_ >= 0 && mousePointerId_ != pointerId) return true;
+        if (mousePointerId_ >= 0 && mousePointerId_ != pointerId) {
+            // A second finger landing on another HUD button is UI input, not
+            // a quick world tap (which could place a block on release).
+            Rml::Element* hit = context_->GetElementAtPoint(Rml::Vector2f(
+                static_cast<float>(x), static_cast<float>(y)));
+            return hit == nullptr || hit->Closest("button") == nullptr;
+        }
         const int px = static_cast<int>(x);
         const int py = static_cast<int>(y);
         const bool outside = context_->ProcessMouseMove(px, py, 0);
