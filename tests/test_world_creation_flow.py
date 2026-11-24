@@ -20,10 +20,11 @@ def test_create_world_screen_uses_clear_minecraft_inspired_sections():
 
 def test_world_creation_seed_is_explicit_and_invalid_values_are_not_silently_changed():
     home = (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
-    assert "ThreadLocalRandom.current().nextLong()" in home
+    assert "ThreadLocalRandom.current().nextInt()" in home
     assert "Long.parseLong(rawSeed)" in home
     assert "Semilla no válida" in home
-    assert "parsedSeed = rawSeed.isEmpty() ? System.currentTimeMillis() : Long.parseLong(rawSeed);" in home
+    assert "parsedSeed = rawSeed.isEmpty() ? System.currentTimeMillis() / 1000L : Long.parseLong(rawSeed);" in home
+    assert "parsedSeed < Integer.MIN_VALUE || parsedSeed > 0xffffffffL" in home
     assert "worldManager.createWorld(" in home
     assert "selectedMode[0], cheats.isChecked(), chest.isChecked()" in home
 
