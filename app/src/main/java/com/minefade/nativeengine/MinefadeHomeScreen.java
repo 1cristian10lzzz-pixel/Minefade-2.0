@@ -629,7 +629,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
         EditText seed = new EditText(getContext());
         seed.setSingleLine(true);
         seed.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        seed.setText(Long.toString(System.currentTimeMillis()));
+        seed.setText(Long.toString(System.currentTimeMillis() / 1000L));
         seed.setTextSize(11);
         seed.setTextColor(white);
         seed.setHintTextColor(muted);
@@ -638,7 +638,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
         seed.setBackground(shape(new int[]{0xff20394c, 0xff162b3d}, 10, 0x665c7a8c));
         seedRow.addView(seed, new LinearLayout.LayoutParams(0, -1, 1f));
         TextView randomSeed = actionButton("ALEATORIA", () -> {
-            seed.setText(Long.toString(java.util.concurrent.ThreadLocalRandom.current().nextLong()));
+            seed.setText(Integer.toString(java.util.concurrent.ThreadLocalRandom.current().nextInt()));
             seed.setSelection(seed.length());
         });
         randomSeed.setTextSize(7);
@@ -823,10 +823,13 @@ public final class MinefadeHomeScreen extends FrameLayout {
             long parsedSeed;
             String rawSeed = seed.getText().toString().trim();
             try {
-                parsedSeed = rawSeed.isEmpty() ? System.currentTimeMillis() : Long.parseLong(rawSeed);
+                parsedSeed = rawSeed.isEmpty() ? System.currentTimeMillis() / 1000L : Long.parseLong(rawSeed);
+                if (parsedSeed < Integer.MIN_VALUE || parsedSeed > 0xffffffffL) {
+                    throw new NumberFormatException("La semilla supera el rango de 32 bits del generador actual.");
+                }
             } catch (NumberFormatException error) {
                 new AlertDialog.Builder(getContext()).setTitle("Semilla no válida")
-                        .setMessage("La semilla debe ser un número entero de 64 bits. Puedes pulsar ALEATORIA para generar otra.")
+                        .setMessage("La generación actual admite semillas de 32 bits (de -2147483648 a 4294967295). Pulsa ALEATORIA para generar otra.")
                         .setPositiveButton("Aceptar", null).show();
                 seed.requestFocus();
                 return;
