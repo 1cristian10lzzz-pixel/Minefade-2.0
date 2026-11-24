@@ -110,10 +110,21 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(exitPoll);
         if (surfaceView != null) {
             try {
-                surfaceView.pauseNativeEngine();
+                if (!surfaceView.pauseNativeEngine()) {
+                    surfaceView.resumeNativeEngine();
+                    if (engineReady) mainHandler.post(exitPoll);
+                    Toast.makeText(this,
+                            "No se pudo confirmar el guardado. La partida sigue abierta; libera espacio e inténtalo otra vez.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
                 surfaceView.onPause();
             } catch (RuntimeException error) {
                 android.util.Log.w("Minefade", "Could not pause surface while returning home", error);
+                surfaceView.resumeNativeEngine();
+                if (engineReady) mainHandler.post(exitPoll);
+                Toast.makeText(this, "No se pudo guardar la partida. No se cerró el mundo.", Toast.LENGTH_LONG).show();
+                return;
             }
         }
         engineReady = false;
@@ -176,9 +187,22 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(exitPoll);
         if (surfaceView != null) {
             try {
-                surfaceView.pauseNativeEngine();
+                if (!surfaceView.pauseNativeEngine()) {
+                    surfaceView.resumeNativeEngine();
+                    if (engineReady) mainHandler.post(exitPoll);
+                    Toast.makeText(this,
+                            "No se pudo guardar el mundo actual. No se cambiará de partida para proteger tus datos.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
                 surfaceView.onPause();
-            } catch (RuntimeException ignored) { }
+            } catch (RuntimeException error) {
+                android.util.Log.e("Minefade", "World transition aborted because the current save could not be confirmed", error);
+                surfaceView.resumeNativeEngine();
+                if (engineReady) mainHandler.post(exitPoll);
+                Toast.makeText(this, "No se pudo guardar la partida actual. Inténtalo otra vez.", Toast.LENGTH_LONG).show();
+                return;
+            }
         }
         root.removeAllViews();
         homeScreen = null;
