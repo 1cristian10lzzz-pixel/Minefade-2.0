@@ -298,11 +298,12 @@ public final class MainActivity extends Activity {
             view.getLocationOnScreen(viewLocation);
             surfaceView.getLocationOnScreen(surfaceLocation);
             int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_MOVE) {
+            if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_CANCEL) {
+                final int pointerAction = action == MotionEvent.ACTION_CANCEL ? 3 : 2;
                 for (int i = 0; i < event.getPointerCount(); i++) {
                     float x = viewLocation[0] - surfaceLocation[0] + event.getX(i);
                     float y = viewLocation[1] - surfaceLocation[1] + event.getY(i);
-                    surfaceView.dispatchFallbackTouch(2, event.getPointerId(i), x, y);
+                    surfaceView.dispatchFallbackTouch(pointerAction, event.getPointerId(i), x, y);
                 }
                 return true;
             }
@@ -386,9 +387,10 @@ public final class MainActivity extends Activity {
     private boolean dispatchFallbackWorldTouch(MotionEvent event) {
         if (surfaceView == null || !engineReady) return true;
         final int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_MOVE) {
+        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_CANCEL) {
+            final int pointerAction = action == MotionEvent.ACTION_CANCEL ? 3 : 2;
             for (int i = 0; i < event.getPointerCount(); i++) {
-                surfaceView.dispatchFallbackTouch(2, event.getPointerId(i), event.getX(i), event.getY(i));
+                surfaceView.dispatchFallbackTouch(pointerAction, event.getPointerId(i), event.getX(i), event.getY(i));
             }
             return true;
         }
