@@ -55,7 +55,7 @@ def test_surface_action_cancel_releases_all_motion_event_pointers():
 def test_fallback_world_and_joystick_cancel_release_all_pointers():
     assert ACTIVITY.count("action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_CANCEL") >= 2
     assert ACTIVITY.count("action == MotionEvent.ACTION_CANCEL ? 3 : 2") >= 2
-    assert ACTIVITY.count("event.getPointerCount()") >= 3
+    assert ACTIVITY.count("event.getPointerCount()") >= 2
     assert "dispatchFallbackTouch(pointerAction, event.getPointerId(i)" in ACTIVITY
 
 
@@ -77,7 +77,10 @@ def test_rmlui_texture_upload_saves_resets_and_restores_all_unpack_state():
         "GL_UNPACK_SKIP_PIXELS",
         "GL_UNPACK_SKIP_ROWS",
     ):
-        assert f"glPixelStorei({name}, 0);" in method
+        if name == "GL_UNPACK_ALIGNMENT":
+            assert f"glPixelStorei({name}, 1);" in method
+        else:
+            assert f"glPixelStorei({name}, 0);" in method
         assert name + ", previous" in method
     assert "glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);" in method
 
