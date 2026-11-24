@@ -60,6 +60,16 @@ La especificación de GLES permite que row length y skip rows/pixels cambien có
 
 `tests/test_renderer_ui_touch_integrity.py` comprueba los IDs/acciones del HUD, cancelación de todos los dedos, propiedad del ratón virtual RmlUi y aislamiento del estado pixel-unpack. Son pruebas de código y contratos; no simulan los eventos en un Android real ni reemplazan una prueba de uso táctil.
 
+### 2.5 Creación, apertura y aislamiento de mundos
+
+- Se reemplazó el selector desplegable de modo por tarjetas visibles de Supervivencia, Creativo y Aventura, con pestañas Juego/Mundo/Trucos, resumen dinámico, semilla aleatoria y validación explícita. Se mantienen únicamente opciones conectadas al motor: nombre, modo, semilla, cofre inicial y comandos; no se exponen dificultad ni tipos de terreno que aún no tienen implementación.
+- Se detectó una contaminación de guardados al cambiar de partida: `MainActivity` pausaba y guardaba el mundo anterior, pero después asignaba la ruta del nuevo mundo antes de que `Engine::Initialise` llamara a `Shutdown()`. Como `Shutdown()` guardaba automáticamente cuando `ready_` seguía activo, podía escribir el mundo anterior dentro del archivo del mundo nuevo.
+- Corrección: `Engine::Shutdown(bool saveWorld = true)` permite liberar UI/GPU sin guardar; `Initialise` usa `Shutdown(false)`. La ruta anterior ya se persiste mediante `pauseNativeEngine()` en el hilo GL antes del cambio. Los cierres por error conservan el guardado por defecto.
+- Se corrigió además la migración de una partida antigua `default.mfworld`: ahora copia a un archivo temporal, sincroniza los bytes, publica el nuevo guardado, escribe `world.json` y solo entonces elimina el archivo original. Si falla la migración, conserva la fuente.
+- `tests/test_world_creation_flow.py` verifica la selección de opciones, el recorrido del path al motor, la carga de MFVOX001/002/003, la migración antigua y la prevención de guardado cruzado.
+
+Estas pruebas son de código y CI. La apertura visual, el render del primer chunk, el guardado/reapertura tras cambiar entre dos mundos y la recuperación del contexto EGL aún deben confirmarse en Android físico.
+
 ## 3. Auditoría de renderizado y plan técnico
 
 ### P0 — estabilidad de imagen y superficie
