@@ -210,7 +210,6 @@ button:active { background: #47789b; }
     <div id="stats">FPS -- · Chunks --</div>
     <button id="starter-chest-open">COFRE</button>
     <button id="chat">✉</button>
-    <button id="chat">✉</button>
     <button id="inventory">▦</button>
     <button id="perspective">◉</button>
     <button id="pause">Ⅱ</button>
