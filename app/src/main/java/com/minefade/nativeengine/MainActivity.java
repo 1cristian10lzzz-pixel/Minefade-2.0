@@ -224,11 +224,12 @@ public final class MainActivity extends Activity {
         int gameMode = world == null ? WorldManager.SURVIVAL : world.gameMode;
         boolean allowCheats = world != null && world.allowCheats;
         boolean starterChest = world != null && world.starterChest;
+        boolean flatWorld = world != null && world.flatWorld;
         String modsPath = new java.io.File(getFilesDir(), "mods").getAbsolutePath();
         surfaceView = new MinefadeSurfaceView(this, soundEffects,
                 getResources().getDisplayMetrics().density,
                 multiplayer, requestedPlayerSlot, worldPath, modsPath, worldSeed,
-                gameMode, allowCheats, starterChest,
+                gameMode, allowCheats, starterChest, flatWorld,
                 multiplayer ? lanMultiplayer : null,
                 new MinefadeSurfaceView.InitializationListener() {
                     @Override public void onEngineReady() {
