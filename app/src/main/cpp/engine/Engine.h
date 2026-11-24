@@ -26,7 +26,7 @@ public:
     bool IsUiReady() const;
     void FallbackAction(int action, bool pressed);
     void SetLastInitError(std::string message);
-    void Shutdown();
+    void Shutdown(bool saveWorld = true);
     void Resize(int width, int height);
     void Render();
     void Touch(int action, int pointerId, float x, float y);
