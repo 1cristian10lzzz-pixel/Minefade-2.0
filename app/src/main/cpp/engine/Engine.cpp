@@ -1773,7 +1773,7 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
         return;
     }
 
-    const bool uiUnhandled = ui_.Touch(action, x, y);
+    const bool uiUnhandled = ui_.Touch(action, pointerId, x, y);
     if (action == kDown) {
         TouchState state;
         state.startX = state.lastX = x;
