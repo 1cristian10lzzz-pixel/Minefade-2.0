@@ -115,6 +115,17 @@ def test_non_owner_pointer_cannot_release_or_move_a_hud_button():
     assert "return true;" in guard_body
 
 
+
+def test_secondary_pointer_over_hud_button_is_consumed_not_sent_to_world():
+    owner = RML.index("mousePointerId_ >= 0 && mousePointerId_ != pointerId")
+    normal_press = RML.index("context_->ProcessMouseButtonDown", owner)
+    branch = RML[owner:normal_press]
+    assert "context_->GetElementAtPoint" in branch
+    assert 'hit->Closest("button")' in branch
+    assert "return hit == nullptr || hit->Closest(\"button\") == nullptr;" in branch
+    assert "return true;" in RML[owner:normal_press]
+
+
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
               if name.startswith("test_") and callable(value)]
