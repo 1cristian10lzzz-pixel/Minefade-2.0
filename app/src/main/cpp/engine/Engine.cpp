@@ -2819,7 +2819,7 @@ bool Engine::SaveWorld() {
     }
 }
 
-void Engine::Pause() {
+bool Engine::Pause() {
     if (!ready_) return;
     SaveWorld();
     paused_ = true;
