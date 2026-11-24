@@ -673,7 +673,10 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     frameTimeSamplesMs_.fill(0.0f);
     frameTimeSampleCursor_ = frameTimeSampleCount_ = 0u;
     lastChunkGenerationPumpMs_ = lastMeshBuildMs_ = lastGpuUploadMs_ = 0.0f;
-    Shutdown();
+    // MainActivity has already paused and saved the previous world on the GL
+    // thread before changing storagePath_. Do not save the previous in-memory
+    // world again here: storagePath_ now belongs to the NEW world.
+    Shutdown(false);
     world_ = VoxelWorld(0x4D464445u);
     player_ = Player();
     player_.SetAppearance(avatarAppearance_);
