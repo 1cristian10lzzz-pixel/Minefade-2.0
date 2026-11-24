@@ -50,3 +50,15 @@ def test_new_and_existing_worlds_have_a_safe_native_load_path():
     assert 'std::memcmp(magic,"MFVOX002",8)==0' in world
     assert 'std::memcmp(magic,"MFVOX003",8)==0' in world
     assert "constexpr char magic[8]={'M','F','V','O','X','0','0','3'};" in world
+
+
+def test_legacy_world_migration_keeps_original_until_metadata_is_written():
+    manager = (JAVA / "WorldManager.java").read_text(encoding="utf-8")
+    branch = manager[manager.index("private WorldInfo read(File folder)"):
+                     manager.index("private boolean write(WorldInfo info)")]
+    write_check = branch.index("if (!write(migrated))")
+    delete_source = branch.index("legacy.delete();")
+    assert "world.mfworld.migration.tmp" in branch
+    assert "output.getFD().sync();" in branch
+    assert write_check < delete_source
+    assert "if (createdDestination) migrated.worldFile.delete();" in branch
