@@ -152,18 +152,42 @@ public final class WorldManager {
     private WorldInfo read(File folder) {
         File metadata = new File(folder, "world.json");
         if (!metadata.isFile()) {
-            // Migrate the old single-save layout without deleting or moving it.
+            // Migrate the old single-save layout transactionally. Keep the source
+            // file until both the destination save and its world metadata exist.
             File legacy = new File(folder, "default.mfworld");
             if (legacy.isFile()) {
                 WorldInfo migrated = new WorldInfo("legacy", "Mundo anterior", 0x4D464445L,
                         SURVIVAL, false, false, legacy.lastModified(), legacy.lastModified(), folder);
-                migrated.worldFile.delete();
+                File migrationTemp = new File(folder, "world.mfworld.migration.tmp");
+                boolean createdDestination = false;
                 try {
-                    java.nio.file.Files.copy(legacy.toPath(), migrated.worldFile.toPath());
+                    if (!migrated.worldFile.isFile()) {
+                        if (migrated.worldFile.exists()) return null;
+                        try (FileInputStream input = new FileInputStream(legacy);
+                             FileOutputStream output = new FileOutputStream(migrationTemp, false)) {
+                            byte[] buffer = new byte[16 * 1024];
+                            int read;
+                            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+                            output.flush();
+                            output.getFD().sync();
+                        }
+                        Os.rename(migrationTemp.getAbsolutePath(), migrated.worldFile.getAbsolutePath());
+                        createdDestination = true;
+                    }
+                    if (!write(migrated)) {
+                        if (createdDestination) migrated.worldFile.delete();
+                        migrationTemp.delete();
+                        return null;
+                    }
+                    // Metadata now points at a complete, durable save.
                     legacy.delete();
-                    write(migrated);
+                    migrationTemp.delete();
                     return migrated;
-                } catch (Exception ignored) { return null; }
+                } catch (Exception ignored) {
+                    migrationTemp.delete();
+                    if (createdDestination && !metadata.isFile()) migrated.worldFile.delete();
+                    return null;
+                }
             }
             return null;
         }
