@@ -666,6 +666,20 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 8, muted, false);
         advanced.addView(chestHint, new LinearLayout.LayoutParams(-1, -2));
 
+        CheckBox flatWorld = new CheckBox(getContext());
+        flatWorld.setText("Mundo plano · Classic Flat");
+        flatWorld.setTextSize(9);
+        flatWorld.setTextColor(white);
+        flatWorld.setButtonTintList(ColorStateList.valueOf(0xffa9ee70));
+        flatWorld.setChecked(false);
+        LinearLayout.LayoutParams flatParams = new LinearLayout.LayoutParams(-1, dp(42));
+        flatParams.topMargin = dp(14);
+        advanced.addView(flatWorld, flatParams);
+        TextView flatHint = text("Genera una superficie horizontal con una capa de césped, dos de tierra y roca base. No genera cuevas, árboles ni estructuras.",
+                8, muted, false);
+        flatHint.setMaxLines(3);
+        advanced.addView(flatHint, new LinearLayout.LayoutParams(-1, -2));
+
         tricks.addView(text("OPCIONES DE JUEGO", 9, 0xffd9eaf0, true));
         CheckBox cheats = new CheckBox(getContext());
         cheats.setText("Permitir trucos y comandos");
@@ -726,7 +740,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
         dividerParams.topMargin = dp(9);
         dividerParams.bottomMargin = dp(7);
         summary.addView(summaryDivider, dividerParams);
-        TextView previewOptions = text("Cofre inicial · Sin trucos", 7, 0xffb8cbd5, false);
+        TextView previewOptions = text("Cofre inicial · Sin trucos · Mundo infinito", 7, 0xffb8cbd5, false);
         previewOptions.setMaxLines(3);
         summary.addView(previewOptions, new LinearLayout.LayoutParams(-1, -2));
         TextView readyLabel = text("LISTO PARA CREAR", 7, 0xffa9ee70, true);
@@ -750,12 +764,13 @@ public final class MinefadeHomeScreen extends FrameLayout {
             }
             @Override public void afterTextChanged(android.text.Editable s) { }
         });
-        chest.setOnCheckedChangeListener((button, checked) ->
-                previewOptions.setText((checked ? "Cofre inicial" : "Sin cofre") +
-                        (cheats.isChecked() ? " · Trucos" : " · Sin trucos")));
-        cheats.setOnCheckedChangeListener((button, checked) ->
-                previewOptions.setText((chest.isChecked() ? "Cofre inicial" : "Sin cofre") +
-                        (checked ? " · Trucos" : " · Sin trucos")));
+        Runnable refreshWorldOptions = () -> previewOptions.setText(
+                (chest.isChecked() ? "Cofre inicial" : "Sin cofre") +
+                (cheats.isChecked() ? " · Trucos" : " · Sin trucos") +
+                (flatWorld.isChecked() ? " · Classic Flat" : " · Mundo infinito"));
+        chest.setOnCheckedChangeListener((button, checked) -> refreshWorldOptions.run());
+        cheats.setOnCheckedChangeListener((button, checked) -> refreshWorldOptions.run());
+        flatWorld.setOnCheckedChangeListener((button, checked) -> refreshWorldOptions.run());
 
         Runnable refreshModes = () -> updateModeCards(modeCards, modeTitles, modeIcons,
                 modeDescriptions, selectedMode[0], modeNames, modeShort);
@@ -835,7 +850,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 return;
             }
             WorldManager.WorldInfo world = worldManager.createWorld(
-                    worldName, parsedSeed, selectedMode[0], cheats.isChecked(), chest.isChecked());
+                    worldName, parsedSeed, selectedMode[0], cheats.isChecked(), chest.isChecked(), flatWorld.isChecked());
             if (world == null) {
                 new AlertDialog.Builder(getContext()).setTitle("No se pudo crear el mundo")
                         .setMessage("Minefade no pudo guardar los datos iniciales. Comprueba el espacio disponible y vuelve a intentarlo.")
