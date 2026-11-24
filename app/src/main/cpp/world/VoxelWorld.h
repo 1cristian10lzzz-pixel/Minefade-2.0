@@ -81,7 +81,7 @@ public:
     static constexpr std::size_t kChunkVolume =
         static_cast<std::size_t>(kChunkSize * kWorldHeight * kChunkSize);
 
-    explicit VoxelWorld(std::uint32_t seed = 0x4D464445u);
+    explicit VoxelWorld(std::uint32_t seed = 0x4D464445u, bool flatWorld = false);
 
     void GenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
     void RequestGenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
@@ -116,6 +116,7 @@ public:
               std::array<std::uint32_t, 36>& inventory);
 
     std::uint32_t Seed() const { return seed_; }
+    bool IsFlatWorld() const { return flatWorld_; }
     std::size_t ChunkCount() const { return chunks_.size(); }
     std::size_t CountNonAirBlocks() const;
     // Approximate CPU residency; save files and block IDs are unchanged.
@@ -169,6 +170,7 @@ private:
     void InvalidateChunkAndNeighbors(int chunkX, int chunkZ);
 
     std::uint32_t seed_;
+    bool flatWorld_{false};
     std::map<std::pair<int, int>, Chunk> chunks_;
     mutable std::map<std::pair<int, int>, ChunkMeshCache> chunkMeshCache_;
     mutable std::set<std::pair<int, int>> dirtyChunkMeshes_;
