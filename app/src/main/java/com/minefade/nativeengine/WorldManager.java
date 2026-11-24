@@ -26,19 +26,21 @@ public final class WorldManager {
         public final int gameMode;
         public final boolean allowCheats;
         public final boolean starterChest;
+        public final boolean flatWorld;
         public final long createdAt;
         public final long lastPlayed;
         public final File directory;
         public final File worldFile;
 
         WorldInfo(String id, String name, long seed, int gameMode, boolean allowCheats,
-                  boolean starterChest, long createdAt, long lastPlayed, File directory) {
+                  boolean starterChest, boolean flatWorld, long createdAt, long lastPlayed, File directory) {
             this.id = id;
             this.name = name;
             this.seed = seed;
             this.gameMode = gameMode;
             this.allowCheats = allowCheats;
             this.starterChest = starterChest;
+            this.flatWorld = flatWorld;
             this.createdAt = createdAt;
             this.lastPlayed = lastPlayed;
             this.directory = directory;
@@ -83,7 +85,7 @@ public final class WorldManager {
             }
             long stamp = legacyFile.lastModified();
             if (!write(new WorldInfo("legacy", "Mundo anterior", 0x4D464445L,
-                    SURVIVAL, false, false, stamp, stamp, folder))) return;
+                    SURVIVAL, false, false, false, stamp, stamp, folder))) return;
             // Keep the original until the metadata and destination both exist.
             if (destination.isFile()) legacyFile.delete();
         } catch (Exception ignored) { }
@@ -104,6 +106,11 @@ public final class WorldManager {
 
     public synchronized WorldInfo createWorld(String rawName, long seed, int gameMode,
                                                boolean allowCheats, boolean starterChest) {
+        return createWorld(rawName, seed, gameMode, allowCheats, starterChest, false);
+    }
+
+    public synchronized WorldInfo createWorld(String rawName, long seed, int gameMode,
+                                               boolean allowCheats, boolean starterChest, boolean flatWorld) {
         String name = rawName == null ? "" : rawName.trim();
         if (name.isEmpty()) name = "Nuevo mundo";
         if (name.length() > 28) name = name.substring(0, 28);
@@ -113,7 +120,7 @@ public final class WorldManager {
         if (!folder.mkdirs()) return null;
         long now = System.currentTimeMillis();
         WorldInfo info = new WorldInfo(id, name, seed, mode, allowCheats,
-                starterChest, now, now, folder);
+                starterChest, flatWorld, now, now, folder);
         if (!write(info)) {
             deleteTree(folder);
             return null;
@@ -127,14 +134,41 @@ public final class WorldManager {
         if (name.isEmpty()) return false;
         if (name.length() > 28) name = name.substring(0, 28);
         return write(new WorldInfo(info.id, name, info.seed, info.gameMode,
-                info.allowCheats, info.starterChest, info.createdAt,
+                info.allowCheats, info.starterChest, info.flatWorld, info.createdAt,
                 info.lastPlayed, info.directory));
+    }
+
+    /** Update editable world options without changing its generated terrain type or seed. */
+    public synchronized boolean updateWorldSettings(WorldInfo info, String rawName, int gameMode,
+                                                     boolean allowCheats, boolean starterChest) {
+        if (info == null) return false;
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isEmpty()) return false;
+        if (name.length() > 28) name = name.substring(0, 28);
+        int mode = Math.max(SURVIVAL, Math.min(ADVENTURE, gameMode));
+        WorldInfo updated = new WorldInfo(info.id, name, info.seed, mode, allowCheats,
+                starterChest, info.flatWorld, info.createdAt, info.lastPlayed, info.directory);
+        if (!write(updated)) return false;
+        try {
+            File modeTarget = new File(info.directory, "world.mfworld.mode");
+            File modeTemp = new File(info.directory, "world.mfworld.mode.tmp");
+            try (FileOutputStream output = new FileOutputStream(modeTemp, false)) {
+                output.write(new byte[]{(byte) mode, (byte) (mode >>> 8),
+                        (byte) (mode >>> 16), (byte) (mode >>> 24)});
+                output.flush();
+                output.getFD().sync();
+            }
+            Os.rename(modeTemp.getAbsolutePath(), modeTarget.getAbsolutePath());
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     public synchronized boolean markPlayed(WorldInfo info) {
         if (info == null) return false;
         return write(new WorldInfo(info.id, info.name, info.seed, info.gameMode,
-                info.allowCheats, info.starterChest, info.createdAt,
+                info.allowCheats, info.starterChest, info.flatWorld, info.createdAt,
                 System.currentTimeMillis(), info.directory));
     }
 
@@ -157,7 +191,7 @@ public final class WorldManager {
             File legacy = new File(folder, "default.mfworld");
             if (legacy.isFile()) {
                 WorldInfo migrated = new WorldInfo("legacy", "Mundo anterior", 0x4D464445L,
-                        SURVIVAL, false, false, legacy.lastModified(), legacy.lastModified(), folder);
+                        SURVIVAL, false, false, false, legacy.lastModified(), legacy.lastModified(), folder);
                 File migrationTemp = new File(folder, "world.mfworld.migration.tmp");
                 boolean createdDestination = false;
                 try {
@@ -213,9 +247,10 @@ public final class WorldManager {
             }
             boolean cheats = json.optBoolean("allowCheats", false);
             boolean chest = json.optBoolean("starterChest", false);
+            boolean flatWorld = json.optBoolean("flatWorld", false);
             long created = json.optLong("createdAt", metadata.lastModified());
             long played = json.optLong("lastPlayed", metadata.lastModified());
-            return new WorldInfo(id, name, seed, mode, cheats, chest, created, played, folder);
+            return new WorldInfo(id, name, seed, mode, cheats, chest, flatWorld, created, played, folder);
         } catch (Exception ignored) {
             return null;
         }
@@ -230,6 +265,7 @@ public final class WorldManager {
             json.put("gameMode", info.gameMode);
             json.put("allowCheats", info.allowCheats);
             json.put("starterChest", info.starterChest);
+            json.put("flatWorld", info.flatWorld);
             json.put("createdAt", info.createdAt);
             json.put("lastPlayed", info.lastPlayed);
             File target = new File(info.directory, "world.json");
