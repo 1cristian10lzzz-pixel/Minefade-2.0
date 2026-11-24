@@ -140,12 +140,23 @@ Las texturas son píxeles originales generados por `tools/generate_block_catalog
 
 ### Familias prioritarias ausentes o incompletas
 
-La comparación por clave identifica, entre otras, estas familias que se deben incorporar como objetos de Minefade con IDs propios:
-- **Herramientas:** oro/Golden, netherite, cobre con nomenclatura vanilla; picos, hachas, palas, azadas y espadas que falten; herramientas auxiliares y reparación.
-- **Armaduras:** cuero, cota de malla, oro/Golden, netherite, casco de tortuga; armadura para caballo (cuero, hierro, oro, diamante, cobre y netherite), armadura de lobo y armadura de nautilus.
-- **Armas:** arco, ballesta, escudo, tridente, maza y las lanzas de madera, piedra, cobre, hierro, oro, diamante y netherite.
-- **Herramientas especiales:** tijeras, pedernal y acero, caña de pescar, pincel y catalejo.
-- **Uso y consumibles:** variedad completa de comida cocinada/cruda, manzanas doradas, pociones, cubos, proyectiles, objetos de exploración y los materiales de fabricación.
+El análisis por identificador Bedrock v1.26.60.5 detecta estos nombres oficiales sin una coincidencia exacta en las claves del registro Minefade. Es una lista de brechas de nomenclatura/registro; algunos materiales equivalentes sí existen bajo claves Minefade propias y deben mapearse explícitamente, no duplicarse:
+
+**Herramientas, armas y equipo especial (27 claves):**
+`bow`, `brush`, `copper_spear`, `crossbow`, `diamond_spear`, `fishing_rod`, `flint_and_steel`, `golden_axe`, `golden_hoe`, `golden_pickaxe`, `golden_shovel`, `golden_spear`, `golden_sword`, `iron_spear`, `mace`, `netherite_axe`, `netherite_hoe`, `netherite_pickaxe`, `netherite_shovel`, `netherite_spear`, `netherite_sword`, `shears`, `shield`, `spyglass`, `stone_spear`, `trident`, `wooden_spear`.
+
+**Armaduras, monturas y equipo de criatura (29 claves):**
+`chainmail_boots`, `chainmail_chestplate`, `chainmail_helmet`, `chainmail_leggings`, `copper_horse_armor`, `copper_nautilus_armor`, `diamond_horse_armor`, `diamond_nautilus_armor`, `elytra`, `golden_boots`, `golden_chestplate`, `golden_helmet`, `golden_horse_armor`, `golden_leggings`, `golden_nautilus_armor`, `iron_horse_armor`, `iron_nautilus_armor`, `leather_boots`, `leather_chestplate`, `leather_helmet`, `leather_horse_armor`, `leather_leggings`, `netherite_boots`, `netherite_chestplate`, `netherite_helmet`, `netherite_horse_armor`, `netherite_leggings`, `netherite_nautilus_armor`, `turtle_helmet`, `wolf_armor`.
+
+**Consumibles y materiales:** la paridad de comida incluye alimentos crudos/cocinados de res, cerdo, pollo, cordero, conejo y pescado; pan, manzana, patata horneada, galleta, sopas/guisos, manzana dorada, zanahoria dorada, bayas, miel, alimentos venenosos y otros ingredientes. También hay que completar pociones, cubos y variantes de proyectil/uso.
+
+**Objetos y bloques recientes de Bedrock 26.60:** lanzas de las siete familias (madera, piedra, cobre, hierro, oro, diamante y netherite), bola de hielo, cristal de hielo, icículo y huevo generador de Frostbite. Parte del contenido de frío está señalado como experimental en el changelog: debe respetar sus flags y no aparecer por defecto como si fuera contenido estable universal.
+
+- **Armadura del jugador:** cuatro slots actuales no bastan para elytra ni equipo de montura/compañero. Hace falta ampliar el modelo de equipo antes de habilitar esos objetos.
+- **Armas de distancia:** arco, ballesta y tridente necesitan proyectiles, munición, física, animación, cooldown, daño, drops y guardado; añadir solo el icono no representa la función.
+- **Lanzas y maza:** requieren alcance, carga/velocidad cuando corresponda, cooldown, durabilidad y balance por material.
+- **Herramientas especiales:** tijeras, pedernal y acero, caña de pescar, pincel y catalejo necesitan acciones y estado funcional propio.
+- **Uso y consumibles:** cada comida, poción, cubo y proyectil necesita receta/loot, consumo/efecto, animación/sonido y guardado.
 
 ### Incorporaciones recientes que requieren datos específicos
 
