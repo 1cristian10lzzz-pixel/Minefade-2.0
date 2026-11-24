@@ -2815,6 +2815,7 @@ bool Engine::SaveWorld() {
         }
     } catch (const std::exception& error) {
         ENGINE_LOGE("World save raised an exception: %s", error.what());
+        return false;
     } catch (...) {
         ENGINE_LOGE("World save raised an unknown exception");
         return false;
