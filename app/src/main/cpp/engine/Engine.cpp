@@ -1010,8 +1010,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     return true;
 }
 
-void Engine::Shutdown() {
-    if (ready_) SaveWorld();
+void Engine::Shutdown(bool saveWorld) {
+    if (saveWorld && ready_) SaveWorld();
     ui_.Shutdown();
     worldRenderer_.Shutdown();
     if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
