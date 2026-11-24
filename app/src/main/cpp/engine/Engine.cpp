@@ -713,6 +713,10 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
 
     multiplayerMode_ = pendingMultiplayerMode_;
     multiplayerSlot_ = pendingMultiplayerSlot_;
+    gameMode_ = pendingGameMode_;
+    allowCheats_ = pendingAllowCheats_;
+    starterChestEnabled_ = pendingStarterChestEnabled_;
+    requestedWorldSeed_ = pendingWorldSeed_;
     graphicsQuality_ = pendingGraphicsQuality_;
     renderDistanceChunks_ = pendingRenderDistanceChunks_;
     waterWaves_ = pendingWaterWaves_;
@@ -2835,11 +2839,13 @@ void Engine::SetStoragePath(std::string path) {
 }
 
 void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed) {
-    if (ready_) return;
-    gameMode_ = std::clamp(gameMode, 0, 2);
-    allowCheats_ = allowCheats;
-    starterChestEnabled_ = starterChest;
-    requestedWorldSeed_ = seed == 0u ? 0x4D464445u : seed;
+    // Setters are called before the next nativeInit, while the previous world may
+    // still be ready/paused. Stage these values so they cannot be discarded or
+    // applied to the outgoing world during a world transition.
+    pendingGameMode_ = std::clamp(gameMode, 0, 2);
+    pendingAllowCheats_ = allowCheats;
+    pendingStarterChestEnabled_ = starterChest;
+    pendingWorldSeed_ = seed == 0u ? 0x4D464445u : seed;
 }
 
 void Engine::SetModsDirectory(std::string path) {
