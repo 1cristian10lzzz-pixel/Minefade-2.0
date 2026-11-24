@@ -158,9 +158,9 @@ Java_com_minefade_nativeengine_NativeBridge_nativeTouch(JNIEnv*, jclass, jint ac
                                 static_cast<float>(x), static_cast<float>(y));
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativePause(JNIEnv*, jclass) {
-    minefade::GetEngine().Pause();
+    return minefade::GetEngine().Pause() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
