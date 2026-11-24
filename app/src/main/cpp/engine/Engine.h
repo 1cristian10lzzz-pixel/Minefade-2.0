@@ -88,7 +88,7 @@ private:
     void UploadItemMesh();
     void HandleUiAction(const std::string& action);
     void UpdateTouchMovement();
-    void SaveWorld();
+    bool SaveWorld();
     void LoadEnabledMods();
     void OpenStarterChest();
     void TakeStarterChestContents();
