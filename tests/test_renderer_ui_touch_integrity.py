@@ -92,6 +92,26 @@ def test_native_touch_cancel_clears_pointer_state_without_place_or_mine():
     assert "action == kUp && !state.moved" in method
 
 
+
+def test_rmlui_virtual_mouse_is_owned_by_the_pointer_that_pressed_the_hud():
+    header = (CPP / "ui/RmlUiRuntime.h").read_text(encoding="utf-8")
+    runtime = RML
+    assert "bool Touch(int action, int pointerId, float x, float y);" in header
+    assert "int mousePointerId_{-1};" in header
+    assert "mousePointerId_ >= 0 && mousePointerId_ != pointerId" in runtime
+    assert "mousePointerId_ != pointerId || !mouseCaptured_" in runtime
+    assert "mousePointerId_ = -1;" in runtime
+    assert "ui_.Touch(action, pointerId, x, y)" in ENGINE
+
+
+def test_non_owner_pointer_cannot_release_or_move_a_hud_button():
+    owner_guard = RML.index("mousePointerId_ != pointerId || !mouseCaptured_")
+    up_handler = RML.index("context_->ProcessMouseButtonUp", owner_guard)
+    assert owner_guard < up_handler
+    guard_body = RML[owner_guard:up_handler]
+    assert "return true;" in guard_body
+
+
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
               if name.startswith("test_") and callable(value)]
