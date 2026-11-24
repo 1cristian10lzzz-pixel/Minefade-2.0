@@ -145,7 +145,7 @@ El análisis por identificador Bedrock v1.26.60.5 detecta estos nombres oficiale
 **Herramientas, armas y equipo especial (27 claves):**
 `bow`, `brush`, `copper_spear`, `crossbow`, `diamond_spear`, `fishing_rod`, `flint_and_steel`, `golden_axe`, `golden_hoe`, `golden_pickaxe`, `golden_shovel`, `golden_spear`, `golden_sword`, `iron_spear`, `mace`, `netherite_axe`, `netherite_hoe`, `netherite_pickaxe`, `netherite_shovel`, `netherite_spear`, `netherite_sword`, `shears`, `shield`, `spyglass`, `stone_spear`, `trident`, `wooden_spear`.
 
-**Armaduras, monturas y equipo de criatura (29 claves):**
+**Armaduras, monturas y equipo de criatura (30 claves):**
 `chainmail_boots`, `chainmail_chestplate`, `chainmail_helmet`, `chainmail_leggings`, `copper_horse_armor`, `copper_nautilus_armor`, `diamond_horse_armor`, `diamond_nautilus_armor`, `elytra`, `golden_boots`, `golden_chestplate`, `golden_helmet`, `golden_horse_armor`, `golden_leggings`, `golden_nautilus_armor`, `iron_horse_armor`, `iron_nautilus_armor`, `leather_boots`, `leather_chestplate`, `leather_helmet`, `leather_horse_armor`, `leather_leggings`, `netherite_boots`, `netherite_chestplate`, `netherite_helmet`, `netherite_horse_armor`, `netherite_leggings`, `netherite_nautilus_armor`, `turtle_helmet`, `wolf_armor`.
 
 **Consumibles y materiales:** la paridad de comida incluye alimentos crudos/cocinados de res, cerdo, pollo, cordero, conejo y pescado; pan, manzana, patata horneada, galleta, sopas/guisos, manzana dorada, zanahoria dorada, bayas, miel, alimentos venenosos y otros ingredientes. También hay que completar pociones, cubos y variantes de proyectil/uso.
