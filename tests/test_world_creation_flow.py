@@ -62,3 +62,15 @@ def test_legacy_world_migration_keeps_original_until_metadata_is_written():
     assert "output.getFD().sync();" in branch
     assert write_check < delete_source
     assert "if (createdDestination) migrated.worldFile.delete();" in branch
+
+
+def test_switching_worlds_never_saves_previous_session_to_new_world_path():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    initialise = engine[engine.index("bool Engine::Initialise("):
+                        engine.index("void Engine::Shutdown(bool saveWorld)")]
+    shutdown = engine[engine.index("void Engine::Shutdown(bool saveWorld)"):]
+    assert "void Shutdown(bool saveWorld = true);" in header
+    assert "Shutdown(false);" in initialise
+    assert "if (saveWorld && ready_) SaveWorld();" in shutdown
+    assert "MainActivity has already paused and saved the previous world" in initialise
