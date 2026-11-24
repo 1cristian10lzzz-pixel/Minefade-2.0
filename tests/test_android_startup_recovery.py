@@ -34,13 +34,20 @@ def test_android_emergency_controls_and_selected_world_retry_are_connected():
 
 def test_joystick_hit_box_is_shared_when_rmlui_is_unavailable():
     helper = RML.index("bool RmlUiRuntime::IsInMovementPad")
-    touch = RML.index("bool RmlUiRuntime::Touch", helper)
-    update = RML.index("void RmlUiRuntime::UpdateAndRender()", touch)
-    assert helper < touch < update
-    assert "if (IsInMovementPad(x, y))" in RML[touch:update]
-    assert "ui_.MovementVectorAt(x, y, moveX, moveY)" in ENGINE
-    assert "state.movementPad = true;" in ENGINE
-    assert "UpdateTouchMovement();" in ENGINE
+    touch = ENGINE.index("void Engine::Touch(int action")
+    update = ENGINE.index("void Engine::HandleUiAction", touch)
+    method = ENGINE[touch:update]
+    movement = method.index("if (ui_.MovementVectorAt(x, y, moveX, moveY))")
+    ui_touch = method.index("ui_.Touch(action, pointerId, x, y)")
+    assert helper >= 0
+    assert movement < ui_touch
+    assert "state.movementPad = true;" in method
+    assert "UpdateTouchMovement();" in method
+    # RmlUi owns only the virtual mouse pointer; the engine keeps the shared
+    # movement hit-test even when the RmlUi context cannot be initialized.
+    rml_touch = RML.index("bool RmlUiRuntime::Touch(int action, int pointerId")
+    rml_update = RML.index("void RmlUiRuntime::UpdateAndRender()", rml_touch)
+    assert "mousePointerId_ >= 0 && mousePointerId_ != pointerId" in RML[rml_touch:rml_update]
 
 
 def test_phase_two_navigation_and_layout_regressions():
