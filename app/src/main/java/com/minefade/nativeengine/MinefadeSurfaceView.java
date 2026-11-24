@@ -149,6 +149,25 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             return true;
         }
 
+        if (action == MotionEvent.ACTION_CANCEL) {
+            final int pointerCount = event.getPointerCount();
+            final int[] pointerIds = new int[pointerCount];
+            final float[] pointerXs = new float[pointerCount];
+            final float[] pointerYs = new float[pointerCount];
+            for (int i = 0; i < pointerCount; ++i) {
+                pointerIds[i] = event.getPointerId(i);
+                pointerXs[i] = event.getX(i);
+                pointerYs[i] = event.getY(i);
+            }
+            queueEvent(() -> {
+                if (!nativeReady) return;
+                for (int i = 0; i < pointerIds.length; ++i) {
+                    NativeBridge.nativeTouch(3, pointerIds[i], pointerXs[i], pointerYs[i]);
+                }
+            });
+            return true;
+        }
+
         final int pointerId = event.getPointerId(actionIndex);
         final float x = event.getX(actionIndex);
         final float y = event.getY(actionIndex);
