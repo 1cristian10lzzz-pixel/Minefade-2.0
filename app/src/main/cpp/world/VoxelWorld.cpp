@@ -247,7 +247,7 @@ std::uint16_t RemapLegacyInventoryId(std::uint16_t oldId) {
 
 } // namespace
 
-VoxelWorld::VoxelWorld(std::uint32_t seed) : seed_(seed) {}
+VoxelWorld::VoxelWorld(std::uint32_t seed, bool flatWorld) : seed_(seed), flatWorld_(flatWorld) {}
 
 int VoxelWorld::FloorDiv(int value,int divisor) {
     int quotient=value/divisor; const int remainder=value%divisor;
@@ -301,6 +301,7 @@ float VoxelWorld::FractalNoise2D(float x,float z,int octaves,float persistence,f
 }
 
 VoxelWorld::Biome VoxelWorld::GetBiome(int x,int z) const {
+    if (flatWorld_) return Biome::Plains;
     // Climate, erosion and continentalness are sampled at independent scales.
     // Broad fields define biome provinces; ridged and detail fields only modify
     // local shape so boundaries do not dissolve into noisy checkerboard patches.
@@ -339,6 +340,7 @@ VoxelWorld::Biome VoxelWorld::GetBiome(int x,int z) const {
 }
 
 int VoxelWorld::TerrainHeight(int x,int z) const {
+    if (flatWorld_) return 3;
     const float fx=static_cast<float>(x),fz=static_cast<float>(z);
     const float continental=FractalNoise2D(fx*0.0019f+901.0f,fz*0.0019f+401.0f,4,0.56f,2.0f);
     const float erosion=FractalNoise2D(fx*0.0075f+31.0f,fz*0.0075f-17.0f,3,0.48f,2.1f);
@@ -370,6 +372,19 @@ int VoxelWorld::TerrainHeight(int x,int z) const {
 
 VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
     Chunk chunk; chunk.x=chunkX;chunk.z=chunkZ;chunk.blocks.fill(BlockId::Air);
+    if (flatWorld_) {
+        // Classic Flat preset: one grass layer, two dirt layers and bedrock.
+        // No caves, oceans, trees or structures are generated in this preset.
+        for (int z = 0; z < kChunkSize; ++z) {
+            for (int x = 0; x < kChunkSize; ++x) {
+                chunk.blocks[Index(x, 0, z)] = BlockId::Bedrock;
+                chunk.blocks[Index(x, 1, z)] = BlockId::Dirt;
+                chunk.blocks[Index(x, 2, z)] = BlockId::Dirt;
+                chunk.blocks[Index(x, 3, z)] = BlockId::Grass;
+            }
+        }
+        return chunk;
+    }
     for(int z=0;z<kChunkSize;++z)for(int x=0;x<kChunkSize;++x) {
         const int wx=chunkX*kChunkSize+x,wz=chunkZ*kChunkSize+z;
         const Biome biome=GetBiome(wx,wz); const int height=TerrainHeight(wx,wz);
