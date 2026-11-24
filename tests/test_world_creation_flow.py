@@ -90,3 +90,25 @@ def test_world_options_are_staged_while_previous_world_is_still_ready():
         assert field in setter
         assert field in initialisation
     assert "if (ready_) return;" not in setter
+
+
+def test_world_switch_is_blocked_until_native_save_finishes_successfully():
+    bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
+    surface = (JAVA / "MinefadeSurfaceView.java").read_text(encoding="utf-8")
+    activity = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    assert "public static native boolean nativePause();" in bridge
+    assert "public boolean pauseNativeEngine()" in surface
+    assert "saveSucceeded[0] = NativeBridge.nativePause();" in surface
+    assert "if (!completed.await(5, TimeUnit.SECONDS))" in surface
+    assert "return false;" in surface[surface.index("public boolean pauseNativeEngine()"):
+                                       surface.index("/** Resume on the same GL thread")]
+    assert "return minefade::GetEngine().Pause() ? JNI_TRUE : JNI_FALSE;" in native
+    assert "bool SaveWorld();" in header and "bool Pause();" in header
+    assert "const bool saved = SaveWorld();" in engine
+    assert "return saved;" in engine[engine.index("bool Engine::Pause()"):
+                                     engine.index("void Engine::Resume()")]
+    assert activity.count("if (!surfaceView.pauseNativeEngine())") >= 2
+    assert "No se cambiará de partida para proteger tus datos." in activity
