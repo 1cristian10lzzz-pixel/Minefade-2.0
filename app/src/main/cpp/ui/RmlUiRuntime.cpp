@@ -142,11 +142,11 @@ button:active { background: #47789b; }
 .panel h1 { font-size: 20dp; margin: 0dp 0dp 10dp 0dp; color: #ffffff; }
 .panel p { font-size: 12dp; color: #c8d3db; margin: 3dp 0dp 12dp 0dp; }
 .panel .actions { flex-wrap: wrap; }
-#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; flex-direction: row; gap: 2dp; padding: 3dp; background: #15263836; border: 1dp #dcebf044; border-radius: 9dp; }
-.slot { position: relative; width: 30dp; min-width: 30dp; height: 41dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #223b52d8; border: 1dp #b5cad877; border-radius: 6dp; color: #ffffff; font-size: 9dp; }
-.slot:active { background: #486b78; }
-.slot img { width: 22dp; height: 22dp; display: block; margin: auto; }
-.slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 7dp; text-shadow: 0dp 1dp 2dp #000000; }
+#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: 0dp; display: flex; flex-direction: row; gap: 2.5dp; padding: 4dp; background: #20252bcc; border: 1dp #6c737acc; border-radius: 3dp; }
+.slot { position: relative; width: 34dp; min-width: 34dp; height: 36dp; text-align: center; padding: 0dp; display: flex; align-items: center; justify-content: center; background: #30363dcc; border: 1dp #7e878fbb; border-radius: 2dp; color: #ffffff; font-size: 9dp; }
+.slot:active { background: #59636b; }
+.slot img { width: 26dp; height: 26dp; display: block; margin: auto; }
+.slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 8dp; text-shadow: 0dp 1dp 2dp #000000; }
 .slot-durability { position: absolute; left: 3dp; right: 3dp; bottom: 2dp; height: 3dp; background: #000000aa; border-radius: 2dp; overflow: hidden; }
 .slot-durability span { display: block; height: 3dp; background: #9ad27d; }
 .inventory-row { position: relative; flex-wrap: wrap; }
@@ -400,9 +400,9 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 .pad-arrow { position: absolute; width: 42dp; height: 42dp; text-align: center; background: rgba(25, 50, 73, 0.88); border: 1dp solid #e1efb8; border-radius: 11dp; font-size: 20dp; }
 #move-up { left: 45dp; top: 2dp; } #move-down { left: 45dp; bottom: 2dp; }
 #move-left { left: 2dp; top: 45dp; } #move-right { right: 2dp; top: 45dp; }
-#quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; gap: 2dp; padding: 4dp; background: #1b3044d9; border: 1dp #dcebf088; border-radius: 11dp; }
-.slot { width: 30dp; min-width: 30dp; height: 39dp; margin-right: 0dp; padding: 2dp; background: #2a4259ed; border: 1dp #d8e6ee99; border-radius: 7dp; }
-.slot img { width: 22dp; height: 22dp; }
+#quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: 0dp; display: flex; gap: 2.5dp; padding: 4dp; background: #20252bcc; border: 1dp #6c737acc; border-radius: 3dp; }
+.slot { width: 34dp; min-width: 34dp; height: 36dp; margin-right: 0dp; padding: 0dp; background: #30363dcc; border: 1dp #7e878fbb; border-radius: 2dp; }
+.slot img { width: 26dp; height: 26dp; }
 #jump { position: absolute; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; font-size: 20dp; }
 #attack { position: absolute; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; font-size: 17dp; }
 #movement-pad #crouch { position: absolute; left: 45dp; top: 45dp; right: auto; bottom: auto; width: 42dp; height: 42dp; font-size: 15dp; pointer-events: auto; }
@@ -645,7 +645,7 @@ void RmlUiRuntime::SetLeftHanded(bool enabled) {
 }
 
 void RmlUiRuntime::ApplyResponsiveLayout() {
-    if (document_ == nullptr) return;
+    if (document_ == nullptr || density_ <= 0.0f) return;
     if (Rml::Element* pad = document_->GetElementById("movement-pad")) {
         pad->SetProperty("left", leftHanded_ ? "auto" : "14dp");
         pad->SetProperty("right", leftHanded_ ? "14dp" : "auto");
@@ -658,18 +658,39 @@ void RmlUiRuntime::ApplyResponsiveLayout() {
         attack->SetProperty("left", leftHanded_ ? "24dp" : "auto");
         attack->SetProperty("right", leftHanded_ ? "auto" : "24dp");
     }
-    const float availableDp = static_cast<float>(width_) / density_ - 20.0f;
-    const float slotWidth = std::clamp((availableDp - 28.0f) / 9.0f, 19.0f, 30.0f);
-    const float totalWidth = slotWidth * 9.0f + 28.0f;
+
+    // Nine slots stay present at every width. The bar is positioned from the
+    // live surface width (not a fixed negative margin) with safe side margins.
+    constexpr float kSafeMarginDp = 10.0f;
+    constexpr float kGapDp = 2.5f;
+    constexpr float kOuterPaddingDp = 4.0f;
+    constexpr float kBorderDp = 1.0f;
+    constexpr float kSlotCount = 9.0f;
+    const float surfaceWidthDp = static_cast<float>(width_) / density_;
+    const float availableWidthDp = std::max(0.0f, surfaceWidthDp - 2.0f * kSafeMarginDp);
+    const float fixedWidthDp = 8.0f * kGapDp + 2.0f * kOuterPaddingDp + 2.0f * kBorderDp;
+    const float slotWidth = std::clamp((availableWidthDp - fixedWidthDp) / kSlotCount,
+                                       28.0f, 36.0f);
+    const float barWidth = kSlotCount * slotWidth + fixedWidthDp;
+    const float leftDp = std::max(0.0f, (surfaceWidthDp - barWidth) * 0.5f);
     if (Rml::Element* quickbar = document_->GetElementById("quickbar")) {
-        quickbar->SetProperty("margin-left", "-" + std::to_string(totalWidth * 0.5f) + "dp");
+        quickbar->SetProperty("left", std::to_string(leftDp) + "dp");
+        quickbar->SetProperty("margin-left", "0dp");
+        quickbar->SetProperty("gap", std::to_string(kGapDp) + "dp");
+        quickbar->SetProperty("padding", std::to_string(kOuterPaddingDp) + "dp");
     }
+    const std::string slotValue = std::to_string(slotWidth) + "dp";
+    const std::string iconValue = std::to_string(std::clamp(slotWidth * 0.76f, 21.0f, 28.0f)) + "dp";
     for (int slot = 0; slot < 9; ++slot) {
         const std::string id = "slot-" + std::to_string(slot);
         if (Rml::Element* element = document_->GetElementById(id)) {
-            const std::string value = std::to_string(slotWidth) + "dp";
-            element->SetProperty("width", value);
-            element->SetProperty("min-width", value);
+            element->SetProperty("width", slotValue);
+            element->SetProperty("min-width", slotValue);
+            element->SetProperty("height", "36dp");
+            if (Rml::Element* icon = element->GetFirstChild()) {
+                icon->SetProperty("width", iconValue);
+                icon->SetProperty("height", iconValue);
+            }
         }
     }
 }
@@ -782,8 +803,9 @@ void RmlUiRuntime::SetQuickbarSlot(int slot,const std::string& label,bool select
     const std::string id="slot-"+std::to_string(slot);
     if(Rml::Element* element=document_->GetElementById(id)) {
         element->SetInnerRML(label);
-        element->SetProperty("border",selected?"2dp #d9e9a4":"1dp #ffffff33");
-        element->SetProperty("background-color",selected?"#d9e9a422":"#10192322");
+        element->SetProperty("border", selected ? "2dp #f7f5ec" : "1dp #7e878fbb");
+        element->SetProperty("background-color", selected ? "#d9dbd3" : "#30363dcc");
+        element->SetProperty("border-radius", "2dp");
     }
 }
 
