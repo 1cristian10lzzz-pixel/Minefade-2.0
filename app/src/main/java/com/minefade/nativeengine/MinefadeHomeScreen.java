@@ -6,6 +6,8 @@ import android.text.InputType;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.RectF;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -25,6 +27,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.EditText;
 import android.widget.CheckBox;
 import android.widget.Spinner;
@@ -400,9 +403,10 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 list.addView(card,cardParams);
 
                 FrameLayout icon = new FrameLayout(getContext());
+                icon.setClipToOutline(true);
                 icon.setBackground(shape(new int[]{0xff315d48,0xff1b473c},11,0x557acb91));
-                icon.addView(new WorldMarkView(getContext()),new FrameLayout.LayoutParams(-1,-1));
-                card.addView(icon,new LinearLayout.LayoutParams(dp(48),dp(48)));
+                addWorldThumbnail(icon, world);
+                card.addView(icon,new LinearLayout.LayoutParams(dp(84),dp(48)));
 
                 LinearLayout labels = column();
                 labels.setGravity(Gravity.CENTER_VERTICAL);
@@ -433,6 +437,34 @@ public final class MinefadeHomeScreen extends FrameLayout {
             }
         }
         animateIn(list,0);
+    }
+
+    private void addWorldThumbnail(FrameLayout container, WorldManager.WorldInfo world) {
+        File worldFile = new File(world.getPath());
+        File folder = worldFile.getParentFile();
+        File previewFile = folder == null ? null : new File(folder, "world-preview.jpg");
+        Bitmap preview = previewFile != null && previewFile.isFile()
+                ? BitmapFactory.decodeFile(previewFile.getAbsolutePath()) : null;
+        if (preview != null) {
+            ImageView image = new ImageView(getContext());
+            image.setImageBitmap(preview);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setContentDescription("Captura del mundo " + world.name);
+            container.addView(image, new FrameLayout.LayoutParams(-1, -1));
+            return;
+        }
+
+        // Give worlds distinct fallback covers until their first real gameplay
+        // screenshot is captured, instead of repeating one generic thumbnail.
+        int hue = (int) Math.floorMod(world.seed ^ (world.seed >>> 32), 360L);
+        float[] hsv = {hue, 0.48f, 0.48f};
+        int base = Color.HSVToColor(hsv);
+        hsv[1] = 0.62f;
+        hsv[2] = 0.30f;
+        int deep = Color.HSVToColor(hsv);
+        container.setBackground(shape(new int[]{base, deep}, 11, 0x557acb91));
+        container.addView(new WorldMarkView(getContext()),
+                new FrameLayout.LayoutParams(-1, -1));
     }
 
     private void showWorldActions(WorldManager.WorldInfo world, View anchor) {
