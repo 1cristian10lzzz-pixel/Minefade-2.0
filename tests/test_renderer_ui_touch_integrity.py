@@ -12,6 +12,9 @@ RML = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
 RML_GL = (CPP / "ui/RmlUiOpenGLES.cpp").read_text(encoding="utf-8")
 ENGINE = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
 RENDERER = (CPP / "render/WorldMeshRenderer.cpp").read_text(encoding="utf-8")
+FIRST_PERSON = (CPP / "render/FirstPersonRenderer.cpp").read_text(encoding="utf-8")
+FIRST_PERSON_H = (CPP / "render/FirstPersonRenderer.h").read_text(encoding="utf-8")
+PLAYER_CPP = (CPP / "game/Player.cpp").read_text(encoding="utf-8")
 
 
 def hud_document() -> str:
@@ -151,7 +154,13 @@ def test_direction_pad_does_not_capture_invisible_gaps_and_crouch_is_centre_cont
 
 def test_hotbar_resizes_and_left_handed_positions_update_live():
     assert "void RmlUiRuntime::ApplyResponsiveLayout()" in RML
-    assert "slotWidth = std::clamp((availableDp - 28.0f) / 9.0f" in RML
+    assert "slotWidth = std::clamp((availableWidthDp - fixedWidthDp) / kSlotCount" in RML
+    assert "const float leftDp = std::max(0.0f, (surfaceWidthDp - barWidth) * 0.5f)" in RML
+    assert "constexpr float kSafeMarginDp = 10.0f" in RML
+    assert "constexpr float kSlotCount = 9.0f" in RML
+    assert "margin-left: -150dp" not in RML
+    assert "width: 34dp; min-width: 34dp; height: 36dp" in RML
+    assert "#selected-item" in RML and "background: #171c22d9" in RML
     assert 'SetProperty("min-width", value)' in RML
     assert "void RmlUiRuntime::SetLeftHanded(bool enabled)" in RML
     assert 'SetProperty("right", leftHanded_ ? "14dp" : "auto")' in RML
@@ -205,6 +214,53 @@ def test_fallback_jump_and_crouch_match_main_hud_progression_behavior():
     assert "progressionJumps_" in jump
     assert "AddProgressionXp(1u)" in jump
     assert "if (!player_.grounded)" in jump
+
+
+def test_first_person_viewmodel_is_independent_from_entity_and_drop_meshes():
+    start = ENGINE.index("void Engine::RebuildEntityMesh()")
+    end = ENGINE.index("void Engine::UploadItemMesh()", start)
+    rebuild = ENGINE[start:end]
+    assert "firstPersonRenderer_.Build(player_, selected, definition, leftHandedControls_)" in rebuild
+    assert "firstPersonRenderer_.Clear();" in rebuild
+    assert "AppendCube(entityMesh_, grip" not in rebuild
+    assert "AppendAnimatedTexturedBlockCube(itemMesh_" not in rebuild
+    assert "player_.AppendMesh(entityMesh_)" in rebuild
+    assert "droppedItems_.AppendMesh(itemMesh_, &frustum)" in rebuild
+    assert "render/FirstPersonRenderer.cpp" in (CPP / "CMakeLists.txt").read_text(encoding="utf-8")
+
+
+def test_first_person_arm_reuses_player_appearance_and_has_distinct_item_models():
+    assert "Player::FirstPersonSkinColor()" in PLAYER_CPP
+    assert "Player::FirstPersonSleeveColor()" in PLAYER_CPP
+    assert "player.FirstPersonSkinColor()" in FIRST_PERSON
+    assert "player.FirstPersonSleeveColor()" in FIRST_PERSON
+    for kind in ("_pickaxe", "_axe", "_shovel", "_sword", "_hoe", "stick"):
+        assert kind in FIRST_PERSON
+    assert "heldAtlasVertices_" in FIRST_PERSON
+    assert "AppendTexturedBlockCube(heldAtlasVertices_" in FIRST_PERSON
+    assert "AppendSolidBox(armVertices_" in FIRST_PERSON
+    assert "std::vector<WorldVertex> armVertices_" in FIRST_PERSON_H
+
+
+def test_first_person_pass_draws_after_world_transparency_and_disappears_in_third_person():
+    render = ENGINE[ENGINE.index("void Engine::Render()"):ENGINE.index("void Engine::Touch")]
+    transparent = render.index("worldRenderer_.DrawTransparent(frustum, eye, worldChunkViews_)")
+    viewmodel = render.index("firstPersonRenderer_.DrawHeldAtlas()")
+    arm = render.index("firstPersonRenderer_.DrawArm()")
+    assert transparent < viewmodel < arm
+    assert "const bool hasFirstPerson = !thirdPerson_ && firstPersonRenderer_.HasContent()" in render
+    assert "firstPersonRenderer_.Upload()" in render
+    assert "firstPersonRenderer_.Shutdown()" in ENGINE
+    assert "glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, viewModelProjection.v.data())" in render
+    assert "glDepthMask(GL_FALSE)" not in render[viewmodel:arm + 80]
+
+
+def test_selected_item_label_is_temporary_and_selection_source_stays_inventory_slot():
+    assert "inventory_.selectedSlot != lastQuickbarSelection_" in ENGINE
+    assert "selectedItemToastUntil_ = ElapsedSeconds() + 1.25" in ENGINE
+    assert "ElapsedSeconds() < selectedItemToastUntil_" in ENGINE
+    assert "ui_.SetSelectedItem({});" in ENGINE
+    assert "quickbarSelectionChanged" in ENGINE
 
 
 if __name__ == "__main__":
