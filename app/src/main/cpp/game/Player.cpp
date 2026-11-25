@@ -18,6 +18,18 @@ static_assert(sizeof(MfEnvironmentState) == 8u, "Rust/C environment ABI mismatch
 namespace minefade {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
+constexpr std::array<std::array<float,3>,6> kPlayerSkinPalette{{
+    {{0.91f,0.75f,0.61f}},{{0.75f,0.51f,0.37f}},{{0.58f,0.36f,0.25f}},
+    {{0.95f,0.80f,0.68f}},{{0.68f,0.43f,0.31f}},{{0.43f,0.28f,0.21f}}
+}};
+constexpr std::array<std::array<float,3>,6> kPlayerOutfitPalette{{
+    {{0.18f,0.55f,0.39f}},{{0.25f,0.41f,0.76f}},{{0.66f,0.35f,0.54f}},
+    {{0.70f,0.47f,0.19f}},{{0.34f,0.42f,0.50f}},{{0.27f,0.48f,0.36f}}
+}};
+constexpr std::array<std::array<float,3>,6> kPlayerArmourPalette{{
+    {{0.0f,0.0f,0.0f}},{{0.48f,0.34f,0.24f}},{{0.61f,0.69f,0.74f}},
+    {{0.26f,0.52f,0.66f}},{{0.61f,0.46f,0.78f}},{{0.82f,0.88f,0.91f}}
+}};
 int FloorToInt(float value) { return static_cast<int>(std::floor(value)); }
 
 std::uint16_t MaxToolDurability(const BlockDefinition* definition) {
@@ -209,6 +221,14 @@ void Player::SetAppearance(const std::array<int, 6>& values) {
         appearance[i] = std::clamp(values[i], 0, 5);
 }
 
+std::array<float, 3> Player::FirstPersonSkinColor() const {
+    return kPlayerSkinPalette[static_cast<std::size_t>(std::clamp(appearance[0], 0, 5))];
+}
+
+std::array<float, 3> Player::FirstPersonSleeveColor() const {
+    return kPlayerOutfitPalette[static_cast<std::size_t>(std::clamp(appearance[3], 0, 5))];
+}
+
 bool Player::ResolveSafeSpawn(const VoxelWorld& world) {
     constexpr float bodyRadius = 0.29f;
     constexpr float bodyHeight = 1.80f;
@@ -270,26 +290,14 @@ void Player::AppendMesh(std::vector<WorldVertex>& output) const {
     const float stride = pose.left_leg_pitch * 0.45f;
     // Original Minefade adventurer silhouette: boots, trousers, tunic, arms, hands,
     // face and hair. Every part is transformed by the player's yaw, not world axes.
-    static constexpr std::array<std::array<float,3>,6> skinPalette{{
-        {{0.91f,0.75f,0.61f}},{{0.75f,0.51f,0.37f}},{{0.58f,0.36f,0.25f}},
-        {{0.95f,0.80f,0.68f}},{{0.68f,0.43f,0.31f}},{{0.43f,0.28f,0.21f}}
-    }};
     static constexpr std::array<std::array<float,3>,6> hairPalette{{
         {{0.48f,0.29f,0.17f}},{{0.19f,0.16f,0.18f}},{{0.72f,0.50f,0.24f}},
         {{0.25f,0.39f,0.50f}},{{0.42f,0.30f,0.23f}},{{0.78f,0.70f,0.55f}}
     }};
-    static constexpr std::array<std::array<float,3>,6> outfitPalette{{
-        {{0.18f,0.55f,0.39f}},{{0.25f,0.41f,0.76f}},{{0.66f,0.35f,0.54f}},
-        {{0.70f,0.47f,0.19f}},{{0.34f,0.42f,0.50f}},{{0.27f,0.48f,0.36f}}
-    }};
-    static constexpr std::array<std::array<float,3>,6> armourPalette{{
-        {{0.0f,0.0f,0.0f}},{{0.48f,0.34f,0.24f}},{{0.61f,0.69f,0.74f}},
-        {{0.26f,0.52f,0.66f}},{{0.61f,0.46f,0.78f}},{{0.82f,0.88f,0.91f}}
-    }};
-    const auto& skin=skinPalette[static_cast<std::size_t>(appearance[0])];
+    const auto& skin=kPlayerSkinPalette[static_cast<std::size_t>(appearance[0])];
     const auto& hair=hairPalette[static_cast<std::size_t>(appearance[1])];
-    const auto& tunic=outfitPalette[static_cast<std::size_t>(appearance[3])];
-    const auto& armour=armourPalette[static_cast<std::size_t>(appearance[4])];
+    const auto& tunic=kPlayerOutfitPalette[static_cast<std::size_t>(appearance[3])];
+    const auto& armour=kPlayerArmourPalette[static_cast<std::size_t>(appearance[4])];
     const int hairstyle=appearance[1];
     const int accessory=appearance[5];
     const std::array<float, 3> trim{{0.88f, 0.66f, 0.28f}};
