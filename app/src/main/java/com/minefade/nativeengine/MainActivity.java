@@ -379,22 +379,27 @@ public final class MainActivity extends Activity {
         quickbar.setGravity(Gravity.CENTER);
         quickbar.setPadding(dp(4), dp(3), dp(4), dp(3));
         GradientDrawable quickbarBackground = new GradientDrawable();
-        quickbarBackground.setColor(0xdd162b3d);
-        quickbarBackground.setCornerRadius(dp(10));
-        quickbarBackground.setStroke(dp(1), 0x886d8aa0);
+        quickbarBackground.setColor(0x66162b3d);
+        quickbarBackground.setCornerRadius(dp(8));
+        quickbarBackground.setStroke(dp(1), 0x446d8aa0);
         quickbar.setBackground(quickbarBackground);
         FrameLayout.LayoutParams quickbarParams = new FrameLayout.LayoutParams(-2, dp(52),
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        quickbarParams.bottomMargin = dp(8);
+        quickbarParams.bottomMargin = dp(7);
         overlay.addView(quickbar, quickbarParams);
+        final float density = getResources().getDisplayMetrics().density;
+        final int screenWidthDp = Math.max(240, Math.round(getResources().getDisplayMetrics().widthPixels / density));
+        final int slotWidthDp = Math.max(20, Math.min(36, (screenWidthDp - 30) / 9));
         for (int i = 0; i < 9; ++i) {
             final int slot = i;
             TextView item = statusButton(Integer.toString(i + 1), false);
-            item.setTextSize(7);
+            item.setTextSize(6);
             item.setGravity(Gravity.CENTER);
             item.setMaxLines(3);
+            item.setIncludeFontPadding(false);
+            item.setElevation(0f);
             item.setContentDescription("Seleccionar espacio " + (i + 1));
-            LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(dp(36), dp(44));
+            LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(dp(slotWidthDp), dp(43));
             if (i > 0) itemParams.leftMargin = dp(2);
             quickbar.addView(item, itemParams);
             fallbackQuickbarSlots[i] = item;
@@ -439,12 +444,20 @@ public final class MainActivity extends Activity {
     }
 
     private void attachFallbackHoldAction(View button, int action) {
+        final int[] ownerPointer = {-1};
         button.setOnTouchListener((view, event) -> {
-            int state = event.getActionMasked();
-            if (state == MotionEvent.ACTION_DOWN) surfaceView.dispatchFallbackAction(action, true);
-            else if (state == MotionEvent.ACTION_UP || state == MotionEvent.ACTION_CANCEL
-                    || state == MotionEvent.ACTION_POINTER_UP) {
+            final int state = event.getActionMasked();
+            final int index = event.getActionIndex();
+            if (state == MotionEvent.ACTION_DOWN) {
+                ownerPointer[0] = event.getPointerId(index);
+                surfaceView.dispatchFallbackAction(action, true);
+            } else if ((state == MotionEvent.ACTION_POINTER_UP || state == MotionEvent.ACTION_UP)
+                    && ownerPointer[0] == event.getPointerId(index)) {
                 surfaceView.dispatchFallbackAction(action, false);
+                ownerPointer[0] = -1;
+            } else if (state == MotionEvent.ACTION_CANCEL) {
+                if (ownerPointer[0] >= 0) surfaceView.dispatchFallbackAction(action, false);
+                ownerPointer[0] = -1;
             }
             return true;
         });
@@ -462,7 +475,7 @@ public final class MainActivity extends Activity {
             String[] item = tokens[i + 1].split("\\|", 3);
             String label = item.length >= 3 ? item[2] : "";
             String amount = item.length >= 2 ? item[1] : "0";
-            if (label.length() > 7) label = label.substring(0, 7);
+            if (label.length() > 5) label = label.substring(0, 5);
             slot.setText((i + 1) + "\n" + (label.isEmpty() ? "—" : label) + "\n"
                     + ("0".equals(amount) ? "" : amount));
             int stroke = i == selected ? 0xffa8ed75 : 0x887d9bad;
