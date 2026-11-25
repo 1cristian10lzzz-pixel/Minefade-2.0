@@ -147,7 +147,8 @@ def test_multiplayer_world_streams_initial_render_distance_and_uses_more_than_on
     world_h = (CPP / "world/VoxelWorld.h").read_text(encoding="utf-8")
     engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
     assert "kChunkWorkerCount = 2;" in world_h
-    multiplayer_start = engine.index("if (multiplayerMode_)")
+    initialise = engine.index("bool Engine::Initialise(")
+    multiplayer_start = engine.index("if (multiplayerMode_)", initialise)
     multiplayer_end = engine.index("} else if (!storagePath_.empty())", multiplayer_start)
     branch = engine[multiplayer_start:multiplayer_end]
     assert "world_.RequestGenerateAround(generationX, generationZ, renderDistanceChunks_);" in branch

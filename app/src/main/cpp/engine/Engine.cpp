@@ -853,7 +853,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
             ? static_cast<int>(std::floor(player_.position.z)) : spawnZ;
         world_.GenerateAround(generationX, generationZ, 1);
         world_.RequestGenerateAround(generationX, generationZ, renderDistanceChunks_);
-    } else if (!storagePath_.empty() {
+    } else if (!storagePath_.empty()) {
         loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
         if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);
         if (!loadedExistingWorld) {
