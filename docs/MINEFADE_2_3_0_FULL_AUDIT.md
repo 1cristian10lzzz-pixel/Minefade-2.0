@@ -15,6 +15,27 @@
 - El botón Android de chat solo se muestra cuando falla el HUD RmlUi; evita superponer dos botones de chat cuando el HUD nativo funciona.
 - Los recursos de fallback mantienen controles básicos, quickbar e inventario disponibles cuando RmlUi no puede inicializarse.
 
+### Barra rápida y selección de objeto
+- La barra conserva los IDs `slot-0` a `slot-8`, el mapeo con `inventory_.counts` y el origen de selección `inventory_.selectedSlot`.
+- Desaparece el margen fijo negativo: el ancho se calcula con el ancho actual de Surface, nueve slots, gaps, padding y márgenes laterales seguros.
+- Los slots pasan a una placa gris oscura/translúcida; el seleccionado usa una placa clara y un contorno más visible.
+- Los iconos se dimensionan proporcionalmente, sin deformar la imagen, y los contadores mantienen una capa independiente en la esquina.
+- El nombre del objeto seleccionado aparece durante 1,25 segundos al cambiar de slot. La durabilidad solo se agrega cuando el objeto tiene datos de durabilidad.
+
+**Límite:** los márgenes laterales son una reserva conservadora del HUD; la matriz real de display cutouts/insets, 360/390/430 dp, tablet y rotación debe verificarse en Android físico.
+
+### Mano de primera persona y viewmodel
+- Se crea `FirstPersonRenderer` independiente, con buffers GPU separados para brazo, objeto con color y objeto con atlas.
+- La manga y la piel consultan las mismas paletas que `Player::AppendMesh`; no duplican las listas de personalización.
+- El brazo contiene manga, puño, antebrazo, muñeca, palma, pulgar y cuatro volúmenes de dedos.
+- Pico, hacha, pala, espada, azada, palo, armadura y bloques tienen geometrías distintas; los bloques reutilizan sus tiles de atlas.
+- El viewmodel usa coordenadas relativas a cámara, no entra en `entityMesh_`, `itemMesh_` ni en el frustum de entidades. El pase se dibuja tras la transparencia del mundo y antes del HUD.
+- Se conserva la tercera persona sin brazo duplicado. La mano izquierda cambia el lado de colocación.
+- Animación visual IDLE/WALK/ITEM_SWITCH; los gestos MINE/ATTACK/PLACE/EAT se disparan solo cuando el motor confirma el evento correspondiente.
+- Las tres capas GPU se publican juntas: si una nueva subida falla, se conserva el viewmodel anterior hasta reintentar.
+
+**Límite:** el tamaño, punto de agarre, FOV, clipping junto a paredes y calidad visual deben comprobarse con capturas de mano vacía, bloque, cada herramienta y apariencia personalizada en un móvil. No se considera validado visualmente solo por compilar.
+
 ### Renderizado y transparencias
 - El pase transparente ordena triángulos por distancia al centro de cada triángulo, no solo por centro de chunk. Esto mejora el orden de superficies de agua/lava que se cruzan dentro del mismo chunk.
 - Se limita el buffer temporal de ordenación a 75.000 triángulos; si se supera el límite o falla la subida, el motor conserva el camino alternativo de ordenación por chunk.
@@ -51,14 +72,20 @@ No se debe anunciar scripting nativo o carga de bibliotecas descargadas. Los mod
 
 ## 4. Trabajo pendiente de prioridad alta
 
-1. Resolver e integrar de forma comprobable el registro de contenido MFMod v2 y el sistema de recursos; no mezclar ramas divergentes a ciegas.
-2. Mejorar el atlas/registro de ítems para que herramientas, armas, comida y materiales tengan iconos y comportamientos propios, no solo una entrada visual.
-3. Terminar el render de entidades para todos los tipos, no únicamente el modelo MAES de oveja; validar rigs, orientaciones y animaciones en primera/tercera persona.
-4. Implementar sombras proyectadas con mapas de sombras según capacidad GLES, lluvia/partículas, reflejos/refracción y fluidos con estados; mantener perfil de bajo consumo.
-5. Sustituir el LOD superficial por LOD de volumen/capas para conservar cuevas, túneles y voladizos a distancia.
-6. Ampliar supervivencia: recetas/estaciones, fundición y combustible, comida/efectos, equipo y durabilidad, combate/loot, misiones y desbloqueos.
-7. Completar sincronización LAN autoritativa de inventarios, contenedores, entidades y contenido, y probar en dos teléfonos. La huella de mods por sí sola solo comprueba igualdad del contenido; no cifra el tráfico ni evita trampas.
-8. Ejecutar pruebas físicas en varias GPUs, resoluciones, rotación, pérdida/recreación de EGL, multitáctil y guardado/reapertura de mundos.
+1. Convertir el meshing de una futura/cada llamada con future en un scheduler persistente con pool fijo, cola acotada y deduplicada, prioridad por cámara/dirección y cancelación segura.
+2. Añadir snapshots/versiones por sección vertical (16x16x16) y revisión de vecinos; publicar solo resultados vigentes. Producir un mesh temporal económico para chunks nuevos que todavía no tienen malla.
+3. Instrumentar por chunk generación, mesh CPU, revisión, LOD, bounds, vértices, bytes, tiempo, upload y motivo de culling. Registrar fallos GL por fase y no ocultar un chunk si el culling no puede demostrar que está fuera de vista.
+4. Añadir política de memoria/evicción segura de chunks CPU; conservar chunks editados y no descargar datos con escrituras/entidades/refs pendientes.
+5. Separar OPAQUE/CUTOUT/BLENDED por material. La ordenación de triángulos transparentes actual mejora el caso blended, pero no sustituye una capa alpha-cutout para hojas/plantas.
+6. Resolver e integrar de forma comprobable el registro de contenido MFMod v2 y el sistema de recursos; no mezclar ramas divergentes a ciegas.
+7. Mejorar el atlas/registro de ítems para que herramientas, armas, comida y materiales tengan iconos y comportamientos propios, no solo una entrada visual.
+8. Terminar el render de entidades para todos los tipos, no únicamente el modelo MAES de oveja; validar rigs, orientaciones y animaciones en primera/tercera persona.
+9. Implementar sombras proyectadas con mapas de sombras según capacidad GLES, lluvia/partículas, reflejos/refracción y fluidos con estados; mantener perfil de bajo consumo.
+10. Sustituir el LOD superficial por LOD de volumen/capas para conservar cuevas, túneles y voladizos a distancia.
+11. Completar recuperación EGL real: separar pérdida/restauración de contexto de inicialización de gameplay, reconstruir atlas/programas/VAO/VBO y validar insets/viewport/rotación.
+12. Ampliar supervivencia: recetas/estaciones, fundición y combustible, comida/efectos, equipo y durabilidad, combate/loot, misiones y desbloqueos.
+13. Completar sincronización LAN autoritativa de inventarios, contenedores, entidades y contenido, y probar en dos teléfonos. La huella de mods por sí sola solo comprueba igualdad del contenido; no cifra el tráfico ni evita trampas.
+14. Ejecutar pruebas físicas en varias GPUs, resoluciones, rotación, pérdida/recreación de EGL, multitáctil, barra, viewmodel y guardado/reapertura de mundos.
 
 ## 5. Criterios de aceptación para esta candidata
 
