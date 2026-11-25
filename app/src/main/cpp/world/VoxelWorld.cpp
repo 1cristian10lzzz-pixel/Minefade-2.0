@@ -247,7 +247,8 @@ std::uint16_t RemapLegacyInventoryId(std::uint16_t oldId) {
 
 } // namespace
 
-VoxelWorld::VoxelWorld(std::uint32_t seed, bool flatWorld) : seed_(seed), flatWorld_(flatWorld) {}
+VoxelWorld::VoxelWorld(std::uint32_t seed, bool flatWorld, bool generateStructures)
+    : seed_(seed), flatWorld_(flatWorld), generateStructures_(generateStructures) {}
 
 int VoxelWorld::FloorDiv(int value,int divisor) {
     int quotient=value/divisor; const int remainder=value%divisor;
@@ -530,7 +531,7 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
         (static_cast<std::uint32_t>(chunkX) * 0x9e3779b9u) ^
         (static_cast<std::uint32_t>(chunkZ) * 0x85ebca6bu) ^ 0x5255494eu);
     const int ruinBaseY = TerrainHeight(ruinCenterX, ruinCenterZ);
-    if (dryLand && ruinBaseY > kSeaLevel + 2 && ruinHash % 9u == 0u &&
+    if (generateStructures_ && dryLand && ruinBaseY > kSeaLevel + 2 && ruinHash % 9u == 0u &&
         ruinBaseY + 4 < kWorldHeight) {
         constexpr int kMin = 5;
         constexpr int kMax = 11;
