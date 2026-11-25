@@ -744,7 +744,7 @@ void RmlUiRuntime::ApplyResponsiveLayout() {
 
     // Nine slots stay present at every width. The bar is positioned from the
     // live surface width (not a fixed negative margin) with safe side margins.
-    constexpr float kSafeMarginDp = 8.0f;
+    constexpr float kSafeMarginDp = 10.0f;
     constexpr float kGapDp = 3.0f;
     constexpr float kOuterPaddingDp = 5.0f;
     constexpr float kBorderDp = 2.0f;

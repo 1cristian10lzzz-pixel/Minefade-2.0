@@ -39,7 +39,7 @@ Si la ejecución está fallida, el APK no se publica. Abre los logs de la ejecuc
 
 ## Versionado y firma
 
-El módulo conserva `applicationId = com.minefade.nativeengine`, `versionCode = 29` y `versionName = 2.3.0`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
+El módulo conserva `applicationId = com.minefade.nativeengine`, `versionCode = 30` y `versionName = 2.3.1`. No reducir el versionCode ni cambiar el identificador sin una migración probada.
 
 Los APK de PR y validación normal son debug y no se deben usar como actualizaciones de producción. Los tags `v*` generan `app-release.apk`, firmado con la clave privada persistente del proyecto y con `debuggable=false`.
 
