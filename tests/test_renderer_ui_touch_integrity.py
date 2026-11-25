@@ -263,6 +263,21 @@ def test_selected_item_label_is_temporary_and_selection_source_stays_inventory_s
     assert "quickbarSelectionChanged" in ENGINE
 
 
+def test_first_person_viewmodel_uses_only_confirmed_gameplay_action_events():
+    assert "firstPersonActionKind_ = 1;" in ENGINE
+    assert "firstPersonActionKind_ = 2;" in ENGINE
+    assert "firstPersonActionKind_ = 3;" in ENGINE
+    assert "world_.BreakRay(" in ENGINE
+    assert "world_.PlaceRay(" in ENGINE
+    assert "inventory_.ConsumeSelected(1u)" in ENGINE
+    render = ENGINE[ENGINE.index("void Engine::Render()"):ENGINE.index("void Engine::Touch")]
+    assert "actionElapsed < 0.24f" in render
+    assert "std::sin(phase * kPi)" in render
+    assert "actionAngle = -0.48f * envelope" in render
+    assert "actionAngle = 0.34f * envelope" in render
+    assert "actionLift = 0.07f * envelope" in render
+
+
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
               if name.startswith("test_") and callable(value)]
