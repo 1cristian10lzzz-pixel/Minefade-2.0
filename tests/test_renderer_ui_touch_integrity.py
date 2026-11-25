@@ -58,7 +58,9 @@ def test_fallback_world_camera_touch_and_discrete_dpad_cancel_release():
     for direction, action in (("up", 6), ("down", 7), ("left", 8), ("right", 9)):
         assert f"attachFallbackHoldAction({direction}, {action});" in ACTIVITY
     assert "attachFallbackHoldAction(crouch, 1);" in ACTIVITY
-    assert "state == MotionEvent.ACTION_UP || state == MotionEvent.ACTION_CANCEL" in ACTIVITY
+    assert "state == MotionEvent.ACTION_POINTER_UP || state == MotionEvent.ACTION_UP" in ACTIVITY
+    assert "ownerPointer[0] == event.getPointerId(index)" in ACTIVITY
+    assert "state == MotionEvent.ACTION_CANCEL" in ACTIVITY
     assert "surfaceView.dispatchFallbackAction(action, false);" in ACTIVITY
     assert "surfaceView.dispatchFallbackTouch(mapped, event.getPointerId(index)" in ACTIVITY
 
@@ -128,6 +130,68 @@ def test_secondary_pointer_over_hud_button_is_consumed_not_sent_to_world():
     assert 'hit->Closest("button")' in branch
     assert "return hit == nullptr || hit->Closest(\"button\") == nullptr;" in branch
     # The handler returns false for HUD buttons (consumed) and true only\n    # for non-UI touches; it must not synthesize a normal mouse-down here.\n    assert "context_->ProcessMouseButtonDown" not in branch
+
+
+
+def test_direction_pad_does_not_capture_invisible_gaps_and_crouch_is_centre_control():
+    runtime = RML
+    start = runtime.index("bool RmlUiRuntime::MovementVectorAt(")
+    end = runtime.index("bool RmlUiRuntime::Touch(", start)
+    movement = runtime[start:end]
+    assert "if (!IsInMovementPad(x, y))" not in movement
+    assert "return false;" in movement
+    assert "bool RmlUiRuntime::CrouchButtonAt(" in movement
+    assert '#movement-pad #crouch' in hud_document()
+    assert '<button id="crouch">' in hud_document()
+    touch = ENGINE[ENGINE.index("void Engine::Touch(int action"):ENGINE.index("void Engine::HandleUiAction")]
+    assert "if (ui_.CrouchButtonAt(x, y))" in touch
+    assert 'HandleUiAction("crouch");' in touch
+
+
+def test_hotbar_resizes_and_left_handed_positions_update_live():
+    assert "void RmlUiRuntime::ApplyResponsiveLayout()" in RML
+    assert "slotWidth = std::clamp((availableDp - 28.0f) / 9.0f" in RML
+    assert 'SetProperty("min-width", value)' in RML
+    assert "void RmlUiRuntime::SetLeftHanded(bool enabled)" in RML
+    assert 'SetProperty("right", leftHanded_ ? "14dp" : "auto")' in RML
+    assert 'SetProperty("left", leftHanded_ ? "22dp" : "auto")' in RML
+    assert "final int slotWidthDp" in ACTIVITY
+
+
+def test_progression_xp_and_achievement_counters_are_world_persisted():
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    assert "progressionXp_" in header
+    assert 'storagePath_ + ".progression"' in ENGINE
+    assert "0x4D465052u" in ENGINE
+    assert "Engine::ProgressionSnapshot() const" in ENGINE
+    assert "AddProgressionXp" in ENGINE
+    assert "nativeGetProgressionSnapshot" in bridge
+    assert "nativeGetProgressionSnapshot" in native
+    assert "requestProgressionSnapshot" in SURFACE
+    assert "updateProgressionPreferences" in ACTIVITY
+    assert 'achievement_blocks_mined' in ACTIVITY
+    assert 'achievement_blocks_placed' in ACTIVITY
+    assert "NIVEL " in (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
+
+
+def test_transparent_triangles_are_sorted_across_chunk_boundaries():
+    header = (CPP / "render/WorldMeshRenderer.h").read_text(encoding="utf-8")
+    assert "const std::vector<ChunkMeshView>& chunkViews" in header
+    assert "std::vector<WorldVertex> sortedTransparentVertices_" in header
+    assert "kMaxSortedTriangles = 75000u" in RENDERER
+    assert "triangles.push_back({dx * dx + dy * dy + dz * dz, triangle})" in RENDERER
+    assert "a.distanceSquared > b.distanceSquared" in RENDERER
+    assert "sortedTransparentVao_" in RENDERER
+    assert "DrawTransparent(frustum, eye, worldChunkViews_)" in ENGINE
+
+
+def test_android_hud_chat_is_not_duplicated_when_rmlui_is_live():
+    assert "private TextView commandButton;" in ACTIVITY
+    assert "commandButton.setVisibility(View.GONE)" in ACTIVITY
+    assert "commandButton.setVisibility(View.VISIBLE)" in ACTIVITY
+    assert "commandButton.setVisibility(View.GONE)" in ACTIVITY
 
 
 if __name__ == "__main__":
