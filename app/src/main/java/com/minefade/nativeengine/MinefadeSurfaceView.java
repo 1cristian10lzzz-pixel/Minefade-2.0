@@ -308,6 +308,27 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         });
     }
 
+    /** Read per-world XP and achievement counters without racing the native simulation. */
+    public void requestProgressionSnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetProgressionSnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "Progression snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
     /** Run a typed command on the native simulation thread and return its Spanish response. */
     public String executeCommand(String command) {
         if (!nativeReady) return "El mundo no está listo.";
