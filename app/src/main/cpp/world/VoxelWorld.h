@@ -81,7 +81,7 @@ public:
     static constexpr std::size_t kChunkVolume =
         static_cast<std::size_t>(kChunkSize * kWorldHeight * kChunkSize);
 
-    explicit VoxelWorld(std::uint32_t seed = 0x4D464445u, bool flatWorld = false);
+    explicit VoxelWorld(std::uint32_t seed = 0x4D464445u, bool flatWorld = false, bool generateStructures = true);
 
     void GenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
     void RequestGenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
@@ -171,6 +171,7 @@ private:
 
     std::uint32_t seed_;
     bool flatWorld_{false};
+    bool generateStructures_{true};
     std::map<std::pair<int, int>, Chunk> chunks_;
     mutable std::map<std::pair<int, int>, ChunkMeshCache> chunkMeshCache_;
     mutable std::set<std::pair<int, int>> dirtyChunkMeshes_;
