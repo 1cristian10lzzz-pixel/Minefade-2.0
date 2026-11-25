@@ -33,7 +33,7 @@ public:
     bool Pause();
     void Resume();
     void SetStoragePath(std::string path);
-    void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld);
+    void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld, int difficulty, bool generateStructures);
     void SetModsDirectory(std::string path);
     std::string ExecuteCommand(const std::string& command);
     bool ConsumeExitRequest();
@@ -147,6 +147,10 @@ private:
     std::uint32_t pendingWorldSeed_{0x4D464445u};
     bool pendingFlatWorld_{false};
     bool flatWorld_{false};
+    int pendingDifficulty_{2};
+    int difficulty_{2};
+    bool pendingGenerateStructures_{true};
+    bool generateStructures_{true};
     int graphicsQuality_{1};
     int pendingGraphicsQuality_{1};
     int renderDistanceChunks_{2};
