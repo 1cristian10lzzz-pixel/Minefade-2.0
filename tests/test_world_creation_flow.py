@@ -193,3 +193,12 @@ def test_world_creation_header_and_actions_use_compact_layout():
     assert 'String[] tabLabels = {"JUEGO", "MUNDO", "MÁS"};' in home
     assert 'new LinearLayout.LayoutParams(dp(82), -1)' in home
     assert 'new LinearLayout.LayoutParams(dp(164), -1)' in home
+
+
+
+def test_existing_world_multiplayer_builds_chunks_near_the_saved_player():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert "const bool isExistingHostWorld = loadedExistingWorld && multiplayerSlot_ == 0;" in engine
+    assert "std::floor(player_.position.x)" in engine
+    assert "std::floor(player_.position.z)" in engine
+    assert "world_.GenerateAround(generationX, generationZ, 1);" in engine
