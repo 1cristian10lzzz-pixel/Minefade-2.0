@@ -225,11 +225,13 @@ public final class MainActivity extends Activity {
         boolean allowCheats = world != null && world.allowCheats;
         boolean starterChest = world != null && world.starterChest;
         boolean flatWorld = world != null && world.flatWorld;
+        int difficulty = world == null ? 2 : world.difficulty;
+        boolean generateStructures = world == null || world.generateStructures;
         String modsPath = new java.io.File(getFilesDir(), "mods").getAbsolutePath();
         surfaceView = new MinefadeSurfaceView(this, soundEffects,
                 getResources().getDisplayMetrics().density,
                 multiplayer, requestedPlayerSlot, worldPath, modsPath, worldSeed,
-                gameMode, allowCheats, starterChest, flatWorld,
+                gameMode, allowCheats, starterChest, flatWorld, difficulty, generateStructures,
                 multiplayer ? lanMultiplayer : null,
                 new MinefadeSurfaceView.InitializationListener() {
                     @Override public void onEngineReady() {
