@@ -702,6 +702,10 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     player_ = Player();
     player_.SetAppearance(avatarAppearance_);
     inventory_ = Inventory();
+    lastQuickbarSelection_ = 0xffffu;
+    selectedItemToastUntil_ = 0.0;
+    firstPersonItemId_ = 0xffffu;
+    firstPersonSwitchStarted_ = 0.0;
     progressionXp_ = 0u;
     progressionBlocksMined_ = 0u;
     progressionBlocksPlaced_ = 0u;
@@ -1637,6 +1641,10 @@ void Engine::Render() {
     glClearColor(sky[0], sky[1], sky[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    if (selectedItemToastUntil_ > 0.0 && ElapsedSeconds() >= selectedItemToastUntil_) {
+        ui_.SetSelectedItem({});
+        selectedItemToastUntil_ = 0.0;
+    }
     // CPU geometry is cached; GPU creation/publication remains on the GLSurfaceView
     // thread where the current EGL context is guaranteed to exist.
     firstPersonRenderer_.Upload();
@@ -3017,10 +3025,17 @@ void Engine::RefreshInventoryUi() {
         equipmentMarkup += "</button>";
     }
     ui_.SetEquipmentContents(equipmentMarkup);
+    const bool quickbarSelectionChanged =
+        inventory_.selectedSlot != lastQuickbarSelection_;
+    if (quickbarSelectionChanged) {
+        lastQuickbarSelection_ = inventory_.selectedSlot;
+        selectedItemToastUntil_ = ElapsedSeconds() + 1.25;
+    }
     const std::uint16_t selectedId = inventory_.SelectedItemId();
     const BlockDefinition* selectedDefinition =
         GetBlockDefinition(static_cast<BlockId>(selectedId));
-    if (selectedDefinition != nullptr && selectedId > 0u) {
+    if (selectedDefinition != nullptr && selectedId > 0u &&
+        ElapsedSeconds() < selectedItemToastUntil_) {
         std::string selectedMarkup = "<img src='minefade://block/" +
             std::to_string(selectedId) + "'/><span>" + selectedDefinition->nameEs + "</span>";
         const std::uint16_t maximum = inventory_.SelectedItemMaxDurability();
