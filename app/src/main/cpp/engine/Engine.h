@@ -274,6 +274,8 @@ private:
     FirstPersonRenderer firstPersonRenderer_;
     std::uint16_t firstPersonItemId_{0xffffu};
     double firstPersonSwitchStarted_{0.0};
+    std::uint16_t lastQuickbarSelection_{0xffffu};
+    double selectedItemToastUntil_{0.0};
     std::vector<WorldVertex> entityMesh_;
     std::vector<WorldVertex> maesEntityMesh_;
     std::vector<WorldVertex> itemMesh_;
