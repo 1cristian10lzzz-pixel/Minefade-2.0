@@ -105,10 +105,22 @@ public final class MainActivity extends Activity {
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
     }
 
+    private void saveCurrentWorldPreview() {
+        if (surfaceView == null || requestedWorld == null || !engineReady) return;
+        java.io.File worldFile = new java.io.File(requestedWorld.getPath());
+        java.io.File worldDirectory = worldFile.getParentFile();
+        if (worldDirectory == null) return;
+        java.io.File preview = new java.io.File(worldDirectory, "world-preview.jpg");
+        if (!surfaceView.captureWorldPreview(preview)) {
+            android.util.Log.w("Minefade", "World thumbnail was not updated for " + requestedWorld.name);
+        }
+    }
+
     private void showHome() {
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
         if (surfaceView != null) {
+            saveCurrentWorldPreview();
             try {
                 if (!surfaceView.pauseNativeEngine()) {
                     surfaceView.resumeNativeEngine();
@@ -188,6 +200,7 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
         if (surfaceView != null) {
+            saveCurrentWorldPreview();
             try {
                 if (!surfaceView.pauseNativeEngine()) {
                     surfaceView.resumeNativeEngine();
