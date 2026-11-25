@@ -84,6 +84,12 @@ public:
     explicit VoxelWorld(std::uint32_t seed = 0x4D464445u, bool flatWorld = false, bool generateStructures = true);
 
     void GenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
+    // Restore per-world terrain settings after loading an existing save so
+    // subsequently generated chunks keep the world's original terrain rules.
+    void SetGenerationOptions(bool flatWorld, bool generateStructures) noexcept {
+        flatWorld_ = flatWorld;
+        generateStructures_ = generateStructures;
+    }
     void RequestGenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
     bool PumpChunkGeneration();
     void WaitForChunkGeneration();
