@@ -41,8 +41,8 @@ def test_android_version_and_release_documentation_match():
     assert 'versionName = "2.3.1"' in GRADLE
     assert "versionCode = 30" in BUILD_DOC
     assert "versionName = 2.3.1" in BUILD_DOC
-    assert "versionCode = 30" in WORKFLOW
-    assert "versionName = 2.3.1" in WORKFLOW
+    assert "versionCode 30" in WORKFLOW
+    assert "versionName 2.3.1" in WORKFLOW
 
 
 if __name__ == "__main__":
