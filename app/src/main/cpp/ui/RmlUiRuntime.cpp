@@ -193,7 +193,7 @@ button:active { background: #47789b; }
 #target { position: absolute; z-index: 4; left: 50%; top: 57%; margin-left: -75dp; min-width: 150dp; text-align: center; color: #ffffff; font-size: 11dp; text-shadow: 0dp 1dp 3dp #000000; display: none; pointer-events: none; }
 #target-progress { width: 100dp; height: 4dp; margin: 5dp auto 0dp auto; background: #ffffff33; border-radius: 4dp; overflow: hidden; }
 #target-progress-fill { height: 4dp; width: 0%; background: #b9f27c; border-radius: 4dp; }
-#selected-item { position: absolute; z-index: 6; left: 50%; bottom: 59dp; margin-left: -76dp; width: 152dp; display: none; flex-direction: row; align-items: center; justify-content: center; gap: 6dp; color: #ffffff; font-size: 10dp; text-shadow: 0dp 1dp 3dp #000000; pointer-events: none; }
+#selected-item { position: absolute; z-index: 6; left: 50%; bottom: 59dp; margin-left: -95dp; width: 190dp; max-width: 82%; padding: 4dp 8dp; display: none; flex-direction: row; align-items: center; justify-content: center; gap: 6dp; color: #ffffff; font-size: 10dp; text-shadow: 0dp 1dp 3dp #000000; background: #171c22d9; border: 1dp #aeb8c255; border-radius: 4dp; pointer-events: none; }
 #selected-item img { width: 22dp; height: 22dp; }
 #pickup { position: absolute; z-index: 5; right: 12dp; bottom: 54dp; color: #ffffff; font-size: 11dp; text-shadow: 0dp 1dp 3dp #000000; background: #102131bb; border: 1dp #d9e9a455; border-radius: 9dp; padding: 6dp 9dp; pointer-events: none; }
 
@@ -408,7 +408,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #movement-pad #crouch { position: absolute; left: 45dp; top: 45dp; right: auto; bottom: auto; width: 42dp; height: 42dp; font-size: 15dp; pointer-events: auto; }
 #minimap { position: absolute; top: 54dp; left: 10dp; width: 64dp; height: 64dp; border: 1dp solid #ffffff88; background-color: rgba(18, 43, 64, 0.70); }
 #target { position: absolute; top: 58%; left: 50%; margin-left: -70dp; width: 140dp; text-align: center; display: none; }
-#selected-item { position: absolute; left: 50%; bottom: 58dp; margin-left: -76dp; width: 152dp; text-align: center; display: none; }
+#selected-item { position: absolute; left: 50%; bottom: 59dp; margin-left: -95dp; width: 190dp; max-width: 82%; padding: 4dp 8dp; text-align: center; background: #171c22d9; border: 1dp #aeb8c255; border-radius: 4dp; display: none; }
 #pickup { position: absolute; right: 12dp; bottom: 54dp; display: none; }
 .panel { position: absolute; left: 50%; top: 50%; width: 280dp; margin-left: -140dp; margin-top: -100dp; padding: 12dp; border: 1dp solid #ffffffaa; border-radius: 12dp; background-color: rgba(21, 41, 61, 0.96); display: none; }
 #pause-panel .actions { display: flex; }
