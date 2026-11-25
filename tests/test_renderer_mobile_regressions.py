@@ -60,7 +60,7 @@ def test_world_creation_and_multiplayer_search_use_existing_world_and_lan_data()
     home = (ROOT / "app/src/main/java/com/minefade/nativeengine/MinefadeHomeScreen.java").read_text(encoding="utf-8")
     create = home[home.index("private void showCreateWorld()"):home.index("private void showModsPage()")]
     multi = home[home.index("private void showMultiplayerPage()"):home.index("private void showAchievementsPage()")]
-    assert 'String[] tabLabels = {"JUEGO", "MUNDO", "TRUCOS"};' in create
+    assert 'String[] tabLabels = {"JUEGO", "MUNDO", "MÁS"};' in create
     assert 'final String[] modeNames = {"SUPERVIVENCIA", "CREATIVO", "AVENTURA"};' in create
     assert "updateModeCards(modeCards" in create
     assert "worldManager.createWorld(" in create
