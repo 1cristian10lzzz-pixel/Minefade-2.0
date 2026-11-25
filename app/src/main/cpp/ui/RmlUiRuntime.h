@@ -27,6 +27,7 @@ public:
     bool Touch(int action, int pointerId, float x, float y);
     bool IsInMovementPad(float x, float y) const;
     bool MovementVectorAt(float x, float y, float& moveX, float& moveY) const;
+    bool CrouchButtonAt(float x, float y) const;
     void UpdateAndRender();
     void SetStatus(const std::string& status);
     void SetLeftHanded(bool enabled) { leftHanded_ = enabled; }
@@ -80,6 +81,7 @@ private:
     };
 
     void AttachAction(const char* elementId, const char* action);
+    void ApplyResponsiveLayout();
 
     RmlUiOpenGLES renderer_;
     AndroidSystemInterface system_;
