@@ -143,7 +143,7 @@ button:active { background: #47789b; }
 .panel p { font-size: 12dp; color: #c8d3db; margin: 3dp 0dp 12dp 0dp; }
 .panel .actions { flex-wrap: wrap; }
 #quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; flex-direction: row; gap: 2dp; padding: 3dp; background: #15263836; border: 1dp #dcebf044; border-radius: 9dp; }
-.slot { position: relative; width: 30dp; min-width: 20dp; height: 41dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #223b52d8; border: 1dp #b5cad877; border-radius: 6dp; color: #ffffff; font-size: 9dp; }
+.slot { position: relative; width: 30dp; min-width: 30dp; height: 41dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #223b52d8; border: 1dp #b5cad877; border-radius: 6dp; color: #ffffff; font-size: 9dp; }
 .slot:active { background: #486b78; }
 .slot img { width: 22dp; height: 22dp; display: block; margin: auto; }
 .slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 7dp; text-shadow: 0dp 1dp 2dp #000000; }
