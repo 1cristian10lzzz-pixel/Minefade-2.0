@@ -616,7 +616,15 @@ public final class MainActivity extends Activity {
     private void startLanHost(WorldManager.WorldInfo world) {
         if (lanMultiplayer == null) return;
         lanMultiplayer.setContentFingerprint(new ModManager(this).enabledModsFingerprint());
-        lanMultiplayer.startHost("Jugador", createLanListener(true, world));
+        long seed = world == null ? 0x4D464445L : world.seed;
+        int mode = world == null ? WorldManager.SURVIVAL : world.gameMode;
+        boolean cheats = world != null && world.allowCheats;
+        boolean chest = world != null && world.starterChest;
+        boolean flat = world != null && world.flatWorld;
+        int difficulty = world == null ? 2 : world.difficulty;
+        boolean structures = world == null || world.generateStructures;
+        lanMultiplayer.startHost("Jugador", seed, mode, cheats, chest, flat,
+                difficulty, structures, createLanListener(true, world));
         if (homeScreen != null) homeScreen.setMultiplayerStatus(world == null
                 ? "Creando partida y publicándola en la red local…"
                 : "Abriendo «" + world.name + "» en la red local…");
@@ -630,9 +638,17 @@ public final class MainActivity extends Activity {
     }
 
     private void joinLanGame(LanMultiplayerService.GameInfo game) {
-        if (lanMultiplayer == null) return;
+        if (lanMultiplayer == null || game == null) return;
         lanMultiplayer.setContentFingerprint(new ModManager(this).enabledModsFingerprint());
-        lanMultiplayer.join(game, "Jugador", createLanListener(false));
+        WorldManager.WorldInfo localWorld = worldManager.createWorld(
+                game.name + " (LAN)", game.worldSeed, game.gameMode, game.allowCheats,
+                game.starterChest, game.flatWorld, game.difficulty, game.generateStructures, false);
+        if (localWorld == null) {
+            Toast.makeText(this, "No se pudo preparar el mundo compartido. Comprueba el espacio disponible.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        lanMultiplayer.join(game, "Jugador", createLanListener(false, localWorld));
         if (homeScreen != null) homeScreen.setMultiplayerStatus("Conectando a " + game.name + "…");
     }
 
