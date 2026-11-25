@@ -5,6 +5,7 @@
 #include "../world/VoxelWorld.h"
 #include "../world/ProtectionManager.h"
 #include "../render/WorldMeshRenderer.h"
+#include "../render/FirstPersonRenderer.h"
 #include "../entity/EntityVisualSystem.h"
 
 #include <GLES3/gl3.h>
@@ -270,6 +271,9 @@ private:
     std::vector<WorldVertex> meshBuildScratch_;
     std::vector<ChunkMeshView> worldChunkViews_;
     WorldMeshRenderer worldRenderer_;
+    FirstPersonRenderer firstPersonRenderer_;
+    std::uint16_t firstPersonItemId_{0xffffu};
+    double firstPersonSwitchStarted_{0.0};
     std::vector<WorldVertex> entityMesh_;
     std::vector<WorldVertex> maesEntityMesh_;
     std::vector<WorldVertex> itemMesh_;
