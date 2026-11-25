@@ -40,6 +40,7 @@ public:
     void SetModsDirectory(std::string path);
     std::string ExecuteCommand(const std::string& command);
     std::string QuickbarSnapshot() const;
+    std::string ProgressionSnapshot() const;
     bool ConsumeExitRequest();
     bool ConsumeChatRequest() noexcept {
         return chatRequested_.exchange(false, std::memory_order_acq_rel);
@@ -93,6 +94,7 @@ private:
     void HandleUiAction(const std::string& action);
     void CyclePerspective();
     void UpdateTouchMovement();
+    void AddProgressionXp(std::uint32_t amount);
     bool SaveWorld();
     void LoadEnabledMods();
     void OpenStarterChest();
@@ -204,6 +206,13 @@ private:
     bool allowCheats_{false};
     float playerHealth_{20.0f};
     float playerHunger_{20.0f};
+    // Per-world progression is persisted separately to preserve legacy MFVOX save formats.
+    std::uint32_t progressionXp_{0u};
+    std::uint32_t progressionBlocksMined_{0u};
+    std::uint32_t progressionBlocksPlaced_{0u};
+    std::uint32_t progressionItemsCollected_{0u};
+    std::uint32_t progressionJumps_{0u};
+    bool progressionWorldEntered_{false};
     float hungerExhaustion_{0.0f};
     float hungerDrainTimer_{0.0f};
     float starvationTimer_{0.0f};
