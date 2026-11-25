@@ -196,6 +196,7 @@ def test_survival_building_and_redstone_recipes_are_exposed_and_implemented():
 
 def test_inventory_and_mobile_hud_labels_match_real_slot_counts():
     assert "INVENTARIO · 36 ESPACIOS" in RML
-    assert "margin-left: -150dp" in RML
-    assert "width: 30dp; min-width: 30dp" in RML
+    assert "margin-left: -150dp" not in RML
+    assert "width: 34dp; min-width: 34dp; height: 36dp" in RML
+    assert "kSlotCount = 9.0f" in RML
     assert 'replaceStyle("right: 24dp; bottom: 126dp;", "left: 24dp; right: auto; bottom: 126dp;");' in RML
