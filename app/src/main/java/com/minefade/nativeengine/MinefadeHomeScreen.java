@@ -2109,6 +2109,28 @@ public final class MinefadeHomeScreen extends FrameLayout {
     private void showAchievementsPage() {
         LinearLayout root = pageRoot("", "");
         addWorldTabs(root, true);
+        int totalXp = Math.max(0, preferences.getInt("achievement_xp", 0));
+        int level = 1;
+        int spentXp = 0;
+        int levelCost = 100;
+        while (level < 10000 && totalXp >= spentXp + levelCost) {
+            spentXp += levelCost;
+            level++;
+            levelCost = 100 + (level - 1) * 50;
+        }
+        int levelXp = totalXp - spentXp;
+        LinearLayout progressionCard = column();
+        progressionCard.setPadding(dp(10), dp(7), dp(10), dp(7));
+        progressionCard.setBackground(shape(new int[]{0xff203c4b,0xff142b3b}, 10, 0x665a8194));
+        TextView progressionTitle = text("NIVEL " + level + "  ·  " + levelXp + " / " + levelCost + " XP", 11, white, true);
+        progressionCard.addView(progressionTitle);
+        LinearLayout.LayoutParams xpBarParams = new LinearLayout.LayoutParams(-1, dp(6));
+        xpBarParams.topMargin = dp(6);
+        progressionCard.addView(new AchievementProgressView(getContext(),
+                Math.min(1.0f, levelXp / (float) Math.max(1, levelCost)), false), xpBarParams);
+        LinearLayout.LayoutParams progressionParams = new LinearLayout.LayoutParams(-1, -2);
+        progressionParams.topMargin = dp(8);
+        root.addView(progressionCard, progressionParams);
         int mined = preferences.getInt("achievement_blocks_mined", 0);
         int placed = preferences.getInt("achievement_blocks_placed", 0);
         int collected = preferences.getInt("achievement_items_collected", 0);
@@ -2138,19 +2160,19 @@ public final class MinefadeHomeScreen extends FrameLayout {
         grid.setClipChildren(true);
         grid.setClipToPadding(true);
         scroll.addView(grid, new ScrollView.LayoutParams(-1, -2));
-        for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
+        for (int rowIndex = 0; rowIndex < 5; rowIndex++) {
             LinearLayout line = row();
-            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(-1, dp(112));
+            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(-1, dp(104));
             if (rowIndex > 0) lineParams.topMargin = dp(7);
             grid.addView(line, lineParams);
             for (int col = 0; col < 5; col++) {
-                final int index = rowIndex * 5 + col;
+                final int index = rowIndex * 2 + col;
                 final int current = Math.max(0, progress[index]);
                 final int target = Math.max(1, targets[index]);
                 final boolean unlocked = current >= target;
                 LinearLayout tile = column();
                 tile.setGravity(Gravity.CENTER_VERTICAL);
-                tile.setPadding(dp(5), dp(5), dp(5), dp(5));
+                tile.setPadding(dp(8), dp(7), dp(8), dp(7));
                 tile.setBackground(shape(unlocked
                         ? new int[]{0xff274d3e, 0xff17382f}
                         : new int[]{0xff203449, 0xff142438},
@@ -2159,13 +2181,13 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 LinearLayout top = row();
                 top.setGravity(Gravity.CENTER_VERTICAL);
                 top.addView(new AchievementGlyph(getContext(), index, unlocked ? 0xffb9f27c : 0xff8caabd),
-                        new LinearLayout.LayoutParams(dp(21), dp(21)));
+                        new LinearLayout.LayoutParams(dp(27), dp(27)));
                 LinearLayout labels = column();
-                labels.setPadding(dp(6), 0, 0, 0);
-                TextView title = text(titles[index], 7, white, true);
+                labels.setPadding(dp(8), 0, 0, 0);
+                TextView title = text(titles[index], 10, white, true);
                 title.setMaxLines(1);
                 labels.addView(title);
-                TextView description = text(details[index], 6, muted, false);
+                TextView description = text(details[index], 8, muted, false);
                 description.setMaxLines(2);
                 LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(-1, -2);
                 detailParams.topMargin = dp(2);
@@ -2176,10 +2198,10 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 LinearLayout footer = row();
                 footer.setGravity(Gravity.CENTER_VERTICAL);
                 TextView status = text(unlocked ? "COMPLETADO" : current + " / " + target,
-                        7, unlocked ? 0xffb9f27c : 0xffc2d2dc, true);
-                footer.addView(status, new LinearLayout.LayoutParams(0, dp(16), 1f));
+                        9, unlocked ? 0xffb9f27c : 0xffc2d2dc, true);
+                footer.addView(status, new LinearLayout.LayoutParams(0, dp(18), 1f));
                 if (unlocked) footer.addView(text("✓", 12, 0xffb9f27c, true));
-                LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, dp(16));
+                LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, dp(18));
                 footerParams.topMargin = dp(5);
                 tile.addView(footer, footerParams);
                 tile.addView(new AchievementProgressView(getContext(),
@@ -2187,7 +2209,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
                         new LinearLayout.LayoutParams(-1, dp(5)));
 
                 LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -1, 1f);
-                if (col > 0) cell.leftMargin = dp(4);
+                if (col > 0) cell.leftMargin = dp(6);
                 line.addView(tile, cell);
             }
         }
