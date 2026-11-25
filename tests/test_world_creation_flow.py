@@ -115,3 +115,31 @@ def test_world_switch_is_blocked_until_native_save_finishes_successfully():
                                      engine.index("void Engine::Resume()")]
     assert activity.count("if (!surfaceView.pauseNativeEngine())") >= 2
     assert "No se cambiará de partida para proteger tus datos." in activity
+
+
+
+def test_every_native_bridge_method_has_a_matching_jni_export():
+    import re
+
+    bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    java_methods = set(re.findall(
+        r"public\\s+static\\s+native\\s+[\\w\\[\\]]+\\s+(\\w+)\\s*\\(",
+        bridge,
+    ))
+    jni_methods = set(re.findall(
+        r"Java_com_minefade_nativeengine_NativeBridge_(\\w+)\\s*\\(",
+        native,
+    ))
+    missing = sorted(java_methods - jni_methods)
+    assert not missing, "NativeBridge methods missing JNI exports: " + ", ".join(missing)
+
+
+def test_native_renderer_startup_and_failure_checks_are_exported():
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    engine_header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    assert "Java_com_minefade_nativeengine_NativeBridge_nativeSetHudOptions" in native
+    assert "minefade::GetEngine().SetHudOptions(showStats == JNI_TRUE);" in native
+    assert "Java_com_minefade_nativeengine_NativeBridge_nativeConsumeEngineFailure" in native
+    assert "gEngineFailure.exchange(false, std::memory_order_acq_rel)" in native
+    assert "void SetHudOptions(bool showStats);" in engine_header
