@@ -639,8 +639,25 @@ bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
     return false;
 }
 
+void RmlUiRuntime::SetLeftHanded(bool enabled) {
+    leftHanded_ = enabled;
+    ApplyResponsiveLayout();
+}
+
 void RmlUiRuntime::ApplyResponsiveLayout() {
     if (document_ == nullptr) return;
+    if (Rml::Element* pad = document_->GetElementById("movement-pad")) {
+        pad->SetProperty("left", leftHanded_ ? "auto" : "14dp");
+        pad->SetProperty("right", leftHanded_ ? "14dp" : "auto");
+    }
+    if (Rml::Element* jump = document_->GetElementById("jump")) {
+        jump->SetProperty("left", leftHanded_ ? "22dp" : "auto");
+        jump->SetProperty("right", leftHanded_ ? "auto" : "22dp");
+    }
+    if (Rml::Element* attack = document_->GetElementById("attack")) {
+        attack->SetProperty("left", leftHanded_ ? "24dp" : "auto");
+        attack->SetProperty("right", leftHanded_ ? "auto" : "24dp");
+    }
     const float availableDp = static_cast<float>(width_) / density_ - 20.0f;
     const float slotWidth = std::clamp((availableDp - 28.0f) / 9.0f, 19.0f, 30.0f);
     const float totalWidth = slotWidth * 9.0f + 28.0f;
