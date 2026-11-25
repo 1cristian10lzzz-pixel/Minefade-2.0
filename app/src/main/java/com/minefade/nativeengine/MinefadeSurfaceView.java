@@ -3,14 +3,18 @@ package com.minefade.nativeengine;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.AssetManager;
+import android.graphics.Bitmap;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.util.Log;
 import android.view.MotionEvent;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -86,6 +90,88 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             Log.w(TAG, "Interrupted while waiting for native pause", interrupted);
+            return false;
+        }
+    }
+
+    /**
+     * Capture the last rendered world view before the GL surface is paused.
+     * The frame is read on the GL thread, cropped to 16:9 and stored atomically
+     * as a small JPEG next to that world's save file.
+     */
+    public boolean captureWorldPreview(File destination) {
+        if (!nativeReady || destination == null) return false;
+        final int sourceWidth = getWidth();
+        final int sourceHeight = getHeight();
+        if (sourceWidth < 2 || sourceHeight < 2) return false;
+        final CountDownLatch completed = new CountDownLatch(1);
+        final boolean[] saved = {false};
+        queueEvent(() -> {
+            Bitmap bitmap = null;
+            try {
+                if (!nativeReady) return;
+                NativeBridge.nativeRender();
+                GLES20.glFinish();
+                ByteBuffer rgba = ByteBuffer.allocateDirect(sourceWidth * sourceHeight * 4);
+                GLES20.glReadPixels(0, 0, sourceWidth, sourceHeight,
+                        GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, rgba);
+                final int glError = GLES20.glGetError();
+                if (glError != GLES20.GL_NO_ERROR) {
+                    Log.w(TAG, "World preview readback failed: 0x" + Integer.toHexString(glError));
+                    return;
+                }
+
+                final int outputWidth = 320;
+                final int outputHeight = 180;
+                final float targetRatio = outputWidth / (float) outputHeight;
+                final float sourceRatio = sourceWidth / (float) sourceHeight;
+                final int cropWidth = sourceRatio > targetRatio
+                        ? Math.max(2, Math.round(sourceHeight * targetRatio)) : sourceWidth;
+                final int cropHeight = sourceRatio > targetRatio
+                        ? sourceHeight : Math.max(2, Math.round(sourceWidth / targetRatio));
+                final int cropLeft = (sourceWidth - cropWidth) / 2;
+                final int cropTop = (sourceHeight - cropHeight) / 2;
+                final int[] pixels = new int[outputWidth * outputHeight];
+                for (int y = 0; y < outputHeight; y++) {
+                    final int sampleY = cropTop + Math.min(cropHeight - 1,
+                            (int) ((long) y * cropHeight / outputHeight));
+                    final int glY = sourceHeight - 1 - sampleY;
+                    for (int x = 0; x < outputWidth; x++) {
+                        final int sampleX = cropLeft + Math.min(cropWidth - 1,
+                                (int) ((long) x * cropWidth / outputWidth));
+                        final int index = (glY * sourceWidth + sampleX) * 4;
+                        final int red = rgba.get(index) & 0xff;
+                        final int green = rgba.get(index + 1) & 0xff;
+                        final int blue = rgba.get(index + 2) & 0xff;
+                        pixels[y * outputWidth + x] = 0xff000000 | (red << 16) | (green << 8) | blue;
+                    }
+                }
+                bitmap = Bitmap.createBitmap(pixels, outputWidth, outputHeight, Bitmap.Config.ARGB_8888);
+                File parent = destination.getParentFile();
+                if (parent == null || (!parent.exists() && !parent.mkdirs())) return;
+                File temporary = new File(destination.getAbsolutePath() + ".tmp");
+                try (FileOutputStream output = new FileOutputStream(temporary)) {
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 86, output)) return;
+                    output.flush();
+                    output.getFD().sync();
+                }
+                if (destination.exists() && !destination.delete()) {
+                    temporary.delete();
+                    return;
+                }
+                saved[0] = temporary.renameTo(destination);
+                if (!saved[0]) temporary.delete();
+            } catch (LinkageError | IOException | RuntimeException error) {
+                Log.w(TAG, "Could not save world preview", error);
+            } finally {
+                if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+                completed.countDown();
+            }
+        });
+        try {
+            return completed.await(1800, TimeUnit.MILLISECONDS) && saved[0];
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
             return false;
         }
     }
