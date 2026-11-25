@@ -37,10 +37,10 @@ def test_release_uses_persistent_signing_key_and_tags_build_production():
 
 
 def test_android_version_and_release_documentation_match():
-    assert "versionCode = 28" in GRADLE
-    assert 'versionName = "2.2.4"' in GRADLE
-    assert "versionCode = 28" in BUILD_DOC
-    assert "versionName = 2.2.4" in BUILD_DOC
+    assert "versionCode = 29" in GRADLE
+    assert 'versionName = "2.3.0"' in GRADLE
+    assert "versionCode = 29" in BUILD_DOC
+    assert "versionName = 2.3.0" in BUILD_DOC
 
 
 if __name__ == "__main__":
