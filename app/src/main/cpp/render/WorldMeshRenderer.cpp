@@ -286,8 +286,118 @@ void WorldMeshRenderer::DrawOpaque(const CameraFrustum& frustum) const {
     glBindVertexArray(0);
 }
 
-void WorldMeshRenderer::DrawTransparent(const CameraFrustum& frustum,
-                                        const Vec3& cameraPosition) const {
+void WorldMeshRenderer::DrawTransparent(
+        const CameraFrustum& frustum, const Vec3& cameraPosition,
+        const std::vector<ChunkMeshView>& chunkViews) {
+    struct TriangleRef {
+        float distanceSquared{0.0f};
+        const WorldVertex* vertices{nullptr};
+    };
+    std::vector<TriangleRef> triangles;
+    // Bound the transient sort list on mobile. Extremely dense distant water
+    // falls back to stable far-to-near chunk sorting instead of allocating
+    // unbounded temporary memory or stalling the frame.
+    constexpr std::size_t kMaxSortedTriangles = 75000u;
+
+    for (const ChunkMeshView& view : chunkViews) {
+        if (view.transparent == nullptr || view.transparent->size() < 3u) continue;
+        const float minX = static_cast<float>(view.chunkX * VoxelWorld::kChunkSize);
+        const float minZ = static_cast<float>(view.chunkZ * VoxelWorld::kChunkSize);
+        const float minY = std::max(0.0f, view.minY - 1.0f);
+        const float maxY = std::min(static_cast<float>(VoxelWorld::kWorldHeight),
+                                    view.maxY + 1.0f);
+        if (!frustum.IntersectsAabb(minX, minY, minZ,
+                minX + static_cast<float>(VoxelWorld::kChunkSize), maxY,
+                minZ + static_cast<float>(VoxelWorld::kChunkSize))) continue;
+
+        const std::vector<WorldVertex>& source = *view.transparent;
+        for (std::size_t i = 0; i + 2u < source.size(); i += 3u) {
+            const WorldVertex* triangle = source.data() + i;
+            const float cx = (triangle[0].x + triangle[1].x + triangle[2].x) / 3.0f;
+            const float cy = (triangle[0].y + triangle[1].y + triangle[2].y) / 3.0f;
+            const float cz = (triangle[0].z + triangle[1].z + triangle[2].z) / 3.0f;
+            const float dx = cx - cameraPosition.x;
+            const float dy = cy - cameraPosition.y;
+            const float dz = cz - cameraPosition.z;
+            triangles.push_back({dx * dx + dy * dy + dz * dz, triangle});
+            if (triangles.size() > kMaxSortedTriangles) break;
+        }
+        if (triangles.size() > kMaxSortedTriangles) break;
+    }
+
+    if (!triangles.empty() && triangles.size() <= kMaxSortedTriangles &&
+        triangles.size() <= static_cast<std::size_t>(std::numeric_limits<GLsizei>::max()) / 3u) {
+        std::sort(triangles.begin(), triangles.end(),
+            [](const TriangleRef& a, const TriangleRef& b) {
+                return a.distanceSquared > b.distanceSquared;
+            });
+
+        sortedTransparentVertices_.clear();
+        sortedTransparentVertices_.reserve(triangles.size() * 3u);
+        for (const TriangleRef& triangle : triangles) {
+            sortedTransparentVertices_.push_back(triangle.vertices[0]);
+            sortedTransparentVertices_.push_back(triangle.vertices[1]);
+            sortedTransparentVertices_.push_back(triangle.vertices[2]);
+        }
+
+        const std::size_t maxBufferBytes =
+            static_cast<std::size_t>(std::numeric_limits<GLsizeiptr>::max());
+        const std::size_t requiredBytes = sortedTransparentVertices_.size() * sizeof(WorldVertex);
+        if (requiredBytes > 0u && requiredBytes <= maxBufferBytes) {
+            GLint previousVertexArray = 0;
+            GLint previousArrayBuffer = 0;
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
+            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
+
+            if (sortedTransparentVao_ == 0) glGenVertexArrays(1, &sortedTransparentVao_);
+            if (sortedTransparentVbo_ == 0) glGenBuffers(1, &sortedTransparentVbo_);
+            bool uploaded = sortedTransparentVao_ != 0 && sortedTransparentVbo_ != 0;
+            if (uploaded) {
+                glBindVertexArray(sortedTransparentVao_);
+                glBindBuffer(GL_ARRAY_BUFFER, sortedTransparentVbo_);
+                if (requiredBytes > sortedTransparentCapacityBytes_) {
+                    std::size_t capacity = sortedTransparentCapacityBytes_ == 0u
+                        ? sizeof(WorldVertex) * 1024u : sortedTransparentCapacityBytes_;
+                    while (capacity < requiredBytes && capacity <= maxBufferBytes / 2u)
+                        capacity *= 2u;
+                    if (capacity < requiredBytes || capacity > maxBufferBytes)
+                        capacity = requiredBytes;
+                    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(capacity),
+                                 nullptr, GL_STREAM_DRAW);
+                    sortedTransparentCapacityBytes_ = capacity;
+                }
+                glBufferSubData(GL_ARRAY_BUFFER, 0,
+                    static_cast<GLsizeiptr>(requiredBytes), sortedTransparentVertices_.data());
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                    reinterpret_cast<const void*>(offsetof(WorldVertex, x)));
+                glEnableVertexAttribArray(1);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                    reinterpret_cast<const void*>(offsetof(WorldVertex, nx)));
+                glEnableVertexAttribArray(2);
+                glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                    reinterpret_cast<const void*>(offsetof(WorldVertex, r)));
+                glEnableVertexAttribArray(3);
+                glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                    reinterpret_cast<const void*>(offsetof(WorldVertex, u)));
+                glEnableVertexAttribArray(4);
+                glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                    reinterpret_cast<const void*>(offsetof(WorldVertex, atlasTile)));
+                uploaded = glGetError() == GL_NO_ERROR;
+            }
+
+            glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+            glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
+            if (uploaded) {
+                glBindVertexArray(sortedTransparentVao_);
+                glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(sortedTransparentVertices_.size()));
+                glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+                return;
+            }
+        }
+    }
+
+    // Safe fallback for empty, oversized, or failed transient uploads.
     struct VisibleChunk {
         float distanceSquared{0.0f};
         const GpuChunk* gpu{nullptr};
@@ -321,7 +431,6 @@ void WorldMeshRenderer::DrawTransparent(const CameraFrustum& frustum,
     }
     glBindVertexArray(0);
 }
-
 void WorldMeshRenderer::Shutdown() {
     for (auto& entry : chunks_) {
         GpuChunk& gpu = entry.second;
