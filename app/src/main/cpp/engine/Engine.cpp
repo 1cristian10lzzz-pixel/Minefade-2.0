@@ -821,6 +821,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
             storagePath_.compare(storagePath_.size() - 8u, 8u, ".mfworld") == 0;
         if (multiplayerSlot_ == 0 && hasWorldSavePath) {
             loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
+            if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);
         }
         if (!loadedExistingWorld) {
             world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);
@@ -842,6 +843,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         world_.GenerateAround(generationX, generationZ, 1);
     } else if (!storagePath_.empty()) {
         loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
+        if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);
         if (!loadedExistingWorld) {
             // Preserve an unreadable existing save before making a fresh world.
             std::error_code backupError;
