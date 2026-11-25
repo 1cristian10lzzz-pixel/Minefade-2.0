@@ -44,7 +44,7 @@ def test_new_and_existing_worlds_have_a_safe_native_load_path():
     engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
     world = (CPP / "world/VoxelWorld.cpp").read_text(encoding="utf-8")
     assert "loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);" in engine
-    assert "world_ = VoxelWorld(requestedWorldSeed_);" in engine
+    assert "world_ = VoxelWorld(requestedWorldSeed_, flatWorld_);" in engine
     assert "world_.GenerateAround(8, 8, 0);" in engine
     assert "world_.Save(storagePath_, player_.position, inventory_.counts)" in engine
     assert 'std::memcmp(magic,"MFVOX001",8)==0' in world
