@@ -476,7 +476,7 @@ public final class MainActivity extends Activity {
 
     private void updateProgressionPreferences(String snapshot) {
         if (snapshot == null || snapshot.isEmpty()) return;
-        String[] values = snapshot.split("\\\\|", -1);
+        String[] values = snapshot.split(java.util.regex.Pattern.quote("|"), -1);
         if (values.length != 7 || !"v1".equals(values[0])) return;
         try {
             int mined = Math.max(0, Integer.parseInt(values[1]));
