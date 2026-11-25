@@ -828,6 +828,7 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(exitPoll);
         mainHandler.removeCallbacks(engineTimeout);
         if (surfaceView != null) {
+            saveCurrentWorldPreview();
             surfaceView.pauseNativeEngine();
             surfaceView.onPause();
         }
