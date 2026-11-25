@@ -1,5 +1,15 @@
 # Registro de cambios — Minefade 2.0
 
+## Candidata 2.3.0 — controles, renderer y progresión
+- La quickbar se ajusta al ancho/densidad de pantalla; se reducen fondos y bordes para evitar tapar el mundo.
+- El D-pad responde únicamente dentro de las cuatro direcciones visibles; el centro queda para agacharse y los huecos dejan de secuestrar gestos de cámara.
+- Se corrige la propiedad de punteros en el HUD Android fallback, la actualización en vivo del diseño zurdo y el botón de chat superpuesto.
+- El pase de transparencia ordena triángulos por distancia y conserva un fallback acotado para GPU/memoria móvil.
+- Se añade XP/niveles y contadores de logros conectados a eventos de juego, guardados en un sidecar versionado por mundo.
+- La pantalla de logros añade progreso de nivel y tarjetas de dos columnas.
+- Android versionCode 29 / versionName 2.3.0. Requiere pruebas CI y validación en dispositivos físicos antes de declararse estable.
+- Alcance, limitaciones y criterios de aceptación: docs/MINEFADE_2_3_0_FULL_AUDIT.md.
+
 ## Actualización 2.2.4 — creación, LAN y personalización
 - La creación de mundo se organiza en General, Avanzado y Trucos, usando los campos reales que persiste WorldManager.
 - El multijugador coloca Crear y Unirse junto a la salida y filtra las partidas LAN descubiertas por nombre o anfitrión.
