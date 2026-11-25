@@ -1,4 +1,5 @@
 #include "BlockRegistry.h"
+#include "BlockAtlasManifest.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -425,5 +426,5 @@ const BlockDefinition* GetBlockDefinition(BlockId id) noexcept { const auto inde
 const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept { for (const auto& block:kBlocks) if (key==block.key) return &block; return nullptr; }
 std::size_t GetBlockDefinitionCount() noexcept { return kBlocks.size(); }
 bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept { const auto* block=GetBlockDefinition(id); return block && (block->flags & static_cast<std::uint16_t>(flag))!=0; }
-void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept { const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (static_cast<std::size_t>(tile)>=tileCount) { u0=v0=u1=v1=0.0f; return; } const std::size_t rows=(tileCount+32u-1u)/32u; const float atlasHeight=static_cast<float>(rows*18u); const unsigned col=tile%32u,row=tile/32u; const float x=static_cast<float>(col*18u+1u), y=static_cast<float>(row*18u+1u); u0=(x+0.5f)/576.0f; u1=(x+15.5f)/576.0f; v0=(y+0.5f)/atlasHeight; v1=(y+15.5f)/atlasHeight; }
+void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept { const std::size_t tileIndex=static_cast<std::size_t>(tile); const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (tileIndex>=tileCount || tileIndex>=kBlockAtlasTileCount) { u0=v0=u1=v1=0.0f; return; } const std::size_t col=tileIndex%kBlockAtlasColumns,row=tileIndex/kBlockAtlasColumns; const float atlasWidth=static_cast<float>(kBlockAtlasWidth),atlasHeight=static_cast<float>(kBlockAtlasHeight); const float x=static_cast<float>(col*kBlockAtlasCellSize+kBlockAtlasPadding),y=static_cast<float>(row*kBlockAtlasCellSize+kBlockAtlasPadding); u0=(x+0.5f)/atlasWidth; u1=(x+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasWidth; v0=(y+0.5f)/atlasHeight; v1=(y+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasHeight; }
 } // namespace minefade

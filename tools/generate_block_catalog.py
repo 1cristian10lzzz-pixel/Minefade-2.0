@@ -14,6 +14,7 @@ MODULES_DIR = ROOT / 'app/src/main/assets/data/block_modules'
 MODULE_MANIFEST = MODULES_DIR / 'manifest.json'
 OUT_H = ROOT / 'app/src/main/cpp/blocks/BlockRegistry.h'
 OUT_CPP = ROOT / 'app/src/main/cpp/blocks/BlockRegistry.cpp'
+OUT_ATLAS_H = ROOT / 'app/src/main/cpp/blocks/BlockAtlasManifest.h'
 OUT_RGBA = ROOT / 'app/src/main/assets/textures/block_atlas.rgba'
 OUT_PNG = ROOT / 'docs/block_atlas_preview.png'
 OUT_JSON = ROOT / 'app/src/main/assets/data/minefade_block_catalog.json'
@@ -1071,7 +1072,39 @@ def main():
         })
     OUT_RGBA.write_bytes(atlas)
     save_png(OUT_PNG,bytes(atlas))
-    OUT_JSON.write_text(json.dumps({'source':'user-provided Minecraft MOD.apk / vanilla blocks.json','source_format_version':raw.get('format_version'),'count':len(catalogue),'atlas':{'width':WIDTH,'height':HEIGHT,'tile_size':TILE,'columns':COLS,'rows':ROWS,'padding':1},'blocks':catalogue},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    atlas_sha256=hashlib.sha256(atlas).hexdigest()
+    atlas_manifest={
+        'pixel_format':'RGBA8',
+        'width':WIDTH,
+        'height':HEIGHT,
+        'tile_size':TILE,
+        'cell_size':CELL,
+        'columns':COLS,
+        'rows':ROWS,
+        'padding':1,
+        'tile_count':len(catalogue)*3,
+        'byte_count':len(atlas),
+        'sampling':'NEAREST',
+        'sha256':atlas_sha256,
+    }
+    OUT_JSON.write_text(json.dumps({'source':'user-provided Minecraft MOD.apk / vanilla blocks.json','source_format_version':raw.get('format_version'),'manifest_version':1,'count':len(catalogue),'atlas':atlas_manifest,'blocks':catalogue},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    atlas_h=[
+        '#pragma once',
+        '#include <cstddef>',
+        'namespace minefade {',
+        f'inline constexpr std::size_t kBlockAtlasWidth = {WIDTH}u;',
+        f'inline constexpr std::size_t kBlockAtlasHeight = {HEIGHT}u;',
+        f'inline constexpr std::size_t kBlockAtlasTileSize = {TILE}u;',
+        f'inline constexpr std::size_t kBlockAtlasCellSize = {CELL}u;',
+        f'inline constexpr std::size_t kBlockAtlasColumns = {COLS}u;',
+        f'inline constexpr std::size_t kBlockAtlasRows = {ROWS}u;',
+        f'inline constexpr std::size_t kBlockAtlasPadding = 1u;',
+        f'inline constexpr std::size_t kBlockAtlasTileCount = {len(catalogue)*3}u;',
+        f'inline constexpr std::size_t kBlockAtlasByteCount = {len(atlas)}u;',
+        '} // namespace minefade',
+    ]
+    OUT_ATLAS_H.write_text('\n'.join(atlas_h)+'\n',encoding='utf-8')
+    print(f'Atlas SHA-256: {atlas_sha256}')
     # Compact native registry.
     h=[]
     h += ['#pragma once','#include <cstddef>','#include <cstdint>','#include <string_view>','namespace minefade {',
@@ -1091,7 +1124,7 @@ def main():
     OUT_H.write_text('\n'.join(h)+'\n',encoding='utf-8')
     shapes=['None','Cube','Slab','Stairs','CrossPlant','Thin','Pane','Fence','Door','Trapdoor','Fluid','Scaffolding']
     tools=['None','Pickaxe','Axe','Shovel','Shears']
-    c=['#include "BlockRegistry.h"','#include <algorithm>','#include <array>','#include <cmath>','namespace minefade {','namespace {',f'constexpr std::array<BlockDefinition, {len(catalogue)}> kBlocks{{{{']
+    c=['#include "BlockRegistry.h"','#include "BlockAtlasManifest.h"','#include <algorithm>','#include <array>','#include <cmath>','namespace minefade {','namespace {',f'constexpr std::array<BlockDefinition, {len(catalogue)}> kBlocks{{{{']
     for d in catalogue:
         c.append('    BlockDefinition{BlockId::%s, "%s", "%s", "%s", "%s", "%s", "%s", %d, %d, %d, %.2ff, %d, %d, %d, %d, BlockShape::%s, BlockTool::%s},' % (
             d['enum'],d['key'],d['name_es'].replace('\\','\\\\').replace('"','\\"'),d['sound'],
@@ -1102,7 +1135,7 @@ def main():
           'const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept { for (const auto& block:kBlocks) if (key==block.key) return &block; return nullptr; }',
           'std::size_t GetBlockDefinitionCount() noexcept { return kBlocks.size(); }',
           'bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept { const auto* block=GetBlockDefinition(id); return block && (block->flags & static_cast<std::uint16_t>(flag))!=0; }',
-          f'void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept {{ const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (static_cast<std::size_t>(tile)>=tileCount) {{ u0=v0=u1=v1=0.0f; return; }} const std::size_t rows=(tileCount+{COLS}u-1u)/{COLS}u; const float atlasHeight=static_cast<float>(rows*{CELL}u); const unsigned col=tile%{COLS}u,row=tile/{COLS}u; const float x=static_cast<float>(col*{CELL}u+1u), y=static_cast<float>(row*{CELL}u+1u); u0=(x+0.5f)/{WIDTH}.0f; u1=(x+15.5f)/{WIDTH}.0f; v0=(y+0.5f)/atlasHeight; v1=(y+15.5f)/atlasHeight; }}',
+          f'void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept {{ const std::size_t tileIndex=static_cast<std::size_t>(tile); const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (tileIndex>=tileCount || tileIndex>=kBlockAtlasTileCount) {{ u0=v0=u1=v1=0.0f; return; }} const std::size_t col=tileIndex%kBlockAtlasColumns,row=tileIndex/kBlockAtlasColumns; const float atlasWidth=static_cast<float>(kBlockAtlasWidth),atlasHeight=static_cast<float>(kBlockAtlasHeight); const float x=static_cast<float>(col*kBlockAtlasCellSize+kBlockAtlasPadding),y=static_cast<float>(row*kBlockAtlasCellSize+kBlockAtlasPadding); u0=(x+0.5f)/atlasWidth; u1=(x+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasWidth; v0=(y+0.5f)/atlasHeight; v1=(y+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasHeight; }}',
           '} // namespace minefade']
     OUT_CPP.write_text('\n'.join(c)+'\n',encoding='utf-8')
     md=['# Minefade — catálogo de bloques base 1.8 y extensiones modernas','',f'**Entradas registradas: {len(catalogue)}.** Cada ID tiene nombre en español, clase geométrica, propiedades físicas, resistencia, herramienta preferida, sonido de material, alias de textura y tres celdas propias de atlas (superior/lateral/inferior).','', 'Las definiciones de nombres y alias proceden del `blocks.json` del APK aportado. Las texturas del atlas son pixel-art procedimental original generado por Minefade; no se redistribuyen los PNG de Minecraft.','', '| ID | Nombre Minefade | Clave de origen | Forma | Resistencia | Herramienta |','|---:|---|---|---|---:|---|']

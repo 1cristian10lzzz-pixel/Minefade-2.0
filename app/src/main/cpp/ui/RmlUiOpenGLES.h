@@ -41,8 +41,16 @@ private:
         GLsizei indexCount{0};
     };
 
+    struct TextureResource {
+        GLuint object{0};
+        std::size_t references{1};
+        std::string cacheKey;
+    };
+
     GLuint CompileShader(GLenum type, const char* source);
     void ReleaseGeometryObject(Geometry& geometry);
+    Rml::TextureHandle CreateTexture(Rml::Span<const Rml::byte> source,
+                                     Rml::Vector2i sourceDimensions, GLint filter);
 
     GLuint program_{0};
     GLint viewportLocation_{-1};
@@ -55,11 +63,13 @@ private:
     std::uintptr_t nextGeometry_{1};
     std::uintptr_t nextTexture_{1};
     std::unordered_map<std::uintptr_t, Geometry> geometries_;
-    std::unordered_map<std::uintptr_t, GLuint> textures_;
+    std::unordered_map<std::uintptr_t, TextureResource> textures_;
+    std::unordered_map<std::string, std::uintptr_t> textureCache_;
     std::vector<std::uint8_t> blockAtlasPixels_;
     std::string lastError_;
     int blockAtlasWidth_{0};
     int blockAtlasHeight_{0};
+    std::uint64_t blockAtlasVersion_{0};
 };
 
 } // namespace minefade

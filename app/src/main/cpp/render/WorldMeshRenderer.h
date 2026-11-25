@@ -5,6 +5,7 @@
 #include <GLES3/gl3.h>
 
 #include <cstdint>
+#include <cstddef>
 #include <map>
 #include <utility>
 #include <vector>
@@ -22,9 +23,11 @@ public:
     WorldMeshRenderer(const WorldMeshRenderer&) = delete;
     WorldMeshRenderer& operator=(const WorldMeshRenderer&) = delete;
 
-    // Upload a bounded number of dirty chunks per call, nearest first.
+    // Uploads are bounded by chunk count, total bytes and elapsed CPU time.
+    // The first dirty chunk is allowed through even when oversized to avoid starvation.
     bool Sync(const std::vector<ChunkMeshView>& chunkViews,
-              const Vec3& cameraPosition, std::size_t maxChunkUploads);
+              const Vec3& cameraPosition, std::size_t maxChunkUploads,
+              std::size_t maxUploadBytes, double maxUploadMilliseconds);
     void Shutdown();
 
     GLsizei OpaqueVertexCount() const noexcept { return opaqueVertexCount_; }
@@ -32,6 +35,9 @@ public:
     std::size_t ResidentChunkCount() const noexcept { return chunks_.size(); }
     std::size_t LastUploadCount() const noexcept { return lastUploadCount_; }
     std::size_t PendingUploadCount() const noexcept { return pendingUploadCount_; }
+    std::size_t LastUploadBytes() const noexcept { return lastUploadBytes_; }
+    std::size_t PendingUploadBytes() const noexcept { return pendingUploadBytes_; }
+    std::size_t ResidentGpuBytes() const noexcept { return residentGpuBytes_; }
 
     void DrawOpaque(const CameraFrustum& frustum) const;
     void DrawTransparent(const CameraFrustum& frustum, const Vec3& cameraPosition) const;
@@ -42,6 +48,8 @@ private:
         GLuint opaqueVbo{0};
         GLuint transparentVao{0};
         GLuint transparentVbo{0};
+        std::size_t opaqueCapacityBytes{0};
+        std::size_t transparentCapacityBytes{0};
         GLsizei opaqueCount{0};
         GLsizei transparentCount{0};
         std::uint64_t revision{0};
@@ -49,10 +57,11 @@ private:
         float maxY{0.0f};
     };
 
-    static bool UploadPass(GLuint& vao, GLuint& vbo, GLsizei& drawCount,
-                           const std::vector<WorldVertex>& source,
+    static bool UploadPass(GLuint& vao, GLuint& vbo, std::size_t& capacityBytes,
+                           GLsizei& drawCount, const std::vector<WorldVertex>& source,
                            std::size_t first, std::size_t count);
-    static void ReleasePass(GLuint& vao, GLuint& vbo, GLsizei& drawCount);
+    static void ReleasePass(GLuint& vao, GLuint& vbo, std::size_t& capacityBytes,
+                            GLsizei& drawCount);
     static bool IsVisible(const ChunkMeshRange& range, const CameraFrustum& frustum) noexcept;
 
     std::map<std::pair<int, int>, GpuChunk> chunks_;
@@ -60,6 +69,9 @@ private:
     GLsizei transparentVertexCount_{0};
     std::size_t lastUploadCount_{0};
     std::size_t pendingUploadCount_{0};
+    std::size_t lastUploadBytes_{0};
+    std::size_t pendingUploadBytes_{0};
+    std::size_t residentGpuBytes_{0};
 };
 
 } // namespace minefade

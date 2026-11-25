@@ -17,7 +17,9 @@ std::atomic_bool gEngineFailure{false};
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jfloat density,
-                                                           jbyteArray atlas, jint width, jint height) {
+                                                           jbyteArray atlas, jint width, jint height,
+                                                           jbyteArray sheepModel,
+                                                           jbyteArray sheepTexture) {
     auto& engine = minefade::GetEngine();
     if (atlas == nullptr || width <= 0 || height <= 0) {
         engine.SetLastInitError("El atlas de bloques llegó vacío o con dimensiones no válidas desde Android.");
@@ -39,8 +41,51 @@ Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jflo
             engine.Shutdown();
             return JNI_FALSE;
         }
+        std::vector<std::uint8_t> sheepModelBytes;
+        if (sheepModel != nullptr) {
+            const jsize modelLength = env->GetArrayLength(sheepModel);
+            if (modelLength > 0 && modelLength <= 8 * 1024 * 1024) {
+                sheepModelBytes.resize(static_cast<std::size_t>(modelLength));
+                env->GetByteArrayRegion(sheepModel, 0, modelLength,
+                    reinterpret_cast<jbyte*>(sheepModelBytes.data()));
+                if (env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    sheepModelBytes.clear();
+                    __android_log_print(ANDROID_LOG_WARN, kTag,
+                        "Optional MAES sheep model could not be copied; legacy model remains active");
+                }
+            } else if (modelLength > 8 * 1024 * 1024) {
+                __android_log_print(ANDROID_LOG_WARN, kTag,
+                    "Optional MAES sheep model exceeds 8 MiB; legacy model remains active");
+            }
+        }
+        std::vector<std::uint8_t> sheepTextureBytes;
+        if (sheepTexture != nullptr) {
+            const jsize textureLength = env->GetArrayLength(sheepTexture);
+            constexpr jsize expectedTextureBytes = 64 * 32 * 4;
+            if (textureLength == expectedTextureBytes) {
+                sheepTextureBytes.resize(static_cast<std::size_t>(textureLength));
+                env->GetByteArrayRegion(sheepTexture, 0, textureLength,
+                    reinterpret_cast<jbyte*>(sheepTextureBytes.data()));
+                if (env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    sheepTextureBytes.clear();
+                    __android_log_print(ANDROID_LOG_WARN, kTag,
+                        "Optional MAES sheep texture could not be copied; baked face colours remain active");
+                }
+            } else if (textureLength != 0) {
+                __android_log_print(ANDROID_LOG_WARN, kTag,
+                    "Optional MAES sheep texture has invalid byte count: %d", textureLength);
+            }
+        }
         const bool result = engine.Initialise(static_cast<float>(density), pixels.data(), pixels.size(),
-                                               static_cast<int>(width), static_cast<int>(height));
+                                               static_cast<int>(width), static_cast<int>(height),
+                                               sheepModelBytes.empty() ? nullptr : sheepModelBytes.data(),
+                                               sheepModelBytes.size(),
+                                               sheepTextureBytes.empty() ? nullptr : sheepTextureBytes.data(),
+                                               sheepTextureBytes.size());
         __android_log_print(result ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, kTag,
                             "Engine initialisation %s", result ? "succeeded" : "failed");
         return result ? JNI_TRUE : JNI_FALSE;
@@ -106,6 +151,11 @@ Java_com_minefade_nativeengine_NativeBridge_nativeConsumeEngineFailure(JNIEnv*, 
     return gEngineFailure.exchange(false, std::memory_order_acq_rel) ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeConsumeChatRequest(JNIEnv*, jclass) {
+    return minefade::GetEngine().ConsumeChatRequest() ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeTouch(JNIEnv*, jclass, jint action, jint pointerId,
                                                          jfloat x, jfloat y) {
@@ -113,14 +163,35 @@ Java_com_minefade_nativeengine_NativeBridge_nativeTouch(JNIEnv*, jclass, jint ac
                                 static_cast<float>(x), static_cast<float>(y));
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativePause(JNIEnv*, jclass) {
-    minefade::GetEngine().Pause();
+    return minefade::GetEngine().Pause() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeResume(JNIEnv*, jclass) {
     minefade::GetEngine().Resume();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeSetPlayerIdentity(JNIEnv* env, jclass, jstring identity) {
+    if (identity == nullptr) return;
+    const char* chars = env->GetStringUTFChars(identity, nullptr);
+    if (chars == nullptr) return;
+    minefade::GetEngine().SetPlayerIdentity(chars);
+    env->ReleaseStringUTFChars(identity, chars);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeCanModifyBlockForIdentity(
+        JNIEnv* env, jclass, jstring identity, jint x, jint z) {
+    if (identity == nullptr) return JNI_FALSE;
+    const char* chars = env->GetStringUTFChars(identity, nullptr);
+    if (chars == nullptr) return JNI_FALSE;
+    const bool allowed = minefade::GetEngine().CanRemoteModifyBlockForIdentity(chars,
+        static_cast<int>(x), static_cast<int>(z));
+    env->ReleaseStringUTFChars(identity, chars);
+    return allowed ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -134,9 +205,11 @@ Java_com_minefade_nativeengine_NativeBridge_nativeSetStoragePath(JNIEnv* env, jc
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeSetWorldOptions(
-        JNIEnv*, jclass, jint gameMode, jboolean allowCheats, jboolean starterChest, jlong seed) {
+        JNIEnv*, jclass, jint gameMode, jboolean allowCheats, jboolean starterChest, jlong seed,
+        jboolean flatWorld, jint difficulty, jboolean generateStructures) {
     minefade::GetEngine().SetWorldOptions(static_cast<int>(gameMode),
-        allowCheats == JNI_TRUE, starterChest == JNI_TRUE, static_cast<std::uint32_t>(seed));
+        allowCheats == JNI_TRUE, starterChest == JNI_TRUE, static_cast<std::uint32_t>(seed),
+        flatWorld == JNI_TRUE, static_cast<int>(difficulty), generateStructures == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -146,6 +219,12 @@ Java_com_minefade_nativeengine_NativeBridge_nativeSetModsDirectory(JNIEnv* env, 
     if (chars == nullptr) return;
     minefade::GetEngine().SetModsDirectory(chars);
     env->ReleaseStringUTFChars(path, chars);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeGetQuickbarSnapshot(JNIEnv* env, jclass) {
+    const std::string snapshot = minefade::GetEngine().QuickbarSnapshot();
+    return env->NewStringUTF(snapshot.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -183,6 +262,11 @@ Java_com_minefade_nativeengine_NativeBridge_nativeSetGraphicsOptions(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeSetHudOptions(JNIEnv*, jclass, jboolean showStats) {
+    minefade::GetEngine().SetHudOptions(showStats == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeSetShaderOptions(
         JNIEnv*, jclass, jboolean lavaAnimations, jboolean leafWind, jfloat leafWindStrength) {
     minefade::GetEngine().SetShaderOptions(lavaAnimations == JNI_TRUE,
@@ -199,8 +283,8 @@ Java_com_minefade_nativeengine_NativeBridge_nativeSetInputOptions(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_minefade_nativeengine_NativeBridge_nativeSetHudOptions(JNIEnv*, jclass, jboolean showStats) {
-    minefade::GetEngine().SetHudOptions(showStats == JNI_TRUE);
+Java_com_minefade_nativeengine_NativeBridge_nativeSetMinimapShape(JNIEnv*, jclass, jint shape) {
+    minefade::GetEngine().SetMinimapShape(static_cast<int>(shape));
 }
 
 extern "C" JNIEXPORT void JNICALL

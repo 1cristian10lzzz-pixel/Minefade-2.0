@@ -13,25 +13,44 @@ static_assert(sizeof(MfEnvironmentState) == 8u, "Rust/C environment ABI mismatch
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace minefade {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
 int FloorToInt(float value) { return static_cast<int>(std::floor(value)); }
 
+std::uint16_t MaxToolDurability(const BlockDefinition* definition) {
+    if (definition == nullptr) return 0u;
+    const std::string_view key(definition->key);
+    if (key.find("_pickaxe") == std::string_view::npos &&
+        key.find("_axe") == std::string_view::npos &&
+        key.find("_shovel") == std::string_view::npos &&
+        key.find("_sword") == std::string_view::npos &&
+        key.find("_hoe") == std::string_view::npos) return 0u;
+    if (key.find("_wooden_") != std::string_view::npos) return 60u;
+    if (key.find("_stone_") != std::string_view::npos) return 132u;
+    if (key.find("_copper_") != std::string_view::npos) return 181u;
+    if (key.find("_iron_") != std::string_view::npos) return 251u;
+    if (key.find("_gold_") != std::string_view::npos) return 33u;
+    if (key.find("_diamond_") != std::string_view::npos) return 1562u;
+    if (key.find("_emerald_") != std::string_view::npos) return 1900u;
+    return 60u;
+}
+
 Vec3 CrossPlayer(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
 Vec3 PlayerLocalPoint(const Vec3& anchor, float yaw, float x, float y, float z) {
-    // x-right, y-up, z-back is a right-handed basis. Keeping this winding is
-    // essential because the world renderer back-face culls OpenGL triangles.
-    const Vec3 right{-std::sin(yaw), 0.0f, std::cos(yaw)};
-    const Vec3 backward{-std::cos(yaw), 0.0f, -std::sin(yaw)};
+    // Rotate the model's positive local-Z front onto Player::Forward while
+    // retaining a right-handed basis for OpenGL back-face culling.
+    const Vec3 right{std::sin(yaw), 0.0f, -std::cos(yaw)};
+    const Vec3 forward{std::cos(yaw), 0.0f, std::sin(yaw)};
     return {
-        anchor.x + right.x * x + backward.x * z,
+        anchor.x + right.x * x + forward.x * z,
         anchor.y + y,
-        anchor.z + right.z * x + backward.z * z
+        anchor.z + right.z * x + forward.z * z
     };
 }
 
@@ -390,6 +409,7 @@ bool Inventory::EquipArmorFromSlot(std::size_t slot) {
     const std::uint16_t previous = equippedArmor[armorSlot];
     if (previous != 0u && !CanAdd(previous, 1u)) return false;
     counts[slot] = 0u;
+    toolDurability[slot] = 0u;
     if (previous != 0u && !Add(previous, 1u)) return false;
     equippedArmor[armorSlot] = itemId;
     return true;
@@ -414,10 +434,18 @@ bool Inventory::CanAdd(std::uint16_t itemId, std::uint16_t amount) const {
 bool Inventory::Add(std::uint16_t itemId, std::uint16_t amount) {
     const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
     if (definition == nullptr) return false;
-    // Rust preflights the whole insertion before touching the nine encoded slots.
-    return minefade_inventory_add(
-        counts.data(), static_cast<std::uint32_t>(counts.size()),
-        itemId, amount, definition->stackLimit) != 0;
+    // Rust preflights the whole insertion before touching the encoded slots.
+    if (minefade_inventory_add(
+            counts.data(), static_cast<std::uint32_t>(counts.size()),
+            itemId, amount, definition->stackLimit) == 0) return false;
+    const std::uint16_t maximum = MaxToolDurability(definition);
+    if (maximum > 0u) {
+        for (std::size_t slot = 0; slot < counts.size(); ++slot) {
+            if (counts[slot] / 1000u == itemId && toolDurability[slot] == 0u)
+                toolDurability[slot] = maximum;
+        }
+    }
+    return true;
 }
 
 std::uint16_t Inventory::SelectedItemId() const {
@@ -427,9 +455,50 @@ std::uint16_t Inventory::SelectedItemId() const {
 }
 
 bool Inventory::ConsumeSelected(std::uint16_t amount) {
-    return minefade_inventory_consume_selected(
+    const bool consumed = minefade_inventory_consume_selected(
         counts.data(), static_cast<std::uint32_t>(counts.size()),
         static_cast<std::uint32_t>(selectedSlot), amount) != 0;
+    if (consumed && selectedSlot < counts.size() && counts[selectedSlot] == 0u)
+        toolDurability[selectedSlot] = 0u;
+    return consumed;
+}
+
+std::uint16_t Inventory::SlotItemMaxDurability(std::size_t slot) const {
+    if (slot >= counts.size() || counts[slot] == 0u) return 0u;
+    const std::uint16_t itemId = static_cast<std::uint16_t>(counts[slot] / 1000u);
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+    return MaxToolDurability(definition);
+}
+
+std::uint16_t Inventory::SlotItemDurability(std::size_t slot) const {
+    const std::uint16_t maximum = SlotItemMaxDurability(slot);
+    if (maximum == 0u) return 0u;
+    return toolDurability[slot] == 0u ? maximum
+        : std::min(toolDurability[slot], maximum);
+}
+
+std::uint16_t Inventory::SelectedItemMaxDurability() const {
+    return SlotItemMaxDurability(selectedSlot);
+}
+
+std::uint16_t Inventory::SelectedItemDurability() const {
+    return SlotItemDurability(selectedSlot);
+}
+
+bool Inventory::DamageSelectedItem(std::uint16_t amount) {
+    if (amount == 0u || selectedSlot >= counts.size() || counts[selectedSlot] == 0u) return false;
+    const std::uint16_t maximum = SelectedItemMaxDurability();
+    if (maximum == 0u) return false;
+    std::uint16_t& remaining = toolDurability[selectedSlot];
+    if (remaining == 0u) remaining = maximum;
+    else remaining = std::min(remaining, maximum);
+    if (amount >= remaining) {
+        counts[selectedSlot] = 0u;
+        remaining = 0u;
+    } else {
+        remaining = static_cast<std::uint16_t>(remaining - amount);
+    }
+    return true;
 }
 
 std::uint16_t Inventory::CountItem(std::uint16_t itemId) const {
@@ -443,12 +512,14 @@ std::uint16_t Inventory::CountItem(std::uint16_t itemId) const {
 bool Inventory::ConsumeItem(std::uint16_t itemId, std::uint16_t amount) {
     if (itemId == 0u || amount == 0u || CountItem(itemId) < amount) return false;
     std::uint16_t remaining = amount;
-    for (std::uint32_t& encoded : counts) {
+    for (std::size_t slot = 0; slot < counts.size(); ++slot) {
+        std::uint32_t& encoded = counts[slot];
         if (encoded / 1000u != itemId) continue;
         const std::uint16_t current = static_cast<std::uint16_t>(encoded % 1000u);
         const std::uint16_t take = std::min(current, remaining);
         const std::uint16_t after = static_cast<std::uint16_t>(current - take);
         encoded = after == 0u ? 0u : static_cast<std::uint32_t>(itemId) * 1000u + after;
+        if (after == 0u) toolDurability[slot] = 0u;
         remaining = static_cast<std::uint16_t>(remaining - take);
         if (remaining == 0u) return true;
     }
@@ -553,8 +624,56 @@ bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWo
     entity.phase = animationTime_ + index * 0.73f;
     entity.speed = 0.12f + std::fmod(index, 4.0f) * 0.025f;
     entity.kind = kind;
+    entity.health = kind == 5 ? 10.0f : (kind == 4 ? 8.0f : 5.0f);
     entity.behaviorTimer = 2.5f + std::fmod(index * 0.87f, 4.0f);
     entities_.push_back(entity);
+    return true;
+}
+
+bool EntitySystem::DamageNearest(const Vec3& origin, const Vec3& direction,
+                                 float maxDistance, float damage,
+                                 bool* defeated, int* defeatedKind) {
+    if (defeated != nullptr) *defeated = false;
+    if (defeatedKind != nullptr) *defeatedKind = -1;
+    if (!std::isfinite(maxDistance) || !std::isfinite(damage) ||
+        maxDistance <= 0.0f || damage <= 0.0f) return false;
+
+    const float directionLength = std::sqrt(std::max(
+        direction.x * direction.x + direction.y * direction.y + direction.z * direction.z,
+        0.000001f));
+    const Vec3 forward{direction.x / directionLength,
+                       direction.y / directionLength,
+                       direction.z / directionLength};
+    const float maximumDistanceSquared = maxDistance * maxDistance;
+    std::size_t bestIndex = entities_.size();
+    float bestDistanceSquared = maximumDistanceSquared;
+    for (std::size_t index = 0; index < entities_.size(); ++index) {
+        const Entity& entity = entities_[index];
+        if (entity.kind != 4 && entity.kind != 5) continue;
+        const Vec3 delta{entity.position.x - origin.x,
+                         entity.position.y + 0.7f - origin.y,
+                         entity.position.z - origin.z};
+        const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+        if (!std::isfinite(distanceSquared) || distanceSquared > bestDistanceSquared ||
+            distanceSquared < 0.01f) continue;
+        const float distance = std::sqrt(distanceSquared);
+        const float facing = (delta.x * forward.x + delta.y * forward.y + delta.z * forward.z) / distance;
+        if (facing < 0.72f) continue;
+        bestDistanceSquared = distanceSquared;
+        bestIndex = index;
+    }
+    if (bestIndex == entities_.size()) return false;
+
+    Entity& target = entities_[bestIndex];
+    target.health = std::max(0.0f, target.health - damage);
+    target.visualState = 1u;
+    target.behavior = 3;
+    target.behaviorTimer = 1.0f;
+    if (target.health <= 0.0f) {
+        if (defeated != nullptr) *defeated = true;
+        if (defeatedKind != nullptr) *defeatedKind = target.kind;
+        entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(bestIndex));
+    }
     return true;
 }
 
@@ -584,6 +703,9 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
     const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
     animationTime_ = std::fmod(animationTime_ + dt, 4096.0f);
     for (Entity& entity : entities_) {
+        const Vec3 previousPosition = entity.position;
+        const std::uint8_t previousVisualState = entity.visualState;
+        entity.animationClock = std::fmod(entity.animationClock + dt, 4096.0f);
         const float towardX = player.position.x - entity.position.x;
         const float towardZ = player.position.z - entity.position.z;
         const float distanceSquared = towardX * towardX + towardZ * towardZ;
@@ -670,6 +792,23 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             entity.position = {state.x, state.y, state.z};
             entity.phase = state.phase;
         }
+
+        const float movedX = entity.position.x - previousPosition.x;
+        const float movedZ = entity.position.z - previousPosition.z;
+        const float movedDistance = std::sqrt(movedX*movedX + movedZ*movedZ);
+        entity.movementAmount = movedDistance / std::max(dt, 0.001f);
+        if (movedDistance > 0.0005f)
+            entity.yaw = std::atan2(movedX, movedZ);
+        const std::uint8_t nextVisualState = entity.behavior == 2 ? 2u
+            : (entity.movementAmount > 0.035f ? 1u : 0u);
+        if (nextVisualState != previousVisualState) {
+            entity.previousVisualState = previousVisualState;
+            entity.visualState = nextVisualState;
+            entity.visualTransitionSeconds = 0.0f;
+        } else {
+            entity.visualState = nextVisualState;
+            entity.visualTransitionSeconds = std::min(2.0f, entity.visualTransitionSeconds + dt);
+        }
     }
     if (ambientSpawnInterval_ > 0.0f && entities_.size() < maxEntities_) {
         ambientSpawnElapsed_ += dt;
@@ -696,7 +835,14 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
 }
 
 void EntitySystem::AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum) const {
+    AppendLegacyMesh(output, frustum, -1);
+}
+
+void EntitySystem::AppendLegacyMesh(std::vector<WorldVertex>& output,
+                                    const CameraFrustum* frustum,
+                                    int excludedKind) const {
     for (const Entity& entity : entities_) {
+        if (excludedKind >= 0 && entity.kind == excludedKind) continue;
         if (frustum != nullptr && !frustum->IntersectsAabb(
                 entity.position.x-0.85f,entity.position.y-0.10f,entity.position.z-0.85f,
                 entity.position.x+0.85f,entity.position.y+2.15f,entity.position.z+0.85f)) continue;

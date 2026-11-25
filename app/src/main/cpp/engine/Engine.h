@@ -3,7 +3,9 @@
 #include "../game/Player.h"
 #include "../ui/RmlUiRuntime.h"
 #include "../world/VoxelWorld.h"
+#include "../world/ProtectionManager.h"
 #include "../render/WorldMeshRenderer.h"
+#include "../entity/EntityVisualSystem.h"
 
 #include <GLES3/gl3.h>
 
@@ -20,22 +22,29 @@ namespace minefade {
 
 class Engine {
 public:
-    bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight);
+    bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight, const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize, const std::uint8_t* sheepTextureRgba, std::size_t sheepTextureBytes);
     std::string LastInitError() const;
     bool IsUiReady() const;
     void FallbackAction(int action, bool pressed);
     void SetLastInitError(std::string message);
-    void Shutdown();
+    void Shutdown(bool saveWorld = true);
     void Resize(int width, int height);
     void Render();
     void Touch(int action, int pointerId, float x, float y);
-    void Pause();
+    bool Pause();
     void Resume();
     void SetStoragePath(std::string path);
-    void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed);
+    void SetPlayerIdentity(std::string identity);
+    bool CanRemoteModifyBlockForIdentity(const std::string& identity, int x, int z) const;
+    void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld, int difficulty, bool generateStructures);
     void SetModsDirectory(std::string path);
     std::string ExecuteCommand(const std::string& command);
+    std::string QuickbarSnapshot() const;
     bool ConsumeExitRequest();
+    bool ConsumeChatRequest() noexcept {
+        return chatRequested_.exchange(false, std::memory_order_acq_rel);
+    }
+    void SetMinimapShape(int shape);
     std::uint32_t ConsumeSoundEvents();
     void SetMultiplayerMode(bool enabled, int playerSlot);
     void SetGraphicsOptions(int quality, int renderDistanceChunks, bool waterWaves, float fieldOfView, bool contactShadows);
@@ -59,6 +68,9 @@ private:
         double startedAt{0.0};
         bool uiHandled{false};
         bool joystick{false};
+        bool movementPad{false};
+        float movementX{0.0f};
+        float movementY{0.0f};
         bool moved{false};
         bool mining{false};
     };
@@ -70,20 +82,27 @@ private:
     static GLuint CompileShader(GLenum type, const char* source);
     bool CreateWorldProgram();
     bool UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int width, int height);
+    bool UploadSheepTexture(const std::uint8_t* pixels, std::size_t bytes);
     void RebuildWorldMesh();
     void UploadWorldMesh();
     void UploadTransparentWorldMesh();
     void RebuildEntityMesh();
     void UploadEntityMesh();
+    void UploadMaesEntityMesh();
     void UploadItemMesh();
     void HandleUiAction(const std::string& action);
-    void SaveWorld();
+    void CyclePerspective();
+    void UpdateTouchMovement();
+    bool SaveWorld();
     void LoadEnabledMods();
     void OpenStarterChest();
     void TakeStarterChestContents();
     void RefreshInventoryUi();
     void RefreshCraftingUi();
+    bool HasNearbyBlock(const std::string& blockKey) const;
     bool HasNearbyCraftingTable() const;
+    bool HasNearbyFurnace() const;
+    bool HasNearbyStonecutter() const;
     bool CraftRecipe(const std::string& recipe);
     void UpdateMining(float deltaSeconds);
     Vec3 ViewPosition() const;
@@ -97,6 +116,8 @@ private:
     GLint daylightLocation_{-1};
     GLint atlasLocation_{-1};
     GLint useAtlasLocation_{-1};
+    GLint entityTextureLocation_{-1};
+    GLint useEntityTextureLocation_{-1};
     GLint timeLocation_{-1};
     GLint qualityLocation_{-1};
     GLint waterWavesLocation_{-1};
@@ -108,11 +129,15 @@ private:
     GLint fogNearLocation_{-1};
     GLint fogFarLocation_{-1};
     GLuint blockAtlasTexture_{0};
+    GLuint sheepTexture_{0};
     GLuint entityVao_{0};
     GLuint entityVbo_{0};
+    GLuint maesEntityVao_{0};
+    GLuint maesEntityVbo_{0};
     GLuint itemVao_{0};
     GLuint itemVbo_{0};
     GLsizei entityVertexCount_{0};
+    GLsizei maesEntityVertexCount_{0};
     GLsizei itemVertexCount_{0};
     int lastChunkX_{999999};
     int lastChunkZ_{999999};
@@ -124,6 +149,16 @@ private:
     int multiplayerSlot_{0};
     bool pendingMultiplayerMode_{false};
     int pendingMultiplayerSlot_{0};
+    int pendingGameMode_{0};
+    bool pendingAllowCheats_{false};
+    bool pendingStarterChestEnabled_{false};
+    std::uint32_t pendingWorldSeed_{0x4D464445u};
+    bool pendingFlatWorld_{false};
+    bool flatWorld_{false};
+    int pendingDifficulty_{2};
+    int difficulty_{2};
+    bool pendingGenerateStructures_{true};
+    bool generateStructures_{true};
     int graphicsQuality_{1};
     int pendingGraphicsQuality_{1};
     int renderDistanceChunks_{2};
@@ -153,6 +188,7 @@ private:
     float pendingJoystickDeadzone_{0.12f};
     bool showHudStats_{true};
     bool pendingShowHudStats_{true};
+    int minimapShape_{0};
     int animationQuality_{2};
     int pendingAnimationQuality_{2};
     bool animationsEnabled_{true};
@@ -161,9 +197,20 @@ private:
     bool inventoryVisible_{false};
     bool pauseVisible_{false};
     bool thirdPerson_{false};
+    bool thirdPersonFront_{false};
+    std::array<bool, 4> fallbackMovementButtons_{{false, false, false, false}};
     bool crouching_{false};
     int gameMode_{0};
     bool allowCheats_{false};
+    float playerHealth_{20.0f};
+    float playerHunger_{20.0f};
+    float hungerExhaustion_{0.0f};
+    float hungerDrainTimer_{0.0f};
+    float starvationTimer_{0.0f};
+    float regenerationTimer_{0.0f};
+    float hostileDamageCooldown_{0.0f};
+    float hostileSpawnTimer_{0.0f};
+    std::uint32_t hostileSpawnSequence_{0u};
     bool starterChestEnabled_{false};
     bool starterChestOpen_{false};
     Vec3 starterChestPosition_{};
@@ -198,11 +245,15 @@ private:
         1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u
     }};
     std::string storagePath_;
+    std::string pendingPlayerIdentity_{"local-device"};
+    std::string playerIdentity_{"local-device"};
+    ProtectionManager protection_;
     VoxelWorld world_;
     Player player_;
     Inventory inventory_;
     DroppedItemSystem droppedItems_;
     EntitySystem entities_;
+    EntityVisualSystem entityVisuals_;
     EnvironmentSystem environment_;
     RmlUiRuntime ui_;
     // Scratch output is kept empty in normal play: BuildMesh updates only the
@@ -211,6 +262,7 @@ private:
     std::vector<ChunkMeshView> worldChunkViews_;
     WorldMeshRenderer worldRenderer_;
     std::vector<WorldVertex> entityMesh_;
+    std::vector<WorldVertex> maesEntityMesh_;
     std::vector<WorldVertex> itemMesh_;
     std::vector<float> remotePlayers_;
     std::vector<int> pendingBlockEdits_;
@@ -229,9 +281,17 @@ private:
     std::chrono::steady_clock::time_point pickupToastUntil_{};
     std::chrono::steady_clock::time_point lastFrame_{};
     std::chrono::steady_clock::time_point lastStats_{};
+    std::chrono::steady_clock::time_point lastPerfLog_{};
+    std::array<float, 120> frameTimeSamplesMs_{};
+    std::size_t frameTimeSampleCursor_{0u};
+    std::size_t frameTimeSampleCount_{0u};
+    float lastChunkGenerationPumpMs_{0.0f};
+    float lastMeshBuildMs_{0.0f};
+    float lastGpuUploadMs_{0.0f};
     int framesSinceStats_{0};
     float fps_{0.0f};
     std::atomic_bool exitRequested_{false};
+    std::atomic_bool chatRequested_{false};
     std::atomic<std::uint32_t> soundEvents_{0};
     // Kept after GL cleanup so Java can show the exact native startup failure.
     std::string lastInitError_;

@@ -8,20 +8,24 @@ public final class NativeBridge {
 
     private NativeBridge() { }
 
-    public static native boolean nativeInit(float displayDensity, byte[] blockAtlasRgba, int atlasWidth, int atlasHeight);
+    public static native boolean nativeInit(float displayDensity, byte[] blockAtlasRgba, int atlasWidth, int atlasHeight, byte[] sheepModel, byte[] sheepTextureRgba);
     public static native String nativeGetLastInitError();
     public static native boolean nativeIsUiReady();
     public static native void nativeFallbackAction(int action, boolean pressed);
     public static native void nativeResize(int width, int height);
     public static native void nativeRender();
     public static native boolean nativeConsumeEngineFailure();
+    public static native boolean nativeConsumeChatRequest();
     public static native void nativeTouch(int action, int pointerId, float x, float y);
-    public static native void nativePause();
+    public static native boolean nativePause();
     public static native void nativeResume();
     public static native void nativeSetStoragePath(String path);
-    public static native void nativeSetWorldOptions(int gameMode, boolean allowCheats, boolean starterChest, long seed);
+    public static native void nativeSetPlayerIdentity(String identity);
+    public static native boolean nativeCanModifyBlockForIdentity(String identity, int x, int z);
+    public static native void nativeSetWorldOptions(int gameMode, boolean allowCheats, boolean starterChest, long seed, boolean flatWorld, int difficulty, boolean generateStructures);
     public static native void nativeSetModsDirectory(String path);
     public static native String nativeExecuteCommand(String command);
+    public static native String nativeGetQuickbarSnapshot();
     public static native boolean nativeConsumeExitRequest();
     public static native int nativeConsumeSoundEvents();
     public static native void nativeSetMultiplayerMode(boolean enabled, int playerSlot);
@@ -29,6 +33,7 @@ public final class NativeBridge {
     public static native void nativeSetShaderOptions(boolean lavaAnimations, boolean leafWind, float leafWindStrength);
     public static native void nativeSetInputOptions(float sensitivityX, float sensitivityY, float joystickDeadzone, boolean invertLookY, boolean leftHanded, int controlMode, boolean autoJump);
     public static native void nativeSetHudOptions(boolean showStats);
+    public static native void nativeSetMinimapShape(int shape);
     public static native void nativeSetAnimationOptions(int quality, boolean enabled);
     public static native void nativeSetAvatarAppearance(int[] choices);
     public static native float[] nativeGetPlayerState();
