@@ -20,7 +20,7 @@ public final class NativeBridge {
     public static native boolean nativePause();
     public static native void nativeResume();
     public static native void nativeSetStoragePath(String path);
-    public static native void nativeSetWorldOptions(int gameMode, boolean allowCheats, boolean starterChest, long seed, boolean flatWorld);
+    public static native void nativeSetWorldOptions(int gameMode, boolean allowCheats, boolean starterChest, long seed, boolean flatWorld, int difficulty, boolean generateStructures);
     public static native void nativeSetModsDirectory(String path);
     public static native String nativeExecuteCommand(String command);
     public static native boolean nativeConsumeExitRequest();
