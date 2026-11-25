@@ -1098,6 +1098,9 @@ void Engine::Shutdown(bool saveWorld) {
     if (saveWorld && ready_) SaveWorld();
     ui_.Shutdown();
     worldRenderer_.Shutdown();
+    firstPersonRenderer_.Shutdown();
+    firstPersonItemId_ = 0xffffu;
+    firstPersonSwitchStarted_ = 0.0;
     if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
     if (entityVao_ != 0) glDeleteVertexArrays(1, &entityVao_);
     if (maesEntityVbo_ != 0) glDeleteBuffers(1, &maesEntityVbo_);
@@ -1194,58 +1197,19 @@ void Engine::RebuildEntityMesh() {
     entityVisuals_.AppendMesh(entities_.Entities(), maesEntityMesh_, &frustum,
                               sheepTexture_ != 0);
     if (thirdPerson_) {
+        firstPersonRenderer_.Clear();
+        firstPersonItemId_ = 0xffffu;
         player_.AppendMesh(entityMesh_);
     } else {
         const std::uint16_t selected = inventory_.SelectedItemId();
         const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(selected));
-        if (definition != nullptr && selected != static_cast<std::uint16_t>(BlockId::Air)) {
-            const Vec3 eye = player_.CameraPosition();
-            const Vec3 forward = player_.Forward();
-            const Vec3 right{-forward.z, 0.0f, forward.x};
-            const Vec3 held{
-                eye.x + forward.x * 0.66f + right.x * 0.30f,
-                eye.y + forward.y * 0.66f - 0.28f,
-                eye.z + forward.z * 0.66f + right.z * 0.30f
-            };
-            const float movementAmount = std::clamp(
-                std::abs(player_.movementX) + std::abs(player_.movementY), 0.0f, 1.0f);
-            const float handBob = std::sin(player_.animationTime * 1.6f) * 0.012f
-                + std::cos(player_.walkPhase * 2.0f) * 0.022f * movementAmount;
-            const float handYaw = player_.yaw + std::sin(player_.walkPhase) * 0.055f * movementAmount;
-
-            if (definition->shape != BlockShape::None) {
-                AppendAnimatedTexturedBlockCube(itemMesh_, static_cast<BlockId>(selected),
-                    held, {0.105f, 0.105f, 0.105f}, handYaw, handBob);
-            } else {
-                // The wooden progression tools are inventory items, not placeable cubes.
-                // Draw a simple voxel hand-held silhouette in the entity colour pass.
-                const std::array<float, 3> wood{0.48f, 0.29f, 0.13f};
-                const Vec3 grip{held.x, held.y + handBob, held.z};
-                AppendCube(entityMesh_, grip, {0.035f, 0.22f, 0.035f}, wood);
-                const std::string_view key(definition->key);
-                std::array<float,3> head{0.72f,0.52f,0.29f};
-                if (key.find("_stone_") != std::string_view::npos) head={0.55f,0.58f,0.62f};
-                else if (key.find("_copper_") != std::string_view::npos) head={0.72f,0.35f,0.20f};
-                else if (key.find("_iron_") != std::string_view::npos) head={0.78f,0.82f,0.86f};
-                else if (key.find("_gold_") != std::string_view::npos) head={0.95f,0.72f,0.18f};
-                else if (key.find("_diamond_") != std::string_view::npos) head={0.18f,0.78f,0.83f};
-                else if (key.find("_emerald_") != std::string_view::npos) head={0.12f,0.72f,0.34f};
-                if (key.find("_pickaxe") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x,grip.y+0.22f,grip.z},{0.19f,0.045f,0.045f},head);
-                } else if (key.find("_axe") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x-0.09f,grip.y+0.18f,grip.z},{0.09f,0.12f,0.07f},head);
-                } else if (key.find("_shovel") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x,grip.y+0.23f,grip.z},{0.075f,0.105f,0.055f},head);
-                } else if (key.find("_sword") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x,grip.y+0.28f,grip.z},{0.045f,0.17f,0.035f},head);
-                } else if (key.find("_hoe") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x+0.07f,grip.y+0.21f,grip.z},{0.12f,0.04f,0.045f},head);
-                }
-            }
-            const std::array<float, 3> sleeve{0.28f, 0.43f, 0.38f};
-            AppendCube(entityMesh_, {held.x - right.x * 0.19f, held.y - 0.12f, held.z - right.z * 0.19f},
-                       {0.085f, 0.16f, 0.085f}, sleeve);
+        if (selected != firstPersonItemId_) {
+            firstPersonItemId_ = selected;
+            firstPersonSwitchStarted_ = ElapsedSeconds();
         }
+        // The viewmodel owns its own camera-space arm/item meshes. It never
+        // enters the entity/drop meshes, their frustum, or gameplay raycasts.
+        firstPersonRenderer_.Build(player_, selected, definition, leftHandedControls_);
     }
     // Remote players use the same articulated voxel model as the local avatar.
     for (std::size_t i = 0; i + 5u < remotePlayers_.size(); i += 6u) {
@@ -1673,9 +1637,15 @@ void Engine::Render() {
     glClearColor(sky[0], sky[1], sky[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if (worldProgram_ != 0 &&
-        (worldRenderer_.OpaqueVertexCount() > 0 ||
-         worldRenderer_.TransparentVertexCount() > 0)) {
+    // CPU geometry is cached; GPU creation/publication remains on the GLSurfaceView
+    // thread where the current EGL context is guaranteed to exist.
+    firstPersonRenderer_.Upload();
+    const bool hasFirstPerson = !thirdPerson_ && firstPersonRenderer_.HasContent();
+    const bool hasAnyWorldPass = worldRenderer_.OpaqueVertexCount() > 0 ||
+        worldRenderer_.TransparentVertexCount() > 0 ||
+        entityVertexCount_ > 0 || maesEntityVertexCount_ > 0 ||
+        itemVertexCount_ > 0 || hasFirstPerson;
+    if (worldProgram_ != 0 && hasAnyWorldPass) {
         const Vec3 eye = ViewPosition();
         const Vec3 target = ViewTarget();
         const Mat4 projection = Perspective(fieldOfView_ * (kPi / 180.0f),
@@ -1709,7 +1679,8 @@ void Engine::Render() {
         glBindTexture(GL_TEXTURE_2D, blockAtlasTexture_);
         // Uploads are incremental per-chunk; frustum culling and transparent
         // ordering live in the dedicated terrain renderer component.
-        worldRenderer_.DrawOpaque(frustum);
+        if (worldRenderer_.OpaqueVertexCount() > 0)
+            worldRenderer_.DrawOpaque(frustum);
 
         if (entityVertexCount_ > 0) {
             glUniform1i(useAtlasLocation_, 0);
@@ -1754,6 +1725,54 @@ void Engine::Render() {
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
         }
+
+        // First-person arm and held item are drawn after world transparencies
+        // with a camera-space projection. Their depth still participates in
+        // nearby-wall occlusion; no depth clear or world-state mutation occurs.
+        if (hasFirstPerson) {
+            const float movementAmount = std::clamp(
+                std::abs(player_.movementX) + std::abs(player_.movementY), 0.0f, 1.0f);
+            const float walkBob = std::sin(player_.walkPhase * 2.0f) * 0.014f * movementAmount;
+            const float idleBob = std::sin(player_.animationTime * 1.4f) * 0.003f;
+            const float switchElapsed = static_cast<float>(
+                std::max(0.0, ElapsedSeconds() - firstPersonSwitchStarted_));
+            const float switchProgress = std::clamp(switchElapsed / 0.22f, 0.0f, 1.0f);
+            const float switchDip = (1.0f - switchProgress) *
+                std::sin((1.0f - switchProgress) * (kPi * 0.5f)) * 0.15f;
+            Mat4 viewModel{};
+            viewModel.v[0] = 1.0f;
+            viewModel.v[5] = 1.0f;
+            viewModel.v[10] = 1.0f;
+            viewModel.v[15] = 1.0f;
+            viewModel.v[12] = std::sin(player_.walkPhase) * 0.008f * movementAmount;
+            viewModel.v[13] = walkBob + idleBob - switchDip;
+            const Mat4 viewModelProjection = Multiply(projection, viewModel);
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_CULL_FACE);
+            glDisable(GL_BLEND);
+            glDepthMask(GL_TRUE);
+            glUseProgram(worldProgram_);
+            glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, viewModelProjection.v.data());
+            glUniform3f(cameraLocation_, 0.0f, 0.0f, 0.0f);
+            glUniform1f(fogNearLocation_, 100.0f);
+            glUniform1f(fogFarLocation_, 120.0f);
+            glUniform1f(daylightLocation_, std::max(0.55f, environment_.Daylight()));
+            glUniform1i(useEntityTextureLocation_, 0);
+            glUniform1i(useAtlasLocation_, 1);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, blockAtlasTexture_);
+            firstPersonRenderer_.DrawHeldAtlas();
+            glUniform1i(useAtlasLocation_, 0);
+            firstPersonRenderer_.DrawHeldColor();
+            firstPersonRenderer_.DrawArm();
+            glUniform1i(useAtlasLocation_, 1);
+            glUniform3f(cameraLocation_, eye.x, eye.y, eye.z);
+            glUniform1f(fogNearLocation_, fogStart);
+            glUniform1f(fogFarLocation_, fogEnd);
+        }
+        glDepthMask(GL_TRUE);
+        glEnable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
         glUseProgram(0);
     }
 
