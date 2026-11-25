@@ -271,7 +271,8 @@ def test_lan_host_checks_persistent_player_identity_before_accepting_claim_block
     lan = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
     native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
     assert "nativeSetPlayerIdentity" in bridge and "nativeCanModifyBlockForIdentity" in bridge
-    assert "nativeSetPlayerIdentity(multiplayer.getLocalPlayerIdentity())" in surface
+    assert "nativeSetPlayerIdentity(multiplayer == null" in surface
+    assert "multiplayer.getLocalPlayerIdentity()" in surface
     assert "PROTOCOL_VERSION = 4" in lan
     assert "localPlayerIdentity" in lan and "validPlayerIdentity(helloFields[4])" in lan
     assert "NativeBridge.nativeCanModifyBlockForIdentity" in lan

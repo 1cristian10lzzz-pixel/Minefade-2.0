@@ -83,14 +83,16 @@ def test_worlds_pin_enabled_mod_fingerprint_without_silently_overwriting_it():
     assert "pinOrCompareWorldMods(world.getPath())" in MAIN
 
 
-def test_lan_protocol_v3_requires_matching_content_on_both_sides():
-    assert "PROTOCOL_VERSION = 3" in LAN
+def test_lan_protocol_v4_requires_matching_content_and_player_identity_on_both_sides():
+    assert "PROTOCOL_VERSION = 4" in LAN
     assert 'service.setAttribute("content"' in LAN
     assert 'readNsdAttribute(info, "content")' in LAN
     assert "contentFingerprint.equals(game.contentFingerprint)" in LAN
     assert '"HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|"' in LAN
-    assert "helloFields.length != 4" in LAN
+    assert "helloFields.length != 5" in LAN
     assert "contentFingerprint.equals(helloFields[2])" in LAN
+    assert "validPlayerIdentity(helloFields[4])" in LAN
+    assert "\"|\" + localPlayerIdentity" in LAN
     assert '"WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName + "|"' in LAN
     assert "contentFingerprint.equals(fields[4])" in LAN
     assert "setContentFingerprint(new ModManager(this).enabledModsFingerprint())" in MAIN
