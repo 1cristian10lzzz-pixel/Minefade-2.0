@@ -146,13 +146,24 @@ bool Engine::IsUiReady() const { return ui_.IsReady(); }
 
 void Engine::FallbackAction(int action, bool pressed) {
     if (!ready_) return;
-    // 0 jump, 1 crouch, 2 perspective, 3 pause, 4 resume, 5 save-and-exit.
+    // 0 jump, 1 crouch, 2 perspective cycle, 3 pause, 4 resume, 5 save/exit.
+    // 6..9 are held D-pad directions: forward, backward, left, right.
     if (action == 1) {
         crouching_ = pressed;
         player_.SetCrouching(pressed);
         return;
     }
+    if (action >= 6 && action <= 9) {
+        fallbackMovementButtons_[static_cast<std::size_t>(action - 6)] = pressed;
+        UpdateTouchMovement();
+        return;
+    }
     if (!pressed) return;
+    if (action >= 20 && action <= 28) {
+        inventory_.selectedSlot = static_cast<std::uint16_t>(action - 20);
+        RefreshInventoryUi();
+        return;
+    }
     switch (action) {
         case 0:
             if (!paused_ && player_.grounded) {
@@ -160,13 +171,13 @@ void Engine::FallbackAction(int action, bool pressed) {
                 soundEvents_.fetch_or(16u, std::memory_order_release);
             }
             break;
-        case 2:
-            thirdPerson_ = !thirdPerson_;
-            RebuildEntityMesh();
-            UploadEntityMesh();
-            break;
+        case 2: CyclePerspective(); break;
         case 3:
             if (!paused_) {
+                fallbackMovementButtons_.fill(false);
+                UpdateTouchMovement();
+                crouching_ = false;
+                player_.SetCrouching(false);
                 Pause();
                 pauseVisible_ = true;
             } else {
@@ -184,8 +195,8 @@ void Engine::FallbackAction(int action, bool pressed) {
             SaveWorld();
             exitRequested_.store(true, std::memory_order_release);
             break;
-        default:
-            break;
+        case 10: HandleUiAction("attack"); break;
+        default: break;
     }
 }
 
@@ -841,7 +852,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         const int generationZ = isExistingHostWorld
             ? static_cast<int>(std::floor(player_.position.z)) : spawnZ;
         world_.GenerateAround(generationX, generationZ, 1);
-    } else if (!storagePath_.empty()) {
+        world_.RequestGenerateAround(generationX, generationZ, renderDistanceChunks_);
+    } else if (!storagePath_.empty() {
         loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
         if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);
         if (!loadedExistingWorld) {
@@ -1021,6 +1033,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     ready_ = true;
     paused_ = false;
     thirdPerson_ = false;
+    thirdPersonFront_ = false;
+    fallbackMovementButtons_.fill(false);
     ui_.SetPerspectiveEnabled(false);
     ui_.SetMinimapShape(minimapShape_);
     ui_.SetChestButtonVisible(starterChestEnabled_ && !multiplayerMode_);
@@ -1300,10 +1314,11 @@ double Engine::ElapsedSeconds() const {
 Vec3 Engine::ViewPosition() const {
     if (!thirdPerson_) return player_.CameraPosition();
     const Vec3 flatForward{std::cos(player_.yaw), 0.0f, std::sin(player_.yaw)};
+    const float cameraSide = thirdPersonFront_ ? 1.0f : -1.0f;
     return {
-        player_.position.x - flatForward.x * 3.8f,
+        player_.position.x + flatForward.x * cameraSide * 3.8f,
         player_.position.y + 2.25f,
-        player_.position.z - flatForward.z * 3.8f
+        player_.position.z + flatForward.z * cameraSide * 3.8f
     };
 }
 
@@ -1746,8 +1761,10 @@ void Engine::Render() {
 }
 
 void Engine::UpdateTouchMovement() {
-    float moveX = 0.0f;
-    float moveY = 0.0f;
+    float moveX = (fallbackMovementButtons_[3] ? 1.0f : 0.0f) -
+                  (fallbackMovementButtons_[2] ? 1.0f : 0.0f);
+    float moveY = (fallbackMovementButtons_[0] ? 1.0f : 0.0f) -
+                  (fallbackMovementButtons_[1] ? 1.0f : 0.0f);
     for (const auto& entry : touches_) {
         const TouchState& touch = entry.second;
         if (!touch.movementPad) continue;
@@ -1881,15 +1898,27 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
     }
 }
 
+void Engine::CyclePerspective() {
+    if (!thirdPerson_) {
+        thirdPerson_ = true;
+        thirdPersonFront_ = false;
+    } else if (!thirdPersonFront_) {
+        thirdPersonFront_ = true;
+    } else {
+        thirdPerson_ = false;
+        thirdPersonFront_ = false;
+    }
+    ui_.SetPerspectiveEnabled(thirdPerson_);
+    RebuildEntityMesh();
+    UploadEntityMesh();
+}
+
 void Engine::HandleUiAction(const std::string& action) {
     soundEvents_.fetch_or(4u, std::memory_order_release);
     if (action == "chat") {
         chatRequested_.store(true, std::memory_order_release);
     } else if (action == "perspective") {
-        thirdPerson_ = !thirdPerson_;
-        ui_.SetPerspectiveEnabled(thirdPerson_);
-        RebuildEntityMesh();
-        UploadEntityMesh();
+        CyclePerspective();
     } else if (action == "inventory") {
         inventoryVisible_ = !inventoryVisible_;
         if (inventoryVisible_) RefreshInventoryUi();
@@ -2243,6 +2272,21 @@ bool Engine::CraftRecipe(const std::string& recipe) {
                        "Objeto fabricado.");
     RefreshInventoryUi();
     return true;
+}
+
+std::string Engine::QuickbarSnapshot() const {
+    std::ostringstream output;
+    output << inventory_.selectedSlot;
+    for (std::size_t slot = 0; slot < Inventory::kHotbarSlotCount; ++slot) {
+        const std::uint32_t encoded = inventory_.counts[slot];
+        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+        const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+        const BlockDefinition* definition = itemId == 0u
+            ? nullptr : GetBlockDefinition(static_cast<BlockId>(itemId));
+        output << ';' << itemId << '|' << amount << '|'
+               << (definition == nullptr ? "" : definition->nameEs);
+    }
+    return output.str();
 }
 
 std::string Engine::ExecuteCommand(const std::string& rawCommand) {

@@ -188,7 +188,7 @@ private:
         std::future<Chunk> future;
     };
     // Reserve CPU for the renderer and the background mesher on mobile devices.
-    static constexpr std::size_t kChunkWorkerCount = 1;
+    static constexpr std::size_t kChunkWorkerCount = 2;
     static constexpr std::size_t kMeshWorkerCount = 2;
     std::vector<ChunkJob> pendingChunkJobs_;
     mutable std::future<AsyncMeshBuildResult> pendingMeshBuild_;

@@ -99,3 +99,15 @@ if __name__ == "__main__":
     test_avatar_editor_uses_one_model_and_persistent_style_actions()
     test_renderer_draws_transparent_only_chunks_and_keeps_near_vegetation()
     print("Minefade renderer/mobile chunk regression checks passed.")
+
+
+
+def test_player_avatar_front_axis_matches_camera_forward_and_three_camera_modes_cycle():
+    player = (CPP / "game/Player.cpp").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    assert "const Vec3 forward{std::cos(yaw), 0.0f, std::sin(yaw)};" in player
+    assert "const float cameraSide = thirdPersonFront_ ? 1.0f : -1.0f;" in engine
+    assert "void Engine::CyclePerspective()" in engine
+    assert "else if (!thirdPersonFront_)" in engine
+    assert "thirdPersonFront_{false};" in header

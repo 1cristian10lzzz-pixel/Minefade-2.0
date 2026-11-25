@@ -36,6 +36,7 @@ public:
     void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld, int difficulty, bool generateStructures);
     void SetModsDirectory(std::string path);
     std::string ExecuteCommand(const std::string& command);
+    std::string QuickbarSnapshot() const;
     bool ConsumeExitRequest();
     bool ConsumeChatRequest() noexcept {
         return chatRequested_.exchange(false, std::memory_order_acq_rel);
@@ -87,6 +88,7 @@ private:
     void UploadMaesEntityMesh();
     void UploadItemMesh();
     void HandleUiAction(const std::string& action);
+    void CyclePerspective();
     void UpdateTouchMovement();
     bool SaveWorld();
     void LoadEnabledMods();
@@ -189,6 +191,8 @@ private:
     bool inventoryVisible_{false};
     bool pauseVisible_{false};
     bool thirdPerson_{false};
+    bool thirdPersonFront_{false};
+    std::array<bool, 4> fallbackMovementButtons_{{false, false, false, false}};
     bool crouching_{false};
     int gameMode_{0};
     bool allowCheats_{false};

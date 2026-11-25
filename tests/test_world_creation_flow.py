@@ -214,3 +214,14 @@ def test_loaded_world_restores_terrain_generation_options_for_new_chunks():
     assert "void SetGenerationOptions(bool flatWorld, bool generateStructures) noexcept" in header
     assert "if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);" in engine
     assert engine.count("world_.SetGenerationOptions(flatWorld_, generateStructures_);") == 2
+
+
+
+def test_quickbar_snapshot_is_a_jni_export_and_uses_real_inventory_slots():
+    bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert "nativeGetQuickbarSnapshot()" in bridge
+    assert "Java_com_minefade_nativeengine_NativeBridge_nativeGetQuickbarSnapshot" in native
+    assert "inventory_.counts[slot]" in engine
+    assert "Inventory::kHotbarSlotCount" in engine
