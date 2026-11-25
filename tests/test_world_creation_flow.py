@@ -37,6 +37,9 @@ def test_selected_world_path_reaches_native_engine_without_being_replaced():
     assert "startGame(false, 0, world);" in activity
     assert "world == null ? getFilesDir().getAbsolutePath() : world.getPath()" in activity
     assert "NativeBridge.nativeSetStoragePath(storagePath);" in surface
+    assert "boolean allowCheats, boolean starterChest, boolean flatWorld," in surface
+    assert "this.flatWorld = flatWorld;" in surface
+    assert "NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld);" in surface
     assert 'path.compare(path.size() - 8u, 8u, ".mfworld") == 0' in engine
 
 
