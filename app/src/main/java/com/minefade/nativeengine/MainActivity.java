@@ -149,6 +149,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPlayWorld(WorldManager.WorldInfo world) { startWorld(world); }
             @Override public void onCreateWorld(WorldManager.WorldInfo world) { startWorld(world); }
+            @Override public void onHostWorldMultiplayer(WorldManager.WorldInfo world) { startLanHost(world); }
             @Override public void onImportMod() { pickModFile(); }
             @Override public void onImportShader() { pickShaderFile(); }
             @Override public void onHostMultiplayer() { startLanHost(); }
@@ -175,7 +176,8 @@ public final class MainActivity extends Activity {
         if (compatibility != null && !compatibility.isEmpty()) {
             Toast.makeText(this, compatibility, Toast.LENGTH_LONG).show();
         }
-        startGame(false, 0, world);
+        if (world.multiplayerEnabled) startLanHost(world);
+        else startGame(false, 0, world);
     }
 
     private void startGame(boolean multiplayer, int playerSlot) {
@@ -587,6 +589,10 @@ public final class MainActivity extends Activity {
     }
 
     private LanMultiplayerService.Listener createLanListener(boolean host) {
+        return createLanListener(host, null);
+    }
+
+    private LanMultiplayerService.Listener createLanListener(boolean host, WorldManager.WorldInfo hostedWorld) {
         return new LanMultiplayerService.Listener() {
             @Override public void onStatus(String status) {
                 if (homeScreen != null) homeScreen.setMultiplayerStatus(status);
@@ -595,7 +601,7 @@ public final class MainActivity extends Activity {
                 if (homeScreen != null) homeScreen.setNearbyGames(games);
             }
             @Override public void onConnected(int localPlayerId) {
-                if (host || localPlayerId > 0) startGame(true, localPlayerId);
+                if (host || localPlayerId > 0) startGame(true, localPlayerId, hostedWorld);
             }
             @Override public void onDisconnected(String reason) {
                 if (homeScreen != null) homeScreen.setMultiplayerStatus(reason);
@@ -604,10 +610,16 @@ public final class MainActivity extends Activity {
     }
 
     private void startLanHost() {
+        startLanHost(null);
+    }
+
+    private void startLanHost(WorldManager.WorldInfo world) {
         if (lanMultiplayer == null) return;
         lanMultiplayer.setContentFingerprint(new ModManager(this).enabledModsFingerprint());
-        lanMultiplayer.startHost("Jugador", createLanListener(true));
-        if (homeScreen != null) homeScreen.setMultiplayerStatus("Creando partida y publicándola en la red local…");
+        lanMultiplayer.startHost("Jugador", createLanListener(true, world));
+        if (homeScreen != null) homeScreen.setMultiplayerStatus(world == null
+                ? "Creando partida y publicándola en la red local…"
+                : "Abriendo «" + world.name + "» en la red local…");
     }
 
     private void searchLanGames() {
