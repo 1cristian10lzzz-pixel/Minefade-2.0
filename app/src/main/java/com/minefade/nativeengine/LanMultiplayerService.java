@@ -51,6 +51,7 @@ public final class LanMultiplayerService implements Closeable {
         void onGamesChanged(List<GameInfo> games);
         void onConnected(int localPlayerId);
         void onDisconnected(String reason);
+        default void onChatMessage(String player, String message) { }
     }
 
     public static final class GameInfo {
@@ -598,6 +599,13 @@ public final class LanMultiplayerService implements Closeable {
                         inboundBlockEdits.offer(edit);
                         broadcast(line, peer);
                     }
+                } else if (line.startsWith("CHAT|")) {
+                    String message = sanitizeChat(line.substring(5));
+                    if (!message.isEmpty()) {
+                        String chat = "CHAT|" + id + "|" + safeField(name, "Jugador") + "|" + message;
+                        broadcast(chat, peer);
+                        postChatMessage(name, message);
+                    }
                 } else if (line.startsWith("PING|")) {
                     peer.send("PONG|" + line.substring(5));
                 }
@@ -617,7 +625,10 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private void handleClientMessage(String line) {
-        if (line.startsWith("PLAYER|")) {
+        if (line.startsWith("CHAT|")) {
+            String[] f = line.split("\\|", 4);
+            if (f.length == 4) postChatMessage(f[2], f[3]);
+        } else if (line.startsWith("PLAYER|")) {
             String[] f = line.split("\\|", -1);
             if (f.length >= 3) playerNames.put(parseInt(f[1], -1), f[2]);
         } else if (line.startsWith("STATE|")) {
@@ -648,6 +659,47 @@ public final class LanMultiplayerService implements Closeable {
                 Log.w(TAG, "Could not forward LAN event to " + peer.name, error);
             }
         }
+    }
+
+    /** Sends a bounded player message to the LAN session. */
+    public void sendChat(String rawMessage) {
+        if (!isConnected()) return;
+        String message = sanitizeChat(rawMessage);
+        if (message.isEmpty()) return;
+        if (hosting) {
+            broadcast("CHAT|0|" + safeField(playerName, "Jugador") + "|" + message, null);
+            return;
+        }
+        synchronized (clientWriteLock) {
+            BufferedWriter writer = clientWriter;
+            if (writer == null) return;
+            try {
+                writer.write("CHAT|" + message);
+                writer.newLine();
+                writer.flush();
+            } catch (IOException error) {
+                Log.w(TAG, "Could not send LAN chat", error);
+                connected = false;
+                postDisconnected("Se perdió la conexión con el servidor.");
+            }
+        }
+    }
+
+    private void postChatMessage(String player, String message) {
+        Listener current = listener;
+        if (current != null) main.post(() -> current.onChatMessage(
+                safeField(player, "Jugador"), sanitizeChat(message)));
+    }
+
+    private static String sanitizeChat(String raw) {
+        if (raw == null) return "";
+        StringBuilder clean = new StringBuilder(Math.min(120, raw.length()));
+        for (int i = 0; i < raw.length() && clean.length() < 120; ++i) {
+            char c = raw.charAt(i);
+            if (c == '|' || c == '\n' || c == '\r' || Character.isISOControl(c)) continue;
+            clean.append(c);
+        }
+        return clean.toString().trim();
     }
 
     /** Called from the GL thread. Sends twenty movement snapshots per second. */

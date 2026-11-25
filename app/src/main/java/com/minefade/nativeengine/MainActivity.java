@@ -43,6 +43,17 @@ public final class MainActivity extends Activity {
     private FrameLayout loadingOverlay;
     private FrameLayout gameContainer;
     private FrameLayout fallbackOverlay;
+    private final TextView[] fallbackQuickbarSlots = new TextView[9];
+    private final java.util.ArrayList<String> chatMessages = new java.util.ArrayList<>();
+    private TextView activeChatHistory;
+    private ScrollView activeChatScroll;
+    private final Runnable fallbackQuickbarRefresh = new Runnable() {
+        @Override public void run() {
+            if (fallbackOverlay == null || surfaceView == null || !engineReady) return;
+            surfaceView.requestQuickbarSnapshot(MainActivity.this::updateFallbackQuickbar);
+            mainHandler.postDelayed(this, 650L);
+        }
+    };
     private WorldManager.WorldInfo requestedWorld;
     private WorldManager worldManager;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -119,6 +130,7 @@ public final class MainActivity extends Activity {
     private void showHome() {
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
+        mainHandler.removeCallbacks(fallbackQuickbarRefresh);
         if (surfaceView != null) {
             saveCurrentWorldPreview();
             try {
@@ -144,6 +156,9 @@ public final class MainActivity extends Activity {
         surfaceView = null;
         gameContainer = null;
         fallbackOverlay = null;
+        activeChatHistory = null;
+        activeChatScroll = null;
+        java.util.Arrays.fill(fallbackQuickbarSlots, null);
         root.removeAllViews();
 
         if (lanMultiplayer != null) {
@@ -306,98 +321,88 @@ public final class MainActivity extends Activity {
         overlay.setClipChildren(false);
         overlay.setClipToPadding(false);
         overlay.setBackgroundColor(Color.TRANSPARENT);
-        // Unhandled touches are forwarded to the native engine so the right half
-        // remains a camera-look surface when the RmlUi HUD is unavailable.
         overlay.setClickable(true);
         overlay.setOnTouchListener((view, event) -> dispatchFallbackWorldTouch(event));
 
-        FrameLayout joystick = new FrameLayout(this);
-        GradientDrawable padBackground = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x99516f83, 0x77304a60});
-        padBackground.setShape(GradientDrawable.OVAL);
-        padBackground.setStroke(dp(2), 0x99e1efb8);
-        joystick.setBackground(padBackground);
-        View thumb = new View(this);
-        GradientDrawable thumbBackground = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xffc2d4bf, 0xff7c9c89});
-        thumbBackground.setShape(GradientDrawable.OVAL);
-        thumbBackground.setStroke(dp(1), 0xffe4f0dc);
-        thumb.setBackground(thumbBackground);
-        FrameLayout.LayoutParams thumbParams = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER);
-        joystick.addView(thumb, thumbParams);
-        FrameLayout.LayoutParams joystickParams = new FrameLayout.LayoutParams(dp(112), dp(112),
+        // Minecraft-style D-pad: four separate directions and crouch in the centre.
+        FrameLayout pad = new FrameLayout(this);
+        FrameLayout.LayoutParams padParams = new FrameLayout.LayoutParams(dp(144), dp(144),
                 Gravity.BOTTOM | (leftHanded ? Gravity.RIGHT : Gravity.LEFT));
-        if (leftHanded) joystickParams.rightMargin = dp(14);
-        else joystickParams.leftMargin = dp(14);
-        joystickParams.bottomMargin = dp(54);
-        overlay.addView(joystick, joystickParams);
-
-        joystick.setOnTouchListener((view, event) -> {
-            int[] viewLocation = new int[2];
-            int[] surfaceLocation = new int[2];
-            view.getLocationOnScreen(viewLocation);
-            surfaceView.getLocationOnScreen(surfaceLocation);
-            int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_CANCEL) {
-                final int pointerAction = action == MotionEvent.ACTION_CANCEL ? 3 : 2;
-                for (int i = 0; i < event.getPointerCount(); i++) {
-                    float x = viewLocation[0] - surfaceLocation[0] + event.getX(i);
-                    float y = viewLocation[1] - surfaceLocation[1] + event.getY(i);
-                    surfaceView.dispatchFallbackTouch(pointerAction, event.getPointerId(i), x, y);
-                }
-                return true;
-            }
-            int actionIndex = event.getActionIndex();
-            int mapped;
-            switch (action) {
-                case MotionEvent.ACTION_DOWN:
-                case MotionEvent.ACTION_POINTER_DOWN: mapped = 0; break;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_POINTER_UP: mapped = 1; break;
-                case MotionEvent.ACTION_CANCEL: mapped = 3; break;
-                default: return true;
-            }
-            float x = viewLocation[0] - surfaceLocation[0] + event.getX(actionIndex);
-            float y = viewLocation[1] - surfaceLocation[1] + event.getY(actionIndex);
-            surfaceView.dispatchFallbackTouch(mapped, event.getPointerId(actionIndex), x, y);
-            return true;
-        });
+        if (leftHanded) padParams.rightMargin = dp(16); else padParams.leftMargin = dp(16);
+        padParams.bottomMargin = dp(66);
+        overlay.addView(pad, padParams);
+        TextView up = statusButton("↑", false);
+        TextView down = statusButton("↓", false);
+        TextView left = statusButton("←", false);
+        TextView right = statusButton("→", false);
+        TextView crouch = statusButton("▣", true);
+        for (TextView button : new TextView[]{up, down, left, right, crouch}) {
+            button.setTextSize(19);
+            button.setPadding(0, 0, 0, 0);
+        }
+        pad.addView(up, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        pad.addView(down, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        pad.addView(left, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.LEFT | Gravity.CENTER_VERTICAL));
+        pad.addView(right, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.RIGHT | Gravity.CENTER_VERTICAL));
+        pad.addView(crouch, new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER));
+        attachFallbackHoldAction(up, 6);
+        attachFallbackHoldAction(down, 7);
+        attachFallbackHoldAction(left, 8);
+        attachFallbackHoldAction(right, 9);
+        attachFallbackHoldAction(crouch, 1);
+        up.setContentDescription("Adelante"); down.setContentDescription("Atrás");
+        left.setContentDescription("Mover a la izquierda"); right.setContentDescription("Mover a la derecha");
+        crouch.setContentDescription("Agacharse");
 
         TextView jump = statusButton("↑", true);
         jump.setTextSize(22);
         jump.setContentDescription("Saltar");
         FrameLayout.LayoutParams jumpParams = new FrameLayout.LayoutParams(dp(58), dp(58),
                 Gravity.BOTTOM | (leftHanded ? Gravity.LEFT : Gravity.RIGHT));
-        if (leftHanded) jumpParams.leftMargin = dp(20);
-        else jumpParams.rightMargin = dp(20);
-        jumpParams.bottomMargin = dp(58);
+        if (leftHanded) jumpParams.leftMargin = dp(18); else jumpParams.rightMargin = dp(18);
+        jumpParams.bottomMargin = dp(62);
         overlay.addView(jump, jumpParams);
-        jump.setOnTouchListener((view, event) -> {
-            int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_DOWN) surfaceView.dispatchFallbackAction(0, true);
-            else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
-                surfaceView.dispatchFallbackAction(0, false);
-            return true;
-        });
+        attachFallbackHoldAction(jump, 0);
 
-        TextView crouch = statusButton("↓", false);
-        crouch.setTextSize(18);
-        crouch.setContentDescription("Agacharse");
-        FrameLayout.LayoutParams crouchParams = new FrameLayout.LayoutParams(dp(46), dp(46),
+        TextView attack = statusButton("⚔", false);
+        attack.setTextSize(17);
+        attack.setContentDescription("Atacar");
+        FrameLayout.LayoutParams attackParams = new FrameLayout.LayoutParams(dp(48), dp(48),
                 Gravity.BOTTOM | (leftHanded ? Gravity.LEFT : Gravity.RIGHT));
-        if (leftHanded) crouchParams.leftMargin = dp(86);
-        else crouchParams.rightMargin = dp(86);
-        crouchParams.bottomMargin = dp(64);
-        overlay.addView(crouch, crouchParams);
-        crouch.setOnTouchListener((view, event) -> {
-            int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_DOWN) surfaceView.dispatchFallbackAction(1, true);
-            else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
-                surfaceView.dispatchFallbackAction(1, false);
-            return true;
-        });
+        if (leftHanded) attackParams.leftMargin = dp(82); else attackParams.rightMargin = dp(82);
+        attackParams.bottomMargin = dp(126);
+        overlay.addView(attack, attackParams);
+        attachFallbackHoldAction(attack, 10);
+
+        LinearLayout quickbar = new LinearLayout(this);
+        quickbar.setOrientation(LinearLayout.HORIZONTAL);
+        quickbar.setGravity(Gravity.CENTER);
+        quickbar.setPadding(dp(4), dp(3), dp(4), dp(3));
+        GradientDrawable quickbarBackground = new GradientDrawable();
+        quickbarBackground.setColor(0xdd162b3d);
+        quickbarBackground.setCornerRadius(dp(10));
+        quickbarBackground.setStroke(dp(1), 0x886d8aa0);
+        quickbar.setBackground(quickbarBackground);
+        FrameLayout.LayoutParams quickbarParams = new FrameLayout.LayoutParams(-2, dp(52),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        quickbarParams.bottomMargin = dp(8);
+        overlay.addView(quickbar, quickbarParams);
+        for (int i = 0; i < 9; ++i) {
+            final int slot = i;
+            TextView item = statusButton(Integer.toString(i + 1), false);
+            item.setTextSize(7);
+            item.setGravity(Gravity.CENTER);
+            item.setMaxLines(3);
+            item.setContentDescription("Seleccionar espacio " + (i + 1));
+            LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(dp(36), dp(44));
+            if (i > 0) itemParams.leftMargin = dp(2);
+            quickbar.addView(item, itemParams);
+            fallbackQuickbarSlots[i] = item;
+            item.setOnClickListener(v -> {
+                surfaceView.dispatchFallbackAction(20 + slot, true);
+                surfaceView.requestQuickbarSnapshot(MainActivity.this::updateFallbackQuickbar);
+            });
+        }
 
         LinearLayout topButtons = new LinearLayout(this);
         topButtons.setOrientation(LinearLayout.HORIZONTAL);
@@ -407,13 +412,18 @@ public final class MainActivity extends Activity {
         topParams.topMargin = dp(8);
         topParams.rightMargin = dp(8);
         overlay.addView(topButtons, topParams);
-
         TextView perspective = statusButton("◉", false);
         perspective.setTextSize(17);
         perspective.setContentDescription("Cambiar perspectiva");
         topButtons.addView(perspective, new LinearLayout.LayoutParams(dp(40), dp(40)));
         perspective.setOnClickListener(v -> surfaceView.dispatchFallbackAction(2, true));
-
+        TextView inventory = statusButton("▦", false);
+        inventory.setTextSize(17);
+        inventory.setContentDescription("Inventario");
+        LinearLayout.LayoutParams inventoryParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        inventoryParams.leftMargin = dp(6);
+        topButtons.addView(inventory, inventoryParams);
+        inventory.setOnClickListener(v -> showFallbackInventoryDialog());
         TextView pause = statusButton("Ⅱ", false);
         pause.setTextSize(17);
         pause.setContentDescription("Pausar");
@@ -424,6 +434,102 @@ public final class MainActivity extends Activity {
 
         fallbackOverlay = overlay;
         gameContainer.addView(overlay, 1, new FrameLayout.LayoutParams(-1, -1));
+        mainHandler.removeCallbacks(fallbackQuickbarRefresh);
+        mainHandler.post(fallbackQuickbarRefresh);
+    }
+
+    private void attachFallbackHoldAction(View button, int action) {
+        button.setOnTouchListener((view, event) -> {
+            int state = event.getActionMasked();
+            if (state == MotionEvent.ACTION_DOWN) surfaceView.dispatchFallbackAction(action, true);
+            else if (state == MotionEvent.ACTION_UP || state == MotionEvent.ACTION_CANCEL
+                    || state == MotionEvent.ACTION_POINTER_UP) {
+                surfaceView.dispatchFallbackAction(action, false);
+            }
+            return true;
+        });
+    }
+
+    private void updateFallbackQuickbar(String snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) return;
+        String[] tokens = snapshot.split(";", -1);
+        if (tokens.length < 10) return;
+        int selected = 0;
+        try { selected = Integer.parseInt(tokens[0]); } catch (NumberFormatException ignored) { }
+        for (int i = 0; i < 9; i++) {
+            TextView slot = fallbackQuickbarSlots[i];
+            if (slot == null) continue;
+            String[] item = tokens[i + 1].split("\\|", 3);
+            String label = item.length >= 3 ? item[2] : "";
+            String amount = item.length >= 2 ? item[1] : "0";
+            if (label.length() > 7) label = label.substring(0, 7);
+            slot.setText((i + 1) + "\n" + (label.isEmpty() ? "—" : label) + "\n"
+                    + ("0".equals(amount) ? "" : amount));
+            int stroke = i == selected ? 0xffa8ed75 : 0x887d9bad;
+            int[] colors = i == selected ? new int[]{0xff3f634a, 0xff1c4339}
+                    : new int[]{0xff294358, 0xff162c40};
+            GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors);
+            bg.setCornerRadius(dp(6));
+            bg.setStroke(dp(i == selected ? 2 : 1), stroke);
+            slot.setBackground(bg);
+        }
+    }
+
+    private void showFallbackInventoryDialog() {
+        if (surfaceView == null || !engineReady) return;
+        String inventory = surfaceView.executeCommand("inventario");
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(14), dp(12), dp(14), dp(12));
+        TextView contents = statusText(inventory, 10, 0xffe2edf3, false);
+        contents.setGravity(Gravity.TOP | Gravity.LEFT);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(contents, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(240)));
+        Button craft = new Button(this);
+        craft.setText("FABRICACIÓN");
+        craft.setAllCaps(false);
+        panel.addView(craft, new LinearLayout.LayoutParams(-1, dp(44)));
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Inventario")
+                .setView(panel)
+                .setNegativeButton("Cerrar", null)
+                .create();
+        craft.setOnClickListener(v -> { dialog.dismiss(); showFallbackCraftingDialog(); });
+        dialog.show();
+    }
+
+    private void showFallbackCraftingDialog() {
+        final String[] recipeIds = {"planks","sticks","table","torch","chest","furnace",
+                "wooden_door","trapdoor","ladder","fence","wooden_slab","oak_stairs",
+                "stone_stairs","wooden_pickaxe","stone_pickaxe","iron_pickaxe",
+                "wooden_axe","stone_axe","wooden_sword","iron_sword"};
+        final String[] labels = {"Tablones","Palos","Mesa de trabajo","Antorchas","Cofre","Horno",
+                "Puerta","Trampilla","Escalera de mano","Valla","Losa","Escaleras de madera",
+                "Escaleras de piedra","Pico de madera","Pico de piedra","Pico de hierro",
+                "Hacha de madera","Hacha de piedra","Espada de madera","Espada de hierro"};
+        new AlertDialog.Builder(this).setTitle("Libro de fabricación")
+                .setItems(labels, (dialog, which) -> {
+                    if (surfaceView == null) return;
+                    String result = surfaceView.executeCommand("/fabricar " + recipeIds[which]);
+                    Toast.makeText(this, result, Toast.LENGTH_LONG).show();
+                    mainHandler.post(fallbackQuickbarRefresh);
+                }).setNegativeButton("Cerrar", null).show();
+    }
+
+    private void appendChatMessage(String sender, String message) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> appendChatMessage(sender, message));
+            return;
+        }
+        String line = sender + ": " + message;
+        chatMessages.add(line);
+        while (chatMessages.size() > 80) chatMessages.remove(0);
+        if (activeChatHistory != null) {
+            activeChatHistory.setText(String.join("\n", chatMessages));
+            if (activeChatScroll != null) activeChatScroll.post(
+                    () -> activeChatScroll.fullScroll(View.FOCUS_DOWN));
+        }
     }
 
     private boolean dispatchFallbackWorldTouch(MotionEvent event) {
@@ -478,87 +584,85 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "El mundo todavía se está preparando.", Toast.LENGTH_SHORT).show();
             return;
         }
-
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(12),dp(10),dp(12),dp(8));
+        panel.setPadding(dp(12), dp(10), dp(12), dp(8));
         panel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xff142638,0xff0d1a28}));
-
+                new int[]{0xff142638, 0xff0d1a28}));
         ScrollView historyScroll = new ScrollView(this);
         historyScroll.setFillViewport(false);
         historyScroll.setVerticalScrollBarEnabled(true);
-        historyScroll.setClipChildren(true);
-        historyScroll.setClipToPadding(true);
-        TextView history = statusText(
-                "MINEFADE · CHAT DE COMANDOS\nEscribe /ayuda para ver la lista.\n"
-                + "Ejemplos: /oveja 3 · /zombi · /modo creativo · /tiempo noche\n",
-                10,0xffdce8ef,false);
+        TextView history = statusText(chatMessages.isEmpty()
+                ? "Chat local y multijugador\nEscribe un mensaje o /ayuda para los comandos."
+                : String.join("\n", chatMessages), 10, 0xffdce8ef, false);
         history.setGravity(Gravity.TOP | Gravity.LEFT);
-        history.setPadding(dp(8),dp(8),dp(8),dp(8));
-        history.setMinHeight(dp(170));
+        history.setPadding(dp(8), dp(8), dp(8), dp(8));
         history.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xff0b1724,0xff13283a}));
-        historyScroll.addView(history,new ScrollView.LayoutParams(-1,-2));
-        LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(-1,dp(210));
-        panel.addView(historyScroll,historyParams);
+                new int[]{0xff0b1724, 0xff13283a}));
+        historyScroll.addView(history, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(historyScroll, new LinearLayout.LayoutParams(-1, dp(220)));
+        activeChatHistory = history;
+        activeChatScroll = historyScroll;
 
         LinearLayout sendRow = new LinearLayout(this);
         sendRow.setOrientation(LinearLayout.HORIZONTAL);
         sendRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams sendRowParams = new LinearLayout.LayoutParams(-1,dp(46));
+        LinearLayout.LayoutParams sendRowParams = new LinearLayout.LayoutParams(-1, dp(46));
         sendRowParams.topMargin = dp(8);
-        panel.addView(sendRow,sendRowParams);
-
-        EditText command = new EditText(this);
-        command.setSingleLine(true);
-        command.setText("/");
-        command.setSelection(command.length());
-        command.setTextColor(Color.WHITE);
-        command.setHintTextColor(0xff9fb4c1);
-        command.setHint("/oveja");
-        command.setTextSize(12);
-        command.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        command.setPadding(dp(10),0,dp(10),0);
-        command.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xff1b3347,0xff132638}));
-        sendRow.addView(command,new LinearLayout.LayoutParams(0,-1,1f));
-
+        panel.addView(sendRow, sendRowParams);
+        EditText messageInput = new EditText(this);
+        messageInput.setSingleLine(true);
+        messageInput.setTextColor(Color.WHITE);
+        messageInput.setHintTextColor(0xff9fb4c1);
+        messageInput.setHint("Mensaje o /comando");
+        messageInput.setTextSize(12);
+        messageInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        messageInput.setPadding(dp(10), 0, dp(10), 0);
+        messageInput.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff1b3347, 0xff132638}));
+        sendRow.addView(messageInput, new LinearLayout.LayoutParams(0, -1, 1f));
         Button send = new Button(this);
         send.setText("ENVIAR");
         send.setTextSize(10);
         send.setTextColor(0xfff1f7fa);
         send.setAllCaps(false);
-        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(88),dp(42));
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(88), dp(42));
         sendParams.leftMargin = dp(7);
-        sendRow.addView(send,sendParams);
+        sendRow.addView(send, sendParams);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Chat de Minefade")
                 .setView(panel)
-                .setNegativeButton("Cerrar",null)
+                .setNegativeButton("Cerrar", null)
                 .create();
-        final Runnable[] execute = new Runnable[1];
-        execute[0] = () -> {
-            String typed = command.getText().toString().trim();
-            if (typed.isEmpty() || "/".equals(typed)) return;
-            if (surfaceView == null || !engineReady) {
-                history.append("\nMotor no disponible.\n");
-                return;
+        final Runnable[] submit = new Runnable[1];
+        submit[0] = () -> {
+            String typed = messageInput.getText().toString().trim();
+            if (typed.isEmpty()) return;
+            if (typed.startsWith("/")) {
+                String result = surfaceView.executeCommand(typed);
+                appendChatMessage("Comando", "> " + typed + " · " + result);
+            } else {
+                appendChatMessage("Tú", typed);
+                if (lanMultiplayer != null && lanMultiplayer.isConnected()) {
+                    lanMultiplayer.sendChat(typed);
+                } else {
+                    Toast.makeText(this, "Mensaje guardado en el chat local.", Toast.LENGTH_SHORT).show();
+                }
             }
-            String result = surfaceView.executeCommand(typed);
-            history.append("\n> " + typed + "\n" + result + "\n");
-            historyScroll.post(() -> historyScroll.fullScroll(View.FOCUS_DOWN));
-            command.setText("/");
-            command.setSelection(command.length());
+            messageInput.setText("");
         };
-        send.setOnClickListener(v -> execute[0].run());
-        command.setOnEditorActionListener((view, actionId, event) -> {
-            execute[0].run();
+        send.setOnClickListener(v -> submit[0].run());
+        messageInput.setOnEditorActionListener((view, actionId, event) -> {
+            submit[0].run();
             return true;
         });
+        dialog.setOnDismissListener(d -> {
+            activeChatHistory = null;
+            activeChatScroll = null;
+        });
         dialog.show();
-        command.requestFocus();
+        messageInput.requestFocus();
     }
 
     private void pickModFile() {
@@ -618,6 +722,9 @@ public final class MainActivity extends Activity {
             }
             @Override public void onDisconnected(String reason) {
                 if (homeScreen != null) homeScreen.setMultiplayerStatus(reason);
+            }
+            @Override public void onChatMessage(String player, String message) {
+                appendChatMessage(player, message);
             }
         };
     }

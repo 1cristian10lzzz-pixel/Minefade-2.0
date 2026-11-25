@@ -287,6 +287,27 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         return true;
     }
 
+    /** Read the real nine-slot quickbar on the GL thread without racing the native inventory. */
+    public void requestQuickbarSnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetQuickbarSnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "Quickbar snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
     /** Run a typed command on the native simulation thread and return its Spanish response. */
     public String executeCommand(String command) {
         if (!nativeReady) return "El mundo no está listo.";

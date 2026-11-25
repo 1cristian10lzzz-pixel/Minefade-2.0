@@ -2292,7 +2292,7 @@ std::string Engine::QuickbarSnapshot() const {
 std::string Engine::ExecuteCommand(const std::string& rawCommand) {
     if (!ready_) return "El mundo todavía no está preparado.";
     std::string command = rawCommand;
-    const std::size_t first = command.find_first_not_of(" \\t\\r\\n");
+    const std::size_t first = command.find_first_not_of(" \\t\\r\n");
     if (first == std::string::npos) return "Escribe /ayuda para ver los comandos.";
     command = command.substr(first);
     if (!command.empty() && command.front() == '/') command.erase(command.begin());
@@ -2306,7 +2306,36 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         return "/oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
                "/zombi [cantidad] · /esqueleto [cantidad] · /conejo [cantidad] · "
                "/modo supervivencia|creativo|aventura · /tiempo dia|noche · "
-               "/dar <id> [cantidad] · /tp <x> <y> <z> · /semilla";
+               "/dar <id> [cantidad] · /tp <x> <y> <z> · /semilla · /inventario · /fabricar <receta>";
+    }
+    if (verb == "inventario" || verb == "inventory") {
+        std::ostringstream summary;
+        summary << "INVENTARIO · 36 ESPACIOS\n";
+        bool any = false;
+        for (std::size_t slot = 0; slot < Inventory::kSlotCount; ++slot) {
+            const std::uint32_t encoded = inventory_.counts[slot];
+            const std::uint16_t id = static_cast<std::uint16_t>(encoded / 1000u);
+            const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+            if (id == 0u || amount == 0u) continue;
+            const BlockDefinition* item = GetBlockDefinition(static_cast<BlockId>(id));
+            if (item == nullptr) continue;
+            any = true;
+            summary << (slot + 1u) << ". " << item->nameEs << " × " << amount;
+            if (slot < Inventory::kHotbarSlotCount) summary << " · Barra rápida";
+            summary << "\n";
+        }
+        if (!any) summary << "Vacío.\n";
+        summary << "Espacio seleccionado: " << (inventory_.selectedSlot + 1u) << "/9.";
+        return summary.str();
+    }
+    if (verb == "fabricar" || verb == "craft") {
+        std::string recipe;
+        input >> recipe;
+        if (recipe.empty()) return "Uso: /fabricar planks, sticks, table, torch o nombre de receta.";
+        std::transform(recipe.begin(), recipe.end(), recipe.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return CraftRecipe(recipe) ? "Fabricación completada: " + recipe + "." :
+            "No se pudo fabricar " + recipe + ". Comprueba materiales y mesa de trabajo.";
     }
     if (!allowCheats_) return "Los trucos están desactivados en este mundo. Actívalos en sus opciones.";
 

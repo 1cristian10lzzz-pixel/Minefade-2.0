@@ -225,3 +225,23 @@ def test_quickbar_snapshot_is_a_jni_export_and_uses_real_inventory_slots():
     assert "Java_com_minefade_nativeengine_NativeBridge_nativeGetQuickbarSnapshot" in native
     assert "inventory_.counts[slot]" in engine
     assert "Inventory::kHotbarSlotCount" in engine
+
+
+
+def test_fallback_ui_has_discrete_controls_real_quickbar_chat_and_crafting_commands():
+    activity = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+    lan = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert "FrameLayout joystick" not in activity
+    assert "attachFallbackHoldAction(up, 6);" in activity
+    assert "attachFallbackHoldAction(down, 7);" in activity
+    assert "attachFallbackHoldAction(left, 8);" in activity
+    assert "attachFallbackHoldAction(right, 9);" in activity
+    assert "showFallbackInventoryDialog()" in activity
+    assert "showFallbackCraftingDialog()" in activity
+    assert "private void updateFallbackQuickbar(String snapshot)" in activity
+    assert "default void onChatMessage(String player, String message)" in lan
+    assert 'line.startsWith("CHAT|")' in lan
+    assert "public void sendChat(String rawMessage)" in lan
+    assert 'verb == "inventario"' in engine
+    assert 'verb == "fabricar"' in engine
