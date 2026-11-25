@@ -695,6 +695,12 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     player_ = Player();
     player_.SetAppearance(avatarAppearance_);
     inventory_ = Inventory();
+    progressionXp_ = 0u;
+    progressionBlocksMined_ = 0u;
+    progressionBlocksPlaced_ = 0u;
+    progressionItemsCollected_ = 0u;
+    progressionJumps_ = 0u;
+    progressionWorldEntered_ = false;
     droppedItems_ = DroppedItemSystem();
     entities_ = EntitySystem();
     environment_ = EnvironmentSystem();
@@ -880,6 +886,34 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
     }
     if (loadedExistingWorld && !storagePath_.empty()) {
+        // Progression uses a sidecar to keep old MFVOX world formats byte-compatible.
+        std::ifstream progressionFile(storagePath_ + ".progression", std::ios::binary);
+        if (progressionFile) {
+            std::uint32_t magic = 0u, version = 0u, savedXp = 0u;
+            std::uint32_t mined = 0u, placed = 0u, collected = 0u, jumps = 0u;
+            std::uint32_t entered = 0u;
+            progressionFile.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            progressionFile.read(reinterpret_cast<char*>(&version), sizeof(version));
+            progressionFile.read(reinterpret_cast<char*>(&savedXp), sizeof(savedXp));
+            progressionFile.read(reinterpret_cast<char*>(&mined), sizeof(mined));
+            progressionFile.read(reinterpret_cast<char*>(&placed), sizeof(placed));
+            progressionFile.read(reinterpret_cast<char*>(&collected), sizeof(collected));
+            progressionFile.read(reinterpret_cast<char*>(&jumps), sizeof(jumps));
+            progressionFile.read(reinterpret_cast<char*>(&entered), sizeof(entered));
+            if (progressionFile && progressionFile.peek() == std::char_traits<char>::eof() &&
+                magic == 0x4D465052u && version == 1u && savedXp <= 100000000u &&
+                mined <= 10000000u && placed <= 10000000u && collected <= 10000000u &&
+                jumps <= 10000000u && entered <= 1u) {
+                progressionXp_ = savedXp;
+                progressionBlocksMined_ = mined;
+                progressionBlocksPlaced_ = placed;
+                progressionItemsCollected_ = collected;
+                progressionJumps_ = jumps;
+                progressionWorldEntered_ = entered != 0u;
+            } else {
+                ENGINE_LOGW("Ignored invalid progression sidecar; starting progression safely");
+            }
+        }
         // Survival stats are stored in a validated sidecar so MFVOX001/002/003
         // remain byte-for-byte compatible with existing worlds.
         std::ifstream survivalFile(storagePath_ + ".survival", std::ios::binary);
@@ -1035,6 +1069,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     lastStats_ = lastFrame_;
     ready_ = true;
     paused_ = false;
+    progressionWorldEntered_ = true;
     thirdPerson_ = false;
     thirdPersonFront_ = false;
     fallbackMovementButtons_.fill(false);
@@ -1462,6 +1497,7 @@ void Engine::Render() {
                                         !world_.IsSolid(obstacleX, feetY + 2, obstacleZ);
                 if (obstacle && clearAbove) {
                     player_.Jump();
+                    if (progressionJumps_ < 10000000u) ++progressionJumps_;
                     autoJumpCooldown_ = 0.42f;
                     soundEvents_.fetch_or(16u, std::memory_order_release);
                 }
@@ -1545,6 +1581,9 @@ void Engine::Render() {
         const std::size_t pickedCount =
             droppedItems_.Update(world_, player_, inventory_, safeDelta, &pickedItemId);
         if (pickedCount > 0u) {
+            progressionItemsCollected_ = std::min(10000000u,
+                progressionItemsCollected_ + static_cast<std::uint32_t>(std::min<std::size_t>(pickedCount, 10000000u)));
+            if (gameMode_ != 1) AddProgressionXp(static_cast<std::uint32_t>(std::min<std::size_t>(pickedCount, 2500000u) * 2u));
             RefreshInventoryUi();
             const BlockDefinition* pickedDefinition =
                 GetBlockDefinition(static_cast<BlockId>(pickedItemId));
@@ -1736,9 +1775,18 @@ void Engine::Render() {
                           fps_, frameP50, frameP95, world_.ChunkCount(),
                           static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0));
         } else {
+            std::uint32_t level = 1u;
+            std::uint32_t spent = 0u;
+            std::uint32_t needed = 100u;
+            while (level < 10000u && progressionXp_ >= spent + needed) {
+                spent += needed;
+                ++level;
+                needed = 100u + (level - 1u) * 50u;
+            }
+            const std::uint32_t intoLevel = progressionXp_ - spent;
             std::snprintf(status, sizeof(status),
-                          "VIDA %.0f/20 · COMIDA %.0f/20 · FPS %.0f · F %.1f/%.1fms",
-                          std::ceil(playerHealth_), std::floor(playerHunger_), fps_, frameP50, frameP95);
+                          "NV %u · XP %u/%u · VIDA %.0f · COMIDA %.0f · FPS %.0f",
+                          level, intoLevel, needed, std::ceil(playerHealth_), std::floor(playerHunger_), fps_);
         }
         ui_.SetStatus(status);
 
@@ -1877,6 +1925,8 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
                     static_cast<int>(placed.z), static_cast<int>(selected)
                 });
                 if (gameMode_ != 1) inventory_.ConsumeSelected();
+                if (progressionBlocksPlaced_ < 10000000u) ++progressionBlocksPlaced_;
+                if (gameMode_ != 1) AddProgressionXp(1u);
                 RefreshInventoryUi();
                 soundEvents_.fetch_or(2u, std::memory_order_release);
                 if (HasBlockFlag(static_cast<BlockId>(selected), BlockFluid))
@@ -2002,6 +2052,7 @@ void Engine::HandleUiAction(const std::string& action) {
                                         3.25f, damage, &defeated, &defeatedKind)) {
                 if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
                 if (defeated) {
+                    if (gameMode_ != 1) AddProgressionXp(20u);
                     ui_.SetChatMessage(defeatedKind == 5
                         ? "Has derrotado a un esqueleto."
                         : "Has derrotado a un zombi.");
@@ -2053,8 +2104,11 @@ void Engine::HandleUiAction(const std::string& action) {
     } else if (action == "jump") {
         const bool wasGrounded = player_.grounded;
         player_.Jump();
-        if (wasGrounded && !player_.grounded)
+        if (wasGrounded && !player_.grounded) {
+            if (progressionJumps_ < 10000000u) ++progressionJumps_;
+            if (gameMode_ != 1) AddProgressionXp(1u);
             soundEvents_.fetch_or(16u, std::memory_order_release);
+        }
     } else if (action == "crouch") {
         crouching_ = !crouching_;
         player_.SetCrouching(crouching_);
@@ -2405,6 +2459,7 @@ bool Engine::CraftRecipe(const std::string& recipe) {
         return false;
     }
     inventory_ = stagedInventory;
+    if (gameMode_ != 1) AddProgressionXp(5u);
     const BlockDefinition* output = GetBlockDefinition(static_cast<BlockId>(outputId));
     ui_.SetChatMessage(output != nullptr ? std::string("Fabricado: ") + output->nameEs :
                        "Objeto fabricado.");
@@ -2424,6 +2479,19 @@ std::string Engine::QuickbarSnapshot() const {
         output << ';' << itemId << '|' << amount << '|'
                << (definition == nullptr ? "" : definition->nameEs);
     }
+    return output.str();
+}
+
+void Engine::AddProgressionXp(std::uint32_t amount) {
+    if (amount == 0u) return;
+    progressionXp_ = std::min(100000000u, progressionXp_ + std::min(amount, 100000000u));
+}
+
+std::string Engine::ProgressionSnapshot() const {
+    std::ostringstream output;
+    output << "v1|" << progressionBlocksMined_ << '|' << progressionBlocksPlaced_ << '|'
+           << progressionItemsCollected_ << '|' << progressionJumps_ << '|'
+           << (progressionWorldEntered_ ? 1 : 0) << '|' << progressionXp_;
     return output.str();
 }
 
@@ -2790,6 +2858,8 @@ void Engine::UpdateMining(float deltaSeconds) {
             static_cast<int>(broken.x), static_cast<int>(broken.y), static_cast<int>(broken.z),
             static_cast<int>(BlockId::Air)
         });
+        if (progressionBlocksMined_ < 10000000u) ++progressionBlocksMined_;
+        if (gameMode_ != 1) AddProgressionXp(2u);
         const BlockDefinition* brokenDefinition = GetBlockDefinition(brokenType);
         if (brokenDefinition != nullptr && brokenDefinition->dropId > 0u) {
             const auto dropQuantity = static_cast<std::uint16_t>(std::clamp(modDropQuantity_, 1, 4));
@@ -3002,6 +3072,39 @@ bool Engine::SaveWorld() {
             ENGINE_LOGI("World saved to private app storage");
             if (!protection_.Save())
                 ENGINE_LOGW("Protection claims could not be saved; existing claims file was preserved");
+            {
+                const std::string progressionPath = storagePath_ + ".progression";
+                const std::string progressionTemp = progressionPath + ".tmp";
+                const std::uint32_t magic = 0x4D465052u;
+                const std::uint32_t version = 1u;
+                const std::uint32_t entered = progressionWorldEntered_ ? 1u : 0u;
+                std::ofstream progressionFile(progressionTemp, std::ios::binary | std::ios::trunc);
+                if (progressionFile) {
+                    progressionFile.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    progressionFile.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionXp_), sizeof(progressionXp_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionBlocksMined_), sizeof(progressionBlocksMined_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionBlocksPlaced_), sizeof(progressionBlocksPlaced_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionItemsCollected_), sizeof(progressionItemsCollected_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionJumps_), sizeof(progressionJumps_));
+                    progressionFile.write(reinterpret_cast<const char*>(&entered), sizeof(entered));
+                    progressionFile.flush();
+                    progressionFile.close();
+                    std::error_code progressionError;
+                    std::filesystem::rename(progressionTemp, progressionPath, progressionError);
+                    if (progressionError) {
+                        std::filesystem::remove(progressionPath, progressionError);
+                        progressionError.clear();
+                        std::filesystem::rename(progressionTemp, progressionPath, progressionError);
+                    }
+                    if (progressionError) {
+                        ENGINE_LOGE("Could not atomically save progression: %s", progressionError.message().c_str());
+                        std::filesystem::remove(progressionTemp);
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create progression sidecar temporary file");
+                }
+            }
             {
                 const std::string gearPath = storagePath_ + ".armor";
                 const std::string gearTemp = gearPath + ".tmp";
