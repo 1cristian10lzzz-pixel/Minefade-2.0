@@ -205,3 +205,12 @@ def test_existing_world_multiplayer_builds_chunks_near_the_saved_player():
     assert "std::floor(player_.position.x)" in engine
     assert "std::floor(player_.position.z)" in engine
     assert "world_.GenerateAround(generationX, generationZ, 1);" in engine
+
+
+
+def test_loaded_world_restores_terrain_generation_options_for_new_chunks():
+    header = (CPP / "world/VoxelWorld.h").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert "void SetGenerationOptions(bool flatWorld, bool generateStructures) noexcept" in header
+    assert "if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);" in engine
+    assert engine.count("world_.SetGenerationOptions(flatWorld_, generateStructures_);") == 2
