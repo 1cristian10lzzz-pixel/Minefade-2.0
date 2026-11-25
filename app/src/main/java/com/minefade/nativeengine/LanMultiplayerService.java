@@ -24,6 +24,7 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -41,7 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class LanMultiplayerService implements Closeable {
     private static final String TAG = "MinefadeLAN";
     private static final String SERVICE_TYPE = "_minefade._tcp.";
-    private static final int PROTOCOL_VERSION = 3;
+    private static final int PROTOCOL_VERSION = 4;
     private static final int MAX_PLAYERS = 8;
     private static final long STATE_INTERVAL_NS = 50_000_000L;
     private static final long INTERPOLATION_DELAY_NS = 110_000_000L;
@@ -167,12 +168,14 @@ public final class LanMultiplayerService implements Closeable {
     private static final class Peer {
         final int id;
         final String name;
+        final String identity;
         final Socket socket;
         final BufferedWriter writer;
 
-        Peer(int id, String name, Socket socket, BufferedWriter writer) {
+        Peer(int id, String name, String identity, Socket socket, BufferedWriter writer) {
             this.id = id;
             this.name = name;
+            this.identity = identity;
             this.socket = socket;
             this.writer = writer;
         }
@@ -189,6 +192,7 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private final Context appContext;
+    private final String localPlayerIdentity;
     private final NsdManager nsdManager;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
@@ -226,7 +230,23 @@ public final class LanMultiplayerService implements Closeable {
 
     public LanMultiplayerService(Context context) {
         appContext = context.getApplicationContext();
+        android.content.SharedPreferences preferences = appContext.getSharedPreferences(
+                "minefade_security", Context.MODE_PRIVATE);
+        String identity = preferences.getString("player_identity", "");
+        if (!identity.matches("[0-9a-f]{32}")) {
+            identity = UUID.randomUUID().toString().replace("-", "").toLowerCase(Locale.ROOT);
+            preferences.edit().putString("player_identity", identity).apply();
+        }
+        localPlayerIdentity = identity;
         nsdManager = (NsdManager) appContext.getSystemService(Context.NSD_SERVICE);
+    }
+
+    public String getLocalPlayerIdentity() {
+        return localPlayerIdentity;
+    }
+
+    private static boolean validPlayerIdentity(String identity) {
+        return identity != null && identity.matches("[0-9a-f]{32}");
     }
 
     public void setContentFingerprint(String fingerprint) {
@@ -470,7 +490,8 @@ public final class LanMultiplayerService implements Closeable {
                         new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                 clientWriter = writer;
                 synchronized (clientWriteLock) {
-                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|" + playerName);
+                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|" + playerName
+                            + "|" + localPlayerIdentity);
                     writer.newLine();
                     writer.flush();
                 }
@@ -552,8 +573,9 @@ public final class LanMultiplayerService implements Closeable {
                 return;
             }
             String[] helloFields = hello.split("\\|", -1);
-            if (helloFields.length != 4 || !"HELLO".equals(helloFields[0]) ||
-                    parseInt(helloFields[1], -1) != PROTOCOL_VERSION) {
+            if (helloFields.length != 5 || !"HELLO".equals(helloFields[0]) ||
+                    parseInt(helloFields[1], -1) != PROTOCOL_VERSION ||
+                    !validPlayerIdentity(helloFields[4])) {
                 writer.write("ERROR|VERSION");
                 writer.newLine();
                 writer.flush();
@@ -569,7 +591,7 @@ public final class LanMultiplayerService implements Closeable {
             }
             id = nextPlayerId.getAndIncrement();
             String name = safeField(helloFields[3], "Jugador");
-            peer = new Peer(id, name, socket, writer);
+            peer = new Peer(id, name, helloFields[4], socket, writer);
             peers.put(id, peer);
             playerNames.put(id, name);
             peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName + "|" + contentFingerprint);
@@ -596,6 +618,19 @@ public final class LanMultiplayerService implements Closeable {
                 } else if (line.startsWith("BLOCK|")) {
                     int[] edit = parseBlock(line);
                     if (edit != null) {
+                        final boolean allowed;
+                        try {
+                            allowed = NativeBridge.nativeCanModifyBlockForIdentity(
+                                    peer.identity, edit[0], edit[2]);
+                        } catch (LinkageError | RuntimeException error) {
+                            Log.e(TAG, "Protection check failed; rejecting remote block edit", error);
+                            peer.send("BLOCK_DENIED");
+                            continue;
+                        }
+                        if (!allowed) {
+                            peer.send("BLOCK_DENIED");
+                            continue;
+                        }
                         inboundBlockEdits.offer(edit);
                         broadcast(line, peer);
                     }
@@ -625,7 +660,9 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private void handleClientMessage(String line) {
-        if (line.startsWith("CHAT|")) {
+        if ("BLOCK_DENIED".equals(line)) {
+            postChatMessage("Protección", "El anfitrión rechazó una modificación: la zona está protegida.");
+        } else if (line.startsWith("CHAT|")) {
             String[] f = line.split("\\|", 4);
             if (f.length == 4) postChatMessage(f[2], f[3]);
         } else if (line.startsWith("PLAYER|")) {

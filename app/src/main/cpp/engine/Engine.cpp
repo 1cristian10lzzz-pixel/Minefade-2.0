@@ -688,6 +688,9 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     // thread before changing storagePath_. Do not save the previous in-memory
     // world again here: storagePath_ now belongs to the NEW world.
     Shutdown(false);
+    playerIdentity_ = pendingPlayerIdentity_;
+    if (!storagePath_.empty() && !protection_.Load(storagePath_ + ".claims"))
+        ENGINE_LOGW("Claim file missing or damaged; protection remains fail-closed");
     world_ = VoxelWorld(0x4D464445u);
     player_ = Player();
     player_.SetAppearance(avatarAppearance_);
@@ -1859,8 +1862,14 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
         if (action == kUp && !state.moved &&
             ElapsedSeconds() - state.startedAt < 0.22) {
             const std::uint16_t selected = inventory_.SelectedItemId();
+            Vec3 placementTarget{};
             Vec3 placed{};
-            if (gameMode_ != 2 && selected > 0 &&
+            const bool hasPlacementTarget = gameMode_ != 2 && selected > 0 &&
+                world_.GetPlacementTargetBlock(ViewPosition(), ViewDirection(), 6.0f, &placementTarget);
+            if (hasPlacementTarget && !protection_.CanBuild(playerIdentity_,
+                    static_cast<int>(placementTarget.x), static_cast<int>(placementTarget.z))) {
+                ui_.SetChatMessage("Zona protegida. El dueño debe autorizarte para construir aquí.");
+            } else if (hasPlacementTarget &&
                 world_.PlaceRay(ViewPosition(), ViewDirection(), 6.0f,
                                 static_cast<BlockId>(selected), &placed)) {
                 pendingBlockEdits_.insert(pendingBlockEdits_.end(), {
@@ -2303,10 +2312,54 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (verb == "ayuda" || verb == "help") {
-        return "/oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
+        return "/claim help · /oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
                "/zombi [cantidad] · /esqueleto [cantidad] · /conejo [cantidad] · "
                "/modo supervivencia|creativo|aventura · /tiempo dia|noche · "
                "/dar <id> [cantidad] · /tp <x> <y> <z> · /semilla · /inventario · /fabricar <receta>";
+    }
+    if (verb == "claim" || verb == "parcela") {
+        std::string action;
+        input >> action;
+        if (action.empty() || action == "help") {
+            return "/claim id · /claim create [radio] · /claim list · /claim info · "
+                   "/claim trust <id> · /claim untrust <id> · /claim abandon · "
+                   "/claim flag <pvp|explosions|fire|containers|mob_grief> <on|off>";
+        }
+        if (action == "id") return "Tu ID de protección: " + playerIdentity_;
+        if (action == "list") return protection_.ListFor(playerIdentity_);
+        if (action == "info") return protection_.DescribeAt(playerIdentity_,
+            static_cast<int>(std::floor(player_.position.x)),
+            static_cast<int>(std::floor(player_.position.z)));
+        std::string feedback;
+        if (action == "create") {
+            int radius = 16;
+            if (!(input >> radius)) radius = 16;
+            protection_.CreateClaim(playerIdentity_,
+                static_cast<int>(std::floor(player_.position.x)),
+                static_cast<int>(std::floor(player_.position.z)), radius, &feedback);
+            return feedback;
+        }
+        if (action == "abandon") {
+            protection_.Abandon(playerIdentity_, &feedback);
+            return feedback;
+        }
+        if (action == "trust" || action == "untrust") {
+            std::string identity;
+            input >> identity;
+            if (identity.empty()) return "Indica el ID de jugador. Puedes consultarlo con /claim id.";
+            if (action == "trust") protection_.Trust(playerIdentity_, identity,
+                ProtectionManager::kAllPermissions, &feedback);
+            else protection_.Untrust(playerIdentity_, identity, &feedback);
+            return feedback;
+        }
+        if (action == "flag") {
+            std::string flag, value;
+            input >> flag >> value;
+            if (value != "on" && value != "off") return "Uso: /claim flag <bandera> on|off.";
+            protection_.SetFlag(playerIdentity_, flag, value == "on", &feedback);
+            return feedback;
+        }
+        return "Comando de parcela desconocido. Escribe /claim help.";
     }
     if (verb == "inventario" || verb == "inventory") {
         std::ostringstream summary;
@@ -2428,6 +2481,11 @@ void Engine::OpenStarterChest() {
         !world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f, &target, &type) ||
         type != BlockId::Chest) {
         ui_.SetChatMessage("Mira al cofre y pulsa COFRE para abrirlo.");
+        return;
+    }
+    if (!protection_.CanUseContainer(playerIdentity_, static_cast<int>(target.x),
+                                     static_cast<int>(target.z))) {
+        ui_.SetChatMessage("Este cofre está protegido. Pide permiso a su dueño.");
         return;
     }
     starterChestPosition_ = target;
@@ -2581,6 +2639,15 @@ void Engine::UpdateMining(float deltaSeconds) {
     ui_.SetTargetBlock(definition->nameEs, progress);
     if (progress < 1.0f) return;
 
+    if (!protection_.CanBuild(playerIdentity_, static_cast<int>(target.x), static_cast<int>(target.z))) {
+        ui_.SetChatMessage("Zona protegida. El dueño debe autorizarte para romper bloques.");
+        active->second.mining = false;
+        miningPointerId_ = -1;
+        miningElapsed_ = 0.0f;
+        miningRequired_ = 0.0f;
+        ui_.SetTargetBlock(definition->nameEs, 0.0f);
+        return;
+    }
     Vec3 broken{};
     BlockId brokenType = BlockId::Air;
     if (world_.BreakRay(ViewPosition(), ViewDirection(), 6.0f, &broken, &brokenType)) {
@@ -2784,7 +2851,7 @@ void Engine::RefreshCraftingUi() {
 }
 
 bool Engine::SaveWorld() {
-    if (multiplayerMode_) return true; // LAN sessions are transient until full host-world persistence is added.
+    if (multiplayerMode_ && multiplayerSlot_ != 0) return true;
     if (storagePath_.empty()) {
         ENGINE_LOGE("Cannot save: Android private storage path has not been supplied");
         return false;
@@ -2798,6 +2865,8 @@ bool Engine::SaveWorld() {
             return false;
         } else {
             ENGINE_LOGI("World saved to private app storage");
+            if (!protection_.Save())
+                ENGINE_LOGW("Protection claims could not be saved; existing claims file was preserved");
             {
                 const std::string gearPath = storagePath_ + ".armor";
                 const std::string gearTemp = gearPath + ".tmp";
@@ -3228,6 +3297,16 @@ void Engine::LoadEnabledMods() {
 
 bool Engine::ConsumeExitRequest() {
     return exitRequested_.exchange(false, std::memory_order_acq_rel);
+}
+
+void Engine::SetPlayerIdentity(std::string identity) {
+    if (!ProtectionManager::ValidIdentity(identity)) identity = "local-device";
+    pendingPlayerIdentity_ = identity;
+    if (!ready_) playerIdentity_ = identity;
+}
+
+bool Engine::CanRemoteModifyBlockForIdentity(const std::string& identity, int x, int z) const {
+    return ProtectionManager::ValidIdentity(identity) && protection_.CanBuild(identity, x, z);
 }
 
 void Engine::SetMultiplayerMode(bool enabled, int playerSlot) {

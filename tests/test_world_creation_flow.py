@@ -245,3 +245,35 @@ def test_fallback_ui_has_discrete_controls_real_quickbar_chat_and_crafting_comma
     assert "public void sendChat(String rawMessage)" in lan
     assert 'verb == "inventario"' in engine
     assert 'verb == "fabricar"' in engine
+
+
+
+def test_claim_protection_is_persisted_and_enforced_in_the_native_block_path():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    voxel = (CPP / "world/VoxelWorld.cpp").read_text(encoding="utf-8")
+    voxel_h = (CPP / "world/VoxelWorld.h").read_text(encoding="utf-8")
+    claims = (CPP / "world/ProtectionManager.cpp").read_text(encoding="utf-8")
+    cmake = (CPP / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert 'protection_.Load(storagePath_ + ".claims")' in engine
+    assert 'protection_.Save()' in engine
+    assert 'protection_.CanBuild(playerIdentity_' in engine
+    assert 'protection_.CanUseContainer(playerIdentity_' in engine
+    assert '"/claim id' in engine
+    assert "GetPlacementTargetBlock" in voxel_h and "GetPlacementTargetBlock" in voxel
+    assert "CanBuild(const std::string& player, int x, int z) const" in claims
+    assert "MFCLAIMS1" in claims and "Overlaps(existing, claim)" in claims
+    assert "ProtectionManager.cpp" in cmake
+
+
+def test_lan_host_checks_persistent_player_identity_before_accepting_claim_block_edits():
+    bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
+    surface = (JAVA / "MinefadeSurfaceView.java").read_text(encoding="utf-8")
+    lan = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    assert "nativeSetPlayerIdentity" in bridge and "nativeCanModifyBlockForIdentity" in bridge
+    assert "nativeSetPlayerIdentity(multiplayer.getLocalPlayerIdentity())" in surface
+    assert "PROTOCOL_VERSION = 4" in lan
+    assert "localPlayerIdentity" in lan and "validPlayerIdentity(helloFields[4])" in lan
+    assert "NativeBridge.nativeCanModifyBlockForIdentity" in lan
+    assert "BLOCK_DENIED" in lan
+    assert "Java_com_minefade_nativeengine_NativeBridge_nativeCanModifyBlockForIdentity" in native

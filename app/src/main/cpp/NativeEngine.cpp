@@ -174,6 +174,27 @@ Java_com_minefade_nativeengine_NativeBridge_nativeResume(JNIEnv*, jclass) {
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeSetPlayerIdentity(JNIEnv* env, jclass, jstring identity) {
+    if (identity == nullptr) return;
+    const char* chars = env->GetStringUTFChars(identity, nullptr);
+    if (chars == nullptr) return;
+    minefade::GetEngine().SetPlayerIdentity(chars);
+    env->ReleaseStringUTFChars(identity, chars);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeCanModifyBlockForIdentity(
+        JNIEnv* env, jclass, jstring identity, jint x, jint z) {
+    if (identity == nullptr) return JNI_FALSE;
+    const char* chars = env->GetStringUTFChars(identity, nullptr);
+    if (chars == nullptr) return JNI_FALSE;
+    const bool allowed = minefade::GetEngine().CanRemoteModifyBlockForIdentity(chars,
+        static_cast<int>(x), static_cast<int>(z));
+    env->ReleaseStringUTFChars(identity, chars);
+    return allowed ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeSetStoragePath(JNIEnv* env, jclass, jstring path) {
     if (path == nullptr) return;
     const char* chars = env->GetStringUTFChars(path, nullptr);

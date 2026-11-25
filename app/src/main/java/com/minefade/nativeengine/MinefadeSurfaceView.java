@@ -533,6 +533,8 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                 // Set mode and storage on the same GL thread as nativeInit/render.
                 NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
                 NativeBridge.nativeSetStoragePath(storagePath);
+                NativeBridge.nativeSetPlayerIdentity(multiplayer == null
+                        ? "local-device" : multiplayer.getLocalPlayerIdentity());
                 NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld, difficulty, generateStructures);
                 NativeBridge.nativeSetModsDirectory(modsDirectory);
                 int quality = Math.max(0, Math.min(2, preferences.getInt("graphics_quality", 1)));

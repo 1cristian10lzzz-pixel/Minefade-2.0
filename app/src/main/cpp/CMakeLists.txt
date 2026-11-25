@@ -94,6 +94,7 @@ endif()
 add_library(minefade_native SHARED
     NativeEngine.cpp
     engine/Engine.cpp
+    world/ProtectionManager.cpp
     render/WorldMeshRenderer.cpp
     game/Player.cpp
     entity/ModelLoader.cpp

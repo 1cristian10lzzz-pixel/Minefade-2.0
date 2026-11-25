@@ -3,6 +3,7 @@
 #include "../game/Player.h"
 #include "../ui/RmlUiRuntime.h"
 #include "../world/VoxelWorld.h"
+#include "../world/ProtectionManager.h"
 #include "../render/WorldMeshRenderer.h"
 #include "../entity/EntityVisualSystem.h"
 
@@ -33,6 +34,8 @@ public:
     bool Pause();
     void Resume();
     void SetStoragePath(std::string path);
+    void SetPlayerIdentity(std::string identity);
+    bool CanRemoteModifyBlockForIdentity(const std::string& identity, int x, int z) const;
     void SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld, int difficulty, bool generateStructures);
     void SetModsDirectory(std::string path);
     std::string ExecuteCommand(const std::string& command);
@@ -239,6 +242,9 @@ private:
         1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u
     }};
     std::string storagePath_;
+    std::string pendingPlayerIdentity_{"local-device"};
+    std::string playerIdentity_{"local-device"};
+    ProtectionManager protection_;
     VoxelWorld world_;
     Player player_;
     Inventory inventory_;
