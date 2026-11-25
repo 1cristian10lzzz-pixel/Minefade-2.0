@@ -40,7 +40,8 @@ public:
     std::size_t ResidentGpuBytes() const noexcept { return residentGpuBytes_; }
 
     void DrawOpaque(const CameraFrustum& frustum) const;
-    void DrawTransparent(const CameraFrustum& frustum, const Vec3& cameraPosition) const;
+    void DrawTransparent(const CameraFrustum& frustum, const Vec3& cameraPosition,
+                         const std::vector<ChunkMeshView>& chunkViews);
 
 private:
     struct GpuChunk {
@@ -65,6 +66,9 @@ private:
     static bool IsVisible(const ChunkMeshRange& range, const CameraFrustum& frustum) noexcept;
 
     std::map<std::pair<int, int>, GpuChunk> chunks_;
+    GLuint sortedTransparentVao_{0};
+    GLuint sortedTransparentVbo_{0};
+    std::size_t sortedTransparentCapacityBytes_{0u};
     GLsizei opaqueVertexCount_{0};
     GLsizei transparentVertexCount_{0};
     std::size_t lastUploadCount_{0};
