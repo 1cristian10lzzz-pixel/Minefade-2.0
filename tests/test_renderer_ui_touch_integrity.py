@@ -161,7 +161,7 @@ def test_hotbar_resizes_and_left_handed_positions_update_live():
     assert "margin-left: -150dp" not in RML
     assert "width: 34dp; min-width: 34dp; height: 36dp" in RML
     assert "#selected-item" in RML and "background: #171c22d9" in RML
-    assert 'SetProperty("min-width", value)' in RML
+    assert 'SetProperty("min-width", slotValue)' in RML
     assert "void RmlUiRuntime::SetLeftHanded(bool enabled)" in RML
     assert 'SetProperty("right", leftHanded_ ? "14dp" : "auto")' in RML
     assert 'SetProperty("left", leftHanded_ ? "22dp" : "auto")' in RML
