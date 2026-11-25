@@ -195,6 +195,18 @@ def test_android_hud_chat_is_not_duplicated_when_rmlui_is_live():
     assert "commandButton.setVisibility(View.GONE)" in ACTIVITY
 
 
+def test_fallback_jump_and_crouch_match_main_hud_progression_behavior():
+    start = ENGINE.index("void Engine::FallbackAction")
+    end = ENGINE.index("void Engine::SetLastInitError", start)
+    method = ENGINE[start:end]
+    assert "crouching_ = !crouching_;" in method
+    assert "ui_.SetCrouchEnabled(crouching_);" in method
+    jump = method[method.index("case 0:"):method.index("case 2:")]
+    assert "progressionJumps_" in jump
+    assert "AddProgressionXp(1u)" in jump
+    assert "if (!player_.grounded)" in jump
+
+
 if __name__ == "__main__":
     checks = [value for name, value in globals().items()
               if name.startswith("test_") and callable(value)]
