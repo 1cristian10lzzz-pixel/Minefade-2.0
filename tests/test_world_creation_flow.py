@@ -9,13 +9,12 @@ CPP = ROOT / "app/src/main/cpp"
 
 def test_create_world_screen_uses_clear_minecraft_inspired_sections():
     home = (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
-    assert 'String[] tabLabels = {"JUEGO", "MUNDO", "TRUCOS"};' in home
+    assert 'String[] tabLabels = {"JUEGO", "MUNDO", "MÁS"};' in home
     assert 'final String[] modeNames = {"SUPERVIVENCIA", "CREATIVO", "AVENTURA"};' in home
     assert "final LinearLayout[] modeCards = new LinearLayout[3];" in home
     assert "updateModeCards(modeCards" in home
     assert 'actionButton("CREAR Y JUGAR"' in home
     assert '"VISTA PREVIA"' in home
-    assert '"VOLVER A MUNDOS"' in home
 
 
 def test_world_creation_seed_is_explicit_and_invalid_values_are_not_silently_changed():
@@ -26,7 +25,7 @@ def test_world_creation_seed_is_explicit_and_invalid_values_are_not_silently_cha
     assert "parsedSeed = rawSeed.isEmpty() ? System.currentTimeMillis() / 1000L : Long.parseLong(rawSeed);" in home
     assert "parsedSeed < Integer.MIN_VALUE || parsedSeed > 0xffffffffL" in home
     assert "worldManager.createWorld(" in home
-    assert "selectedMode[0], cheats.isChecked(), chest.isChecked()" in home
+    assert "selectedMode[0], cheats.isChecked(), chest.isChecked()," in home
 
 
 def test_selected_world_path_reaches_native_engine_without_being_replaced():
@@ -39,7 +38,7 @@ def test_selected_world_path_reaches_native_engine_without_being_replaced():
     assert "NativeBridge.nativeSetStoragePath(storagePath);" in surface
     assert "boolean allowCheats, boolean starterChest, boolean flatWorld," in surface
     assert "this.flatWorld = flatWorld;" in surface
-    assert "NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld);" in surface
+    assert "NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld, difficulty, generateStructures);" in surface
     assert 'path.compare(path.size() - 8u, 8u, ".mfworld") == 0' in engine
 
 
@@ -47,7 +46,7 @@ def test_new_and_existing_worlds_have_a_safe_native_load_path():
     engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
     world = (CPP / "world/VoxelWorld.cpp").read_text(encoding="utf-8")
     assert "loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);" in engine
-    assert "world_ = VoxelWorld(requestedWorldSeed_, flatWorld_);" in engine
+    assert "world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);" in engine
     assert "world_.GenerateAround(8, 8, 0);" in engine
     assert "world_.Save(storagePath_, player_.position, inventory_.counts)" in engine
     assert 'std::memcmp(magic,"MFVOX001",8)==0' in world
@@ -143,3 +142,54 @@ def test_native_renderer_startup_and_failure_checks_are_exported():
     assert "Java_com_minefade_nativeengine_NativeBridge_nativeConsumeEngineFailure" in native
     assert "gEngineFailure.exchange(false, std::memory_order_acq_rel)" in native
     assert "void SetHudOptions(bool showStats);" in engine_header
+
+
+
+def test_world_options_are_persisted_and_passed_to_the_native_generator():
+    manager = (JAVA / "WorldManager.java").read_text(encoding="utf-8")
+    home = (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    activity = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+    surface = (JAVA / "MinefadeSurfaceView.java").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    world = (CPP / "world/VoxelWorld.cpp").read_text(encoding="utf-8")
+    for field in ("difficulty", "generateStructures", "multiplayerEnabled"):
+        assert f'json.put("{field}", info.' in manager
+        assert f'json.opt' in manager and field in manager
+        assert field in home
+    assert "difficulty, generateStructures" in surface
+    assert "difficulty_ != 0" in engine
+    assert "generateStructures_ && dryLand" in world
+    assert "pendingDifficulty_ = std::clamp(difficulty, 0, 3);" in engine
+
+
+def test_existing_world_lan_toggle_hosts_the_selected_save_and_clients_use_host_seed():
+    home = (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    activity = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+    lan = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert "onHostWorldMultiplayer(updated)" in home
+    assert "if (world.multiplayerEnabled) startLanHost(world);" in activity
+    assert 'service.setAttribute("seed", Long.toString(advertisedWorldSeed));' in lan
+    assert "game.worldSeed" in activity
+    assert "if (multiplayerSlot_ == 0 && hasWorldSavePath)" in engine
+    assert "world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);" in engine
+
+
+def test_world_thumbnails_capture_and_display_saved_camera_view():
+    activity = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+    surface = (JAVA / "MinefadeSurfaceView.java").read_text(encoding="utf-8")
+    home = (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    assert "saveCurrentWorldPreview();" in activity
+    assert "surfaceView.captureWorldPreview(preview)" in activity
+    assert "GLES20.glReadPixels" in surface
+    assert 'new File(folder, "world-preview.jpg")' in home
+    assert "ImageView.ScaleType.CENTER_CROP" in home
+
+
+def test_world_creation_header_and_actions_use_compact_layout():
+    home = (JAVA / "MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    assert 'TextView back = text("‹  SALIR", 10' in home
+    assert 'pageRoot("", "")' in home
+    assert 'String[] tabLabels = {"JUEGO", "MUNDO", "MÁS"};' in home
+    assert 'new LinearLayout.LayoutParams(dp(82), -1)' in home
+    assert 'new LinearLayout.LayoutParams(dp(164), -1)' in home
