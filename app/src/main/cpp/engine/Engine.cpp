@@ -149,8 +149,11 @@ void Engine::FallbackAction(int action, bool pressed) {
     // 0 jump, 1 crouch, 2 perspective cycle, 3 pause, 4 resume, 5 save/exit.
     // 6..9 are held D-pad directions: forward, backward, left, right.
     if (action == 1) {
-        crouching_ = pressed;
-        player_.SetCrouching(pressed);
+        // Match the main RmlUi HUD: crouch is a toggle, not a hold-only control.
+        if (!pressed) return;
+        crouching_ = !crouching_;
+        player_.SetCrouching(crouching_);
+        ui_.SetCrouchEnabled(crouching_);
         return;
     }
     if (action >= 6 && action <= 9) {
@@ -168,7 +171,11 @@ void Engine::FallbackAction(int action, bool pressed) {
         case 0:
             if (!paused_ && player_.grounded) {
                 player_.Jump();
-                soundEvents_.fetch_or(16u, std::memory_order_release);
+                if (!player_.grounded) {
+                    if (progressionJumps_ < 10000000u) ++progressionJumps_;
+                    if (gameMode_ != 1) AddProgressionXp(1u);
+                    soundEvents_.fetch_or(16u, std::memory_order_release);
+                }
             }
             break;
         case 2: CyclePerspective(); break;
