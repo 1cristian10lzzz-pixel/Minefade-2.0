@@ -33,7 +33,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
     public MinefadeSurfaceView(Context context, SoundEffects soundEffects, float displayDensity,
                                boolean multiplayerMode, int playerSlot, String storagePath,
                                String modsDirectory, long worldSeed, int gameMode,
-                               boolean allowCheats, boolean starterChest,
+                               boolean allowCheats, boolean starterChest, boolean flatWorld,
                                LanMultiplayerService multiplayer, InitializationListener listener) {
         super(context);
         initializationListener = listener;
@@ -391,7 +391,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         EngineRenderer(Context context, SoundEffects soundEffects, float displayDensity,
                        boolean multiplayerMode, int playerSlot, String storagePath,
                        String modsDirectory, long worldSeed, int gameMode,
-                       boolean allowCheats, boolean starterChest,
+                       boolean allowCheats, boolean starterChest, boolean flatWorld,
                        LanMultiplayerService multiplayer) {
             assetManager = context.getAssets();
             this.soundEffects = soundEffects;
