@@ -1742,7 +1742,7 @@ void Engine::Render() {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glDepthMask(GL_FALSE);
             glDisable(GL_CULL_FACE);
-            worldRenderer_.DrawTransparent(frustum, eye);
+            worldRenderer_.DrawTransparent(frustum, eye, worldChunkViews_);
             glEnable(GL_CULL_FACE);
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
