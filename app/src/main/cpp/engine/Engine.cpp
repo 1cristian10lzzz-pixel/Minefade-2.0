@@ -1838,6 +1838,18 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
     constexpr int kCancel = 3;
 
     if (action == kDown) {
+        if (ui_.CrouchButtonAt(x, y)) {
+            // The centre crouch button has its own pointer route. It must still
+            // respond while another finger owns the camera or a movement key.
+            HandleUiAction("crouch");
+            TouchState state;
+            state.startX = state.lastX = x;
+            state.startY = state.lastY = y;
+            state.startedAt = ElapsedSeconds();
+            state.uiHandled = true;
+            touches_[pointerId] = state;
+            return;
+        }
         float moveX = 0.0f;
         float moveY = 0.0f;
         if (ui_.MovementVectorAt(x, y, moveX, moveY)) {
