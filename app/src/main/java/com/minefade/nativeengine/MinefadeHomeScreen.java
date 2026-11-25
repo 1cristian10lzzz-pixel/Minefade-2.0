@@ -2165,7 +2165,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
             LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(-1, dp(104));
             if (rowIndex > 0) lineParams.topMargin = dp(7);
             grid.addView(line, lineParams);
-            for (int col = 0; col < 5; col++) {
+            for (int col = 0; col < 2; col++) {
                 final int index = rowIndex * 2 + col;
                 final int current = Math.max(0, progress[index]);
                 final int target = Math.max(1, targets[index]);
