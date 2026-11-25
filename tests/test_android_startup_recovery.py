@@ -55,7 +55,7 @@ def test_phase_two_navigation_and_layout_regressions():
     assert "moduleScroll.addView(moduleRail" in HOME
     assert "pageHeader.addView(search" in HOME
     assert "pageHeader.addView(importButton" in HOME
-    assert "for (int col = 0; col < 5; col++)" in HOME
+    assert "for (int col = 0; col < 2; col++)" in HOME
     assert "SERVIDORES PÚBLICOS" not in HOME
 
 
