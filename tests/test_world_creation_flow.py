@@ -124,11 +124,11 @@ def test_every_native_bridge_method_has_a_matching_jni_export():
     bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
     native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
     java_methods = set(re.findall(
-        r"public\\s+static\\s+native\\s+[\\w\\[\\]]+\\s+(\\w+)\\s*\\(",
+        r"public\s+static\s+native\s+[\w\[\]]+\s+(\w+)\s*\(",
         bridge,
     ))
     jni_methods = set(re.findall(
-        r"Java_com_minefade_nativeengine_NativeBridge_(\\w+)\\s*\\(",
+        r"Java_com_minefade_nativeengine_NativeBridge_(\w+)\s*\(",
         native,
     ))
     missing = sorted(java_methods - jni_methods)
