@@ -69,6 +69,7 @@ private:
     GLuint sortedTransparentVao_{0};
     GLuint sortedTransparentVbo_{0};
     std::size_t sortedTransparentCapacityBytes_{0u};
+    std::vector<WorldVertex> sortedTransparentVertices_;
     GLsizei opaqueVertexCount_{0};
     GLsizei transparentVertexCount_{0};
     std::size_t lastUploadCount_{0};
