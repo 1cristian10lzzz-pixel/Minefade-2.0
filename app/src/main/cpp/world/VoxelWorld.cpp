@@ -413,11 +413,11 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
                                            static_cast<float>(wz)*0.086f-static_cast<float>(y)*0.033f);
                 const float caveB=Noise2D(static_cast<float>(wx)*0.047f-static_cast<float>(y)*0.018f+45.0f,
                                            static_cast<float>(wz)*0.047f+static_cast<float>(y)*0.023f-12.0f);
-                const float caveGate=0.63f+static_cast<float>(y)*0.0007f;
+                const float caveGate=0.70f+static_cast<float>(y)*0.0007f;
                 const float cavern=Noise2D(static_cast<float>(wx)*0.031f+static_cast<float>(y)*0.014f+81.0f,
                                            static_cast<float>(wz)*0.031f-static_cast<float>(y)*0.016f-46.0f);
-                const bool broadCavern=y>10&&cavern>0.57f&&caveB>-0.20f;
-                const bool windingTunnel=y>6&&caveA>caveGate&&caveB>0.08f;
+                const bool broadCavern=y>14&&y<height-10&&cavern>0.73f&&caveB>0.05f;
+                const bool windingTunnel=y>8&&y<height-6&&caveA>caveGate&&caveB>0.16f;
                 if(broadCavern||windingTunnel) {
                     block=BlockId::Air;
                     const float caveClimate=Noise2D(static_cast<float>(wx)*0.013f+49.0f,

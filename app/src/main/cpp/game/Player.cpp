@@ -43,9 +43,9 @@ Vec3 CrossPlayer(const Vec3& a, const Vec3& b) {
 }
 
 Vec3 PlayerLocalPoint(const Vec3& anchor, float yaw, float x, float y, float z) {
-    // The model's positive local-Z face is its front. Align it with Player::Forward
-    // so that the visible face and the view direction never point opposite ways.
-    const Vec3 right{-std::sin(yaw), 0.0f, std::cos(yaw)};
+    // Rotate the model's positive local-Z front onto Player::Forward while
+    // retaining a right-handed basis for OpenGL back-face culling.
+    const Vec3 right{std::sin(yaw), 0.0f, -std::cos(yaw)};
     const Vec3 forward{std::cos(yaw), 0.0f, std::sin(yaw)};
     return {
         anchor.x + right.x * x + forward.x * z,

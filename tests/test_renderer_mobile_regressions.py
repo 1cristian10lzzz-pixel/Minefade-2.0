@@ -107,7 +107,16 @@ def test_player_avatar_front_axis_matches_camera_forward_and_three_camera_modes_
     engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
     header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
     assert "const Vec3 forward{std::cos(yaw), 0.0f, std::sin(yaw)};" in player
+    assert "const Vec3 right{std::sin(yaw), 0.0f, -std::cos(yaw)};" in player
     assert "const float cameraSide = thirdPersonFront_ ? 1.0f : -1.0f;" in engine
     assert "void Engine::CyclePerspective()" in engine
     assert "else if (!thirdPersonFront_)" in engine
     assert "thirdPersonFront_{false};" in header
+
+
+
+def test_surface_caves_keep_a_deep_roof_and_do_not_create_huge_exposed_voids():
+    world = (CPP / "world/VoxelWorld.cpp").read_text(encoding="utf-8")
+    assert "const float caveGate=0.70f+static_cast<float>(y)*0.0007f;" in world
+    assert "y>14&&y<height-10&&cavern>0.73f&&caveB>0.05f" in world
+    assert "y>8&&y<height-6&&caveA>caveGate&&caveB>0.16f" in world
