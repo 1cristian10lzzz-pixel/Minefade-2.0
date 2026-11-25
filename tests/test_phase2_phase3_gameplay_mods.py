@@ -179,7 +179,7 @@ def test_crafting_is_atomic_and_checks_output_after_consumption():
 
 
 def test_survival_building_and_redstone_recipes_are_exposed_and_implemented():
-    recipe_ui = ENGINE[ENGINE.index("void Engine::RefreshCraftingUi()"):ENGINE.index("void Engine::SaveWorld()")]
+    recipe_ui = ENGINE[ENGINE.index("void Engine::RefreshCraftingUi()"):ENGINE.index("bool Engine::SaveWorld()")]
     recipe_impl = ENGINE[ENGINE.index("bool Engine::CraftRecipe("):ENGINE.index("std::string Engine::ExecuteCommand(")]
     for name in (
         "torch", "chest", "furnace", "wooden_door", "ladder", "fence",
