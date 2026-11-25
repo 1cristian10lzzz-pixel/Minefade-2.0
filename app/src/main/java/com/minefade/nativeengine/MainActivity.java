@@ -46,6 +46,7 @@ public final class MainActivity extends Activity {
     private final TextView[] fallbackQuickbarSlots = new TextView[9];
     private final java.util.ArrayList<String> chatMessages = new java.util.ArrayList<>();
     private TextView activeChatHistory;
+    private TextView commandButton;
     private ScrollView activeChatScroll;
     private final Runnable progressionRefresh = new Runnable() {
         @Override public void run() {
@@ -164,6 +165,7 @@ public final class MainActivity extends Activity {
         surfaceView = null;
         gameContainer = null;
         fallbackOverlay = null;
+        commandButton = null;
         activeChatHistory = null;
         activeChatScroll = null;
         java.util.Arrays.fill(fallbackQuickbarSlots, null);
@@ -283,10 +285,13 @@ public final class MainActivity extends Activity {
                         if (surfaceView != null && !surfaceView.isNativeHudAvailable()) {
                             android.util.Log.e("Minefade", "RmlUi unavailable; installing Android touch fallback: "
                                     + surfaceView.nativeHudDiagnostic());
+                            if (commandButton != null) commandButton.setVisibility(View.VISIBLE);
                             showFallbackTouchControls();
                             Toast.makeText(MainActivity.this,
                                     "Se activaron los controles de respaldo para poder jugar.",
                                     Toast.LENGTH_LONG).show();
+                        } else if (commandButton != null) {
+                            commandButton.setVisibility(View.GONE);
                         }
                     }
 
@@ -299,8 +304,9 @@ public final class MainActivity extends Activity {
         gameContainer.addView(surfaceView, new FrameLayout.LayoutParams(-1, -1));
         // Compact icon-only chat entry: keep the real command dialog available
         // without the oversized text banner covering the world view.
-        TextView commandButton = statusButton("✉", false);
+        commandButton = statusButton("✉", false);
         commandButton.setTextSize(17);
+        commandButton.setVisibility(View.GONE);
         FrameLayout.LayoutParams commandParams = new FrameLayout.LayoutParams(dp(38), dp(38),
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         commandParams.topMargin = dp(8);
