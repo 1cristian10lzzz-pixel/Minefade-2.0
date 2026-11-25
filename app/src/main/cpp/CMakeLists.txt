@@ -96,6 +96,7 @@ add_library(minefade_native SHARED
     engine/Engine.cpp
     world/ProtectionManager.cpp
     render/WorldMeshRenderer.cpp
+    render/FirstPersonRenderer.cpp
     game/Player.cpp
     entity/ModelLoader.cpp
     entity/ModelValidator.cpp
