@@ -202,6 +202,43 @@ button:active { background: #47789b; }
 #starter-chest-panel .actions { justify-content: center; }
 #starter-chest-panel button { min-width: 104dp; }
 #chat-message { position: absolute; z-index: 12; left: 50%; bottom: 62dp; width: 78%; margin-left: -39%; padding: 7dp 10dp; border-radius: 10dp; border: 1dp #d9e9a466; background: #101d2be8; color: #f3f7f8; font-size: 10dp; text-align: center; display: none; pointer-events: none; }
+
+#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 22dp; padding: 3dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8dp; background: #101a27dc; border: 1dp #bdced9aa; border-radius: 5dp; }
+.vital-group { display: flex; flex-direction: row; align-items: center; gap: 1dp; white-space: nowrap; font-size: 10dp; }
+.heart-on { color: #ff5e63; } .heart-off { color: #713e4a; }
+.food-on { color: #f5a45b; } .food-off { color: #75533c; }
+.armor-on { color: #e3f2ff; } .armor-off { color: #566a7b; }
+#vitals-level { color: #d5f38c; font-size: 10dp; min-width: 25dp; text-align: right; }
+#vitals-xp { width: 62dp; height: 5dp; background: #243240; border: 1dp #8296a5aa; border-radius: 4dp; overflow: hidden; }
+#vitals-xp-fill { width: 0%; height: 5dp; background: #9fdf59; border-radius: 4dp; }
+#quickbar { bottom: 12dp; gap: 3dp; padding: 5dp; background: #101a27ed; border: 2dp #c6d4e0dd; border-radius: 5dp; }
+.slot { height: 42dp; background: #101923e8; border: 1dp #98a8b7bb; border-radius: 3dp; font-size: 11dp; }
+.slot img { width: 31dp; height: 31dp; }
+.slot .slot-count { right: 2dp; bottom: 0dp; font-size: 10dp; text-shadow: 0dp 1dp 2dp #000000; }
+#selected-item { bottom: 108dp; min-height: 30dp; padding: 5dp 10dp; background: #101a27ed; border: 1dp #d4e3eeaa; border-radius: 6dp; font-size: 11dp; }
+#inventory-panel { width: 94%; height: 90%; margin-left: -47%; margin-top: -45%; padding: 10dp; background: #293f5ff5; border: 2dp #c2d4e5dd; border-radius: 13dp; }
+.inventory-layout { gap: 8dp; }
+.inventory-left, .inventory-right { background: #1b2c43f5; border: 1dp #c0d0e077; border-radius: 8dp; padding: 8dp; }
+.inventory-heading { font-size: 13dp; color: #f7fbff; padding: 5dp 6dp 8dp 6dp; border-bottom: 1dp #9cc9e877; }
+.equipment-slot { width: 48dp; height: 42dp; background: #17263a; border: 1dp #a6c4e2aa; border-radius: 5dp; font-size: 9dp; color: #ebf7ff; }
+.inventory-grid { gap: 4dp; padding-top: 7dp; }
+.inventory-row { width: 44dp; height: 46dp; background: #233a55; border: 1dp #9fb9d3cc; border-radius: 5dp; font-size: 9dp; padding: 3dp; }
+.inventory-icon { width: 29dp; height: 29dp; }
+.material-row { font-size: 11dp; }
+#crafting-panel { width: 94%; height: 90%; margin-left: -47%; margin-top: -45%; padding: 10dp; background: #293f5ff5; border: 2dp #c2d4e5dd; border-radius: 13dp; }
+#crafting-panel .recipe-title { font-size: 14dp; color: #f4f9ff; margin-bottom: 6dp; padding-bottom: 5dp; border-bottom: 1dp #9cc9e877; }
+.crafting-workbench { width: 100%; height: 132dp; display: flex; flex-direction: column; background: #1a2b42f5; border: 1dp #9ebbd8aa; border-radius: 8dp; padding: 7dp; margin-bottom: 7dp; }
+.workbench-title { color: #eff7ff; font-size: 12dp; margin-bottom: 5dp; }
+.workbench-layout { width: 100%; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 13dp; }
+.crafting-input-grid { width: 100dp; height: 100dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 4dp; }
+.craft-slot { width: 48dp; height: 48dp; background: #0d1b2d; border: 2dp #7897b8; border-radius: 3dp; }
+.craft-arrow { color: #c9d9e7; font-size: 30dp; width: 36dp; text-align: center; }
+.craft-output { width: 54dp; height: 54dp; background: #0d1b2d; border: 2dp #d2dfeb; border-radius: 4dp; }
+.crafting-note { color: #b8c9d8; font-size: 9dp; text-align: center; margin-top: 4dp; }
+#crafting-recipes { height: 53%; overflow-y: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 5dp; }
+#crafting-panel button { min-height: 40dp; background: #244363; border: 1dp #9db9d5cc; border-radius: 6dp; font-size: 10dp; }
+.recipe-category { color: #c7ee91; border-bottom: 1dp #c7ee9177; }
+
 </style>
 </head>
 <body>
@@ -223,6 +260,7 @@ button:active { background: #47789b; }
   <button id="crouch">▣</button>
 </div>
 <div id="hint"></div>
+<div id="vitals"><div class="vital-group" id="vitals-armor"></div><div class="vital-group" id="vitals-health"></div><div class="vital-group" id="vitals-hunger"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
 <div id="quickbar">
   <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
   <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
@@ -233,22 +271,31 @@ button:active { background: #47789b; }
 <div id="selected-item"></div>
 <div id="pickup"></div>
 <div id="inventory-panel" class="panel">
-  <div class="inventory-layout">
-    <div class="inventory-left">
+  <div class="inventory-layout" id="inventory-layout">
+    <div class="inventory-left" id="inventory-left">
       <div class="inventory-heading">PERSONAJE · EQUIPO</div>
       <div class="inventory-equipment" id="equipment-items"></div>
       <div class="inventory-heading">INVENTARIO · 36 ESPACIOS</div>
       <div id="inventory-items" class="inventory-grid"></div>
       <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="eat">Comer</button><button id="inventory-close">Cerrar</button></div>
     </div>
-    <div class="inventory-right">
+    <div class="inventory-right" id="inventory-right">
       <div class="inventory-heading">CATÁLOGO · OBJETOS</div>
       <div id="inventory-catalog" class="inventory-grid"></div>
     </div>
   </div>
 </div>
 <div id="crafting-panel" class="panel">
-  <div class="recipe-title">MESA DE TRABAJO · RECETAS</div>
+  <div class="crafting-workbench">
+    <div class="workbench-title">FABRICACIÓN · CUADRÍCULA 2 × 2</div>
+    <div class="workbench-layout">
+      <div class="crafting-input-grid"><div class="craft-slot"></div><div class="craft-slot"></div><div class="craft-slot"></div><div class="craft-slot"></div></div>
+      <div class="craft-arrow">➜</div>
+      <div class="craft-output"></div>
+    </div>
+    <div class="crafting-note">Selecciona una receta disponible para fabricar</div>
+  </div>
+  <div class="recipe-title">RECETAS DISPONIBLES</div>
   <div id="crafting-recipes"></div>
   <div class="inventory-actions"><button id="crafting-close">Volver al inventario</button></div>
 </div>
@@ -639,6 +686,42 @@ bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
     return false;
 }
 
+void RmlUiRuntime::SetVitals(float health, float hunger, int armorPieces,
+                             std::uint32_t level, float xpProgress) {
+    if (document_ == nullptr) return;
+    const auto makePips = [](int filled, const char* onClass, const char* offClass,
+                             const char* symbol) {
+        std::string markup;
+        for (int i = 0; i < 10; ++i) {
+            markup += "<span class='";
+            markup += i < filled ? onClass : offClass;
+            markup += "'>";
+            markup += symbol;
+            markup += "</span>";
+        }
+        return markup;
+    };
+    const int healthPips = std::clamp(static_cast<int>(std::ceil(
+        std::clamp(health, 0.0f, 20.0f) * 0.5f)), 0, 10);
+    const int hungerPips = std::clamp(static_cast<int>(std::ceil(
+        std::clamp(hunger, 0.0f, 20.0f) * 0.5f)), 0, 10);
+    const int armorPips = std::clamp(armorPieces * 2, 0, 10);
+    if (Rml::Element* element = document_->GetElementById("vitals-armor"))
+        element->SetInnerRML(makePips(armorPips, "armor-on", "armor-off", "⬟"));
+    if (Rml::Element* element = document_->GetElementById("vitals-health"))
+        element->SetInnerRML(makePips(healthPips, "heart-on", "heart-off", "♥"));
+    if (Rml::Element* element = document_->GetElementById("vitals-hunger"))
+        element->SetInnerRML(makePips(hungerPips, "food-on", "food-off", "◆"));
+    if (Rml::Element* element = document_->GetElementById("vitals-level"))
+        element->SetInnerRML("NV " + std::to_string(level));
+    if (Rml::Element* element = document_->GetElementById("vitals-xp")) {
+        if (Rml::Element* fill = element->GetFirstChild()) {
+            const float percent = std::clamp(xpProgress, 0.0f, 1.0f) * 100.0f;
+            fill->SetProperty("width", std::to_string(percent) + "%");
+        }
+    }
+}
+
 void RmlUiRuntime::SetLeftHanded(bool enabled) {
     leftHanded_ = enabled;
     ApplyResponsiveLayout();
@@ -661,16 +744,16 @@ void RmlUiRuntime::ApplyResponsiveLayout() {
 
     // Nine slots stay present at every width. The bar is positioned from the
     // live surface width (not a fixed negative margin) with safe side margins.
-    constexpr float kSafeMarginDp = 10.0f;
-    constexpr float kGapDp = 2.5f;
-    constexpr float kOuterPaddingDp = 4.0f;
-    constexpr float kBorderDp = 1.0f;
+    constexpr float kSafeMarginDp = 8.0f;
+    constexpr float kGapDp = 3.0f;
+    constexpr float kOuterPaddingDp = 5.0f;
+    constexpr float kBorderDp = 2.0f;
     constexpr float kSlotCount = 9.0f;
     const float surfaceWidthDp = static_cast<float>(width_) / density_;
     const float availableWidthDp = std::max(0.0f, surfaceWidthDp - 2.0f * kSafeMarginDp);
     const float fixedWidthDp = 8.0f * kGapDp + 2.0f * kOuterPaddingDp + 2.0f * kBorderDp;
     const float slotWidth = std::clamp((availableWidthDp - fixedWidthDp) / kSlotCount,
-                                       28.0f, 36.0f);
+                                       28.0f, 42.0f);
     const float barWidth = kSlotCount * slotWidth + fixedWidthDp;
     const float leftDp = std::max(0.0f, (surfaceWidthDp - barWidth) * 0.5f);
     if (Rml::Element* quickbar = document_->GetElementById("quickbar")) {
@@ -680,18 +763,30 @@ void RmlUiRuntime::ApplyResponsiveLayout() {
         quickbar->SetProperty("padding", std::to_string(kOuterPaddingDp) + "dp");
     }
     const std::string slotValue = std::to_string(slotWidth) + "dp";
-    const std::string iconValue = std::to_string(std::clamp(slotWidth * 0.76f, 21.0f, 28.0f)) + "dp";
+    const std::string iconValue = std::to_string(std::clamp(slotWidth * 0.78f, 23.0f, 32.0f)) + "dp";
     for (int slot = 0; slot < 9; ++slot) {
         const std::string id = "slot-" + std::to_string(slot);
         if (Rml::Element* element = document_->GetElementById(id)) {
             element->SetProperty("width", slotValue);
             element->SetProperty("min-width", slotValue);
-            element->SetProperty("height", "36dp");
+            element->SetProperty("height", "42dp");
             if (Rml::Element* icon = element->GetFirstChild()) {
                 icon->SetProperty("width", iconValue);
                 icon->SetProperty("height", iconValue);
             }
         }
+    }
+
+    const bool wideLandscape = width_ > height_ && surfaceWidthDp >= 520.0f;
+    if (Rml::Element* layout = document_->GetElementById("inventory-layout"))
+        layout->SetProperty("flex-direction", wideLandscape ? "row" : "column");
+    if (Rml::Element* left = document_->GetElementById("inventory-left")) {
+        left->SetProperty("width", wideLandscape ? "34%" : "100%");
+        left->SetProperty("height", wideLandscape ? "100%" : "47%");
+    }
+    if (Rml::Element* right = document_->GetElementById("inventory-right")) {
+        right->SetProperty("width", wideLandscape ? "63%" : "100%");
+        right->SetProperty("height", wideLandscape ? "100%" : "47%");
     }
 }
 
@@ -803,9 +898,9 @@ void RmlUiRuntime::SetQuickbarSlot(int slot,const std::string& label,bool select
     const std::string id="slot-"+std::to_string(slot);
     if(Rml::Element* element=document_->GetElementById(id)) {
         element->SetInnerRML(label);
-        element->SetProperty("border", selected ? "2dp #f7f5ec" : "1dp #7e878fbb");
-        element->SetProperty("background-color", selected ? "#d9dbd3" : "#30363dcc");
-        element->SetProperty("border-radius", "2dp");
+        element->SetProperty("border", selected ? "2dp #fff0c8" : "1dp #98a8b7bb");
+        element->SetProperty("background-color", selected ? "#596f4bf2" : "#101923e8");
+        element->SetProperty("border-radius", "3dp");
     }
 }
 

@@ -120,3 +120,50 @@ def test_surface_caves_keep_a_deep_roof_and_do_not_create_huge_exposed_voids():
     assert "const float caveGate=0.70f+static_cast<float>(y)*0.0007f;" in world
     assert "y>14&&y<height-10&&cavern>0.73f&&caveB>0.05f" in world
     assert "y>8&&y<height-6&&caveA>caveGate&&caveB>0.16f" in world
+
+
+
+def test_world_spawn_mesh_is_ready_before_first_visible_frame():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert "Build the spawn chunk synchronously" in engine
+    assert "0, nullptr, nullptr, 0u, false" in engine
+
+
+def test_egl_context_recreation_restores_resources_without_reloading_world():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    bridge = (ROOT / "app/src/main/java/com/minefade/nativeengine/NativeBridge.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    surface = (ROOT / "app/src/main/java/com/minefade/nativeengine/MinefadeSurfaceView.java").read_text(encoding="utf-8")
+    assert "RestoreGlContext" in header and "Engine::RestoreGlContext" in engine
+    assert "nativeRestoreGlContext" in bridge and "nativeRestoreGlContext" in native
+    assert "final boolean restoringSession = nativeSessionInitialised;" in surface
+    assert "nativeReady = restoringSession" in surface
+    assert "reopening the last saved world" in surface
+    restore = engine.split("bool Engine::RestoreGlContext", 1)[1].split("void Engine::Shutdown", 1)[0]
+    assert "worldRenderer_.Shutdown();" in restore
+    assert "world_.Load(" not in restore
+    assert "world_.GenerateAround(" not in restore
+
+
+def test_reference_hud_inventory_and_crafting_visuals_keep_real_actions():
+    rml = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
+    header = (CPP / "ui/RmlUiRuntime.h").read_text(encoding="utf-8")
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    assert 'id="vitals-armor"' in rml and 'id="vitals-health"' in rml
+    assert 'id="vitals-hunger"' in rml and 'id="vitals-xp-fill"' in rml
+    assert "void RmlUiRuntime::SetVitals" in rml and "SetVitals(" in header
+    assert "crafting-input-grid" in rml and "craft-output" in rml
+    assert 'AttachAction("crafting-open", "crafting-open")' in rml
+    assert "CraftRecipe(" in engine
+    assert 'SetProperty("height", "42dp")' in rml
+    assert 'wideLandscape ? "row" : "column"' in rml
+
+
+def test_main_menu_style_refresh_preserves_navigation_handlers():
+    home = (ROOT / "app/src/main/java/com/minefade/nativeengine/MinefadeHomeScreen.java").read_text(encoding="utf-8")
+    assert "EXPLORA  ·  CREA  ·  JUEGA" in home
+    assert '() -> showWorlds()' in home
+    assert '() -> showSection("multiplayer")' in home
+    assert '() -> showSection("avatar")' in home
+    assert '() -> showSection("settings")' in home

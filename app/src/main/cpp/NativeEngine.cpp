@@ -107,6 +107,62 @@ Java_com_minefade_nativeengine_NativeBridge_nativeInit(JNIEnv* env, jclass, jflo
     return JNI_FALSE;
 }
 
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeRestoreGlContext(
+        JNIEnv* env, jclass, jfloat density, jbyteArray atlas,
+        jint width, jint height, jbyteArray sheepTexture) {
+    auto& engine = minefade::GetEngine();
+    if (atlas == nullptr || width <= 0 || height <= 0) {
+        engine.SetLastInitError("Android no entregó un atlas válido para restaurar OpenGL.");
+        return JNI_FALSE;
+    }
+    try {
+        const jsize length = env->GetArrayLength(atlas);
+        if (length <= 0) {
+            engine.SetLastInitError("El atlas recibido para restaurar OpenGL está vacío.");
+            return JNI_FALSE;
+        }
+        std::vector<std::uint8_t> pixels(static_cast<std::size_t>(length));
+        env->GetByteArrayRegion(atlas, 0, length,
+            reinterpret_cast<jbyte*>(pixels.data()));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            engine.SetLastInitError("JNI no pudo copiar el atlas al restaurar OpenGL.");
+            return JNI_FALSE;
+        }
+        std::vector<std::uint8_t> sheepTextureBytes;
+        if (sheepTexture != nullptr) {
+            const jsize textureLength = env->GetArrayLength(sheepTexture);
+            constexpr jsize expected = 64 * 32 * 4;
+            if (textureLength == expected) {
+                sheepTextureBytes.resize(static_cast<std::size_t>(textureLength));
+                env->GetByteArrayRegion(sheepTexture, 0, textureLength,
+                    reinterpret_cast<jbyte*>(sheepTextureBytes.data()));
+                if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                    sheepTextureBytes.clear();
+                }
+            }
+        }
+        const bool restored = engine.RestoreGlContext(
+            static_cast<float>(density), pixels.data(), pixels.size(),
+            static_cast<int>(width), static_cast<int>(height),
+            sheepTextureBytes.empty() ? nullptr : sheepTextureBytes.data(),
+            sheepTextureBytes.size());
+        __android_log_print(restored ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, kTag,
+            "OpenGL context restore %s", restored ? "succeeded" : "failed");
+        return restored ? JNI_TRUE : JNI_FALSE;
+    } catch (const std::bad_alloc&) {
+        engine.SetLastInitError("No hay memoria suficiente para restaurar los recursos gráficos.");
+    } catch (const std::exception& error) {
+        engine.SetLastInitError(std::string("Excepción al restaurar OpenGL: ") + error.what());
+    } catch (...) {
+        engine.SetLastInitError("Error desconocido al restaurar el contexto OpenGL.");
+    }
+    return JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeGetLastInitError(JNIEnv* env, jclass) {
     const std::string message = minefade::GetEngine().LastInitError();

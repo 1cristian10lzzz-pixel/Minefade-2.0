@@ -215,33 +215,33 @@ public final class MinefadeHomeScreen extends FrameLayout {
         } else {
             outer.setBackground(bg);
         }
-        outer.setElevation(dp(2));
+        outer.setElevation(dp(3));
         LinearLayout content = row();
-        content.setPadding(dp(8), dp(4), dp(9), dp(4));
+        content.setPadding(dp(10), dp(5), dp(10), dp(5));
         outer.addView(content, new FrameLayout.LayoutParams(-1, -1));
 
         FrameLayout iconBox = new FrameLayout(getContext());
-        iconBox.setBackground(shape(new int[]{accent | 0x55000000, accent | 0x22000000},
-                11, accent | 0x66000000));
+        iconBox.setBackground(shape(new int[]{accent | 0x66000000, accent | 0x33000000},
+                12, accent | 0x88000000));
         iconBox.setContentDescription(title);
         iconBox.addView(new MenuGlyph(getContext(), index, accent),
                 new FrameLayout.LayoutParams(-1, -1));
-        content.addView(iconBox, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        content.addView(iconBox, new LinearLayout.LayoutParams(dp(35), dp(35)));
 
         LinearLayout labels = column();
         labels.setGravity(Gravity.CENTER_VERTICAL);
         labels.setPadding(dp(10), 0, 0, 0);
-        TextView name = text(title, 11, white, true);
+        TextView name = text(title, 12, white, true);
         labels.addView(name);
         if (subtitle != null && !subtitle.trim().isEmpty()) {
-            TextView detail = text(subtitle, 8, 0xffb4c5d0, false);
+            TextView detail = text(subtitle, 9, 0xffc3d5e2, false);
             LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(-1, -2);
             detailParams.topMargin = dp(2);
             labels.addView(detail, detailParams);
         }
         content.addView(labels, new LinearLayout.LayoutParams(0, -1, 1f));
 
-        TextView arrow = text("›", 24, accent, true);
+        TextView arrow = text("›", 26, accent, true);
         arrow.setGravity(Gravity.CENTER);
         content.addView(arrow, new LinearLayout.LayoutParams(dp(22), -1));
 
@@ -266,8 +266,10 @@ public final class MinefadeHomeScreen extends FrameLayout {
         TextView mark = text("◆", 23, 0xffa9ee70, true);
         header.addView(mark, new LinearLayout.LayoutParams(dp(28), dp(34)));
         LinearLayout brand = column();
-        TextView name = text("MINEFADE", 18, white, true);
+        TextView name = text("MINEFADE", 21, white, true);
         brand.addView(name);
+        TextView slogan = text("EXPLORA  ·  CREA  ·  JUEGA", 8, 0xffb8d6e3, true);
+        brand.addView(slogan);
         header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1f));
         shell.addView(header, new LinearLayout.LayoutParams(-1, dp(38)));
 
@@ -300,8 +302,8 @@ public final class MinefadeHomeScreen extends FrameLayout {
                 () -> showSection("mods"), 4));
 
         for (int i = 0; i < buttons.size(); i++) {
-            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, dp(i == 0 ? 40 : 36));
-            if (i > 0) bp.topMargin = dp(4);
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, dp(i == 0 ? 42 : 39));
+            if (i > 0) bp.topMargin = dp(5);
             left.addView(buttons.get(i), bp);
         }
 
@@ -397,7 +399,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
             for (WorldManager.WorldInfo world : worlds) {
                 LinearLayout card = row();
                 card.setPadding(dp(10),dp(8),dp(8),dp(8));
-                card.setBackground(shape(new int[]{0xff203a4c,0xff14283a},13,0x66536f83));
+                card.setBackground(shape(new int[]{0xff29445f,0xff172b42},14,0x887ab7d3));
                 LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1,dp(70));
                 cardParams.bottomMargin = dp(7);
                 list.addView(card,cardParams);
@@ -1326,7 +1328,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
         back.setOnClickListener(v -> { haptic(v); showHome(); });
         header.addView(back, new LinearLayout.LayoutParams(dp(68), dp(32)));
         if (title != null && !title.trim().isEmpty()) {
-            TextView heading = text(title, 13, white, true);
+            TextView heading = text(title, 15, white, true);
             LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, dp(34), 1f);
             titleParams.leftMargin = dp(7);
             header.addView(heading, titleParams);
@@ -1369,10 +1371,10 @@ public final class MinefadeHomeScreen extends FrameLayout {
     }
 
     private TextView actionButton(String label, Runnable action) {
-        TextView button = text(label + "   ›", 11, 0xff102119, true);
+        TextView button = text(label + "   ›", 12, 0xff102119, true);
         button.setGravity(Gravity.CENTER);
         button.setPadding(dp(18), 0, dp(18), 0);
-        button.setBackground(shape(new int[]{0xffb9f27c, 0xff82d75d}, 12, 0xffd6ffad));
+        button.setBackground(shape(new int[]{0xffc8f486, 0xff7bd5a2}, 11, 0xffd9f7c4));
         button.setElevation(dp(3));
         installPressAnimation(button);
         button.setOnClickListener(v -> {

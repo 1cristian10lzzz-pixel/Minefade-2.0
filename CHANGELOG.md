@@ -1,5 +1,18 @@
 # Registro de cambios — Minefade 2.0
 
+## Candidata 2.3.1 — recuperación gráfica y rediseño de interfaz
+- El chunk inicial se malla sincrónicamente antes de mostrar el mundo para evitar el primer fotograma vacío mientras arranca el trabajador de mallas.
+- Se separa la restauración de OpenGL de la carga del mundo: al recrearse EGL se reconstruyen shaders, atlas, buffers, renderer de chunks, entidades y HUD sin reiniciar la sesión en memoria.
+- Si la restauración gráfica falla, Android vuelve a abrir la última partida guardada como recuperación.
+- La barra rápida usa nueve casillas centradas, mayor tamaño de iconos, selección destacada y contadores legibles.
+- El HUD separa armadura, vida, hambre, nivel y barra de experiencia.
+- Inventario y fabricación adoptan paneles azul pizarra, espacios más amplios, distribución adaptativa y mesa visual 2×2; las recetas existentes mantienen sus acciones reales.
+- Se unifica el acabado de botones, navegación y tarjetas del menú principal, mundos y secciones.
+- Se añaden pruebas de regresión para el chunk inicial, la recuperación EGL, el HUD y los accesos de interfaz.
+- Android versionCode 30 / versionName 2.3.1. La compilación CI no sustituye la validación visual y táctil en Android físico.
+
+## Candidata 2.3.0 — barra rápida y mano en primera persona
+
 ## Candidata 2.3.0 — barra rápida y mano en primera persona
 - La barra conserva sus nueve IDs y el estado real de inventario; ancho, slots, iconos y márgenes se recalculan desde el ancho actual de Surface.
 - La selección usa una placa clara de alto contraste y el nombre del objeto desaparece tras 1,25 segundos.

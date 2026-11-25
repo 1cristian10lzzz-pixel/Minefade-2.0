@@ -695,6 +695,10 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     // thread before changing storagePath_. Do not save the previous in-memory
     // world again here: storagePath_ now belongs to the NEW world.
     Shutdown(false);
+    inventoryVisible_ = false;
+    craftingVisible_ = false;
+    pauseVisible_ = false;
+    paused_ = false;
     playerIdentity_ = pendingPlayerIdentity_;
     if (!storagePath_.empty() && !protection_.Load(storagePath_ + ".claims"))
         ENGINE_LOGW("Claim file missing or damaged; protection remains fail-closed");
@@ -1043,7 +1047,9 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     for (int i = 0; i < modRabbitSpawns_; ++i) entities_.SpawnEntity(modSpawn, 6, world_);
     for (int i = 0; i < modZombieSpawns_; ++i) entities_.SpawnEntity(modSpawn, 4, world_);
     for (int i = 0; i < modSkeletonSpawns_; ++i) entities_.SpawnEntity(modSpawn, 5, world_);
-    RebuildWorldMesh();
+    // Build the spawn chunk synchronously so the first world frame contains terrain.
+    world_.BuildMesh(meshBuildScratch_, static_cast<int>(std::floor(player_.position.x)),
+        static_cast<int>(std::floor(player_.position.z)), 0, nullptr, nullptr, 0u, false);
     UploadWorldMesh();
     UploadTransparentWorldMesh();
     RebuildEntityMesh();
@@ -1097,6 +1103,123 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     // Commit the first generated world immediately. This makes the first launch
     // distinguishable from an empty menu and ensures the next launch can continue it.
     SaveWorld();
+    return true;
+}
+
+
+bool Engine::RestoreGlContext(float displayDensity, const std::uint8_t* atlasPixels,
+                              std::size_t atlasBytes, int atlasWidth, int atlasHeight,
+                              const std::uint8_t* sheepTextureRgba,
+                              std::size_t sheepTextureBytes) {
+    if (!ready_) {
+        lastInitError_ = "No hay una sesión de mundo activa que restaurar.";
+        return false;
+    }
+    if (atlasPixels == nullptr || atlasWidth <= 0 || atlasHeight <= 0) {
+        lastInitError_ = "No se pudo restaurar el atlas de bloques tras recrear OpenGL.";
+        return false;
+    }
+    const bool wasPaused = paused_;
+    if ((!multiplayerMode_ || multiplayerSlot_ == 0) && !storagePath_.empty())
+        SaveWorld();
+
+    // Drop only GPU objects. Keep world/chunks/player/inventory/entities in CPU memory.
+    ready_ = false;
+    ui_.Shutdown();
+    worldRenderer_.Shutdown();
+    firstPersonRenderer_.Shutdown();
+    if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
+    if (entityVao_ != 0) glDeleteVertexArrays(1, &entityVao_);
+    if (maesEntityVbo_ != 0) glDeleteBuffers(1, &maesEntityVbo_);
+    if (maesEntityVao_ != 0) glDeleteVertexArrays(1, &maesEntityVao_);
+    if (itemVbo_ != 0) glDeleteBuffers(1, &itemVbo_);
+    if (itemVao_ != 0) glDeleteVertexArrays(1, &itemVao_);
+    if (worldProgram_ != 0) glDeleteProgram(worldProgram_);
+    if (blockAtlasTexture_ != 0) glDeleteTextures(1, &blockAtlasTexture_);
+    if (sheepTexture_ != 0) glDeleteTextures(1, &sheepTexture_);
+    entityVbo_ = entityVao_ = itemVbo_ = itemVao_ = 0;
+    maesEntityVao_ = maesEntityVbo_ = 0;
+    worldProgram_ = blockAtlasTexture_ = sheepTexture_ = 0;
+    entityVertexCount_ = maesEntityVertexCount_ = itemVertexCount_ = 0;
+    firstPersonItemId_ = 0xffffu;
+    worldChunkViews_.clear();
+    while (glGetError() != GL_NO_ERROR) { }
+
+    const auto fail = [this](const std::string& reason) {
+        lastInitError_ = reason;
+        ready_ = false;
+        ENGINE_LOGE("OpenGL context restoration failed: %s", reason.c_str());
+        return false;
+    };
+    if (!CreateWorldProgram()) {
+        std::string reason = "No se pudo recrear el shader del mundo.";
+        if (!gWorldShaderDiagnostic.empty()) reason += " " + gWorldShaderDiagnostic;
+        return fail(reason);
+    }
+    if (!UploadBlockAtlas(atlasPixels, atlasBytes, atlasWidth, atlasHeight))
+        return fail("No se pudo volver a subir el atlas de bloques a la GPU.");
+    if (sheepTextureRgba != nullptr && sheepTextureBytes > 0u)
+        UploadSheepTexture(sheepTextureRgba, sheepTextureBytes);
+
+    glGenVertexArrays(1, &entityVao_);
+    glGenBuffers(1, &entityVbo_);
+    glGenVertexArrays(1, &maesEntityVao_);
+    glGenBuffers(1, &maesEntityVbo_);
+    glGenVertexArrays(1, &itemVao_);
+    glGenBuffers(1, &itemVbo_);
+    if (entityVao_ == 0 || entityVbo_ == 0 || maesEntityVao_ == 0 ||
+        maesEntityVbo_ == 0 || itemVao_ == 0 || itemVbo_ == 0)
+        return fail("El controlador no pudo recrear los buffers de entidades y objetos.");
+    if (const GLenum error = glGetError(); error != GL_NO_ERROR) {
+        char code[24]{};
+        std::snprintf(code, sizeof(code), "0x%04X", static_cast<unsigned int>(error));
+        return fail(std::string("Error al recrear buffers OpenGL: ") + code);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glViewport(0, 0, std::max(width_, 1), std::max(height_, 1));
+
+    RebuildEntityMesh();
+    UploadEntityMesh();
+    UploadItemMesh();
+    UploadWorldMesh();
+
+    ui_.SetBlockAtlas(atlasPixels, atlasBytes, atlasWidth, atlasHeight);
+    ui_.SetStatusVisible(showHudStats_);
+    ui_.SetLeftHanded(leftHandedControls_);
+    ui_.SetControlMode(controlMode_);
+    if (!ui_.Initialise(width_, height_, displayDensity,
+            [this](const std::string& action) { HandleUiAction(action); })) {
+        ENGINE_LOGE("RmlUi restore failed; Android fallback controls remain available: %s",
+                    ui_.LastError().c_str());
+    }
+    ui_.Resize(width_, height_);
+    ui_.SetPerspectiveEnabled(thirdPerson_);
+    ui_.SetMinimapShape(minimapShape_);
+    ui_.SetCrouchEnabled(crouching_);
+    ui_.SetChestButtonVisible(starterChestEnabled_ && !multiplayerMode_);
+    ui_.SetPanelVisible("inventory-panel", inventoryVisible_);
+    ui_.SetPanelVisible("crafting-panel", craftingVisible_);
+    ui_.SetPanelVisible("pause-panel", pauseVisible_);
+    ui_.SetPanelVisible("starter-chest-panel", starterChestOpen_);
+    RefreshInventoryUi();
+    firstPersonRenderer_.Upload();
+
+    paused_ = wasPaused;
+    ready_ = true;
+    lastFrame_ = std::chrono::steady_clock::now();
+    lastStats_ = lastFrame_;
+    lastInitError_.clear();
+    ENGINE_LOGI("OpenGL ES context restored without reloading the active Minefade world");
     return true;
 }
 
@@ -1826,6 +1949,16 @@ void Engine::Render() {
         const float frameP50 = percentile(0.50);
         const float frameP95 = percentile(0.95);
         const float frameP99 = percentile(0.99);
+        std::uint32_t level = 1u, spent = 0u, needed = 100u;
+        while (level < 10000u && progressionXp_ >= spent + needed) {
+            spent += needed;
+            ++level;
+            needed = 100u + (level - 1u) * 50u;
+        }
+        const std::uint32_t intoLevel = progressionXp_ - spent;
+        const int armorPieces = static_cast<int>(std::count_if(
+            inventory_.equippedArmor.begin(), inventory_.equippedArmor.end(),
+            [](std::uint16_t item) { return item != 0u; }));
         char status[220]{};
         if (gameMode_ == 1) {
             std::snprintf(status, sizeof(status),
@@ -1833,20 +1966,13 @@ void Engine::Render() {
                           fps_, frameP50, frameP95, world_.ChunkCount(),
                           static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0));
         } else {
-            std::uint32_t level = 1u;
-            std::uint32_t spent = 0u;
-            std::uint32_t needed = 100u;
-            while (level < 10000u && progressionXp_ >= spent + needed) {
-                spent += needed;
-                ++level;
-                needed = 100u + (level - 1u) * 50u;
-            }
-            const std::uint32_t intoLevel = progressionXp_ - spent;
             std::snprintf(status, sizeof(status),
                           "VIDA %.0f/20 · COMIDA %.0f/20 · NV %u · XP %u/%u · FPS %.0f",
                           std::ceil(playerHealth_), std::floor(playerHunger_), level, intoLevel, needed, fps_);
         }
         ui_.SetStatus(status);
+        ui_.SetVitals(playerHealth_, playerHunger_, armorPieces, level,
+                      static_cast<float>(intoLevel) / static_cast<float>(std::max(needed, 1u)));
 
         if (lastPerfLog_.time_since_epoch().count() == 0 ||
             now - lastPerfLog_ >= std::chrono::seconds(5)) {
@@ -2053,6 +2179,8 @@ void Engine::HandleUiAction(const std::string& action) {
     } else if (action == "inventory") {
         inventoryVisible_ = !inventoryVisible_;
         if (inventoryVisible_) RefreshInventoryUi();
+        craftingVisible_ = false;
+        ui_.SetPanelVisible("crafting-panel", false);
         ui_.SetPanelVisible("inventory-panel", inventoryVisible_);
         if (inventoryVisible_) {
             ui_.SetPanelVisible("pause-panel", false);
@@ -2064,10 +2192,13 @@ void Engine::HandleUiAction(const std::string& action) {
         }
     } else if (action == "inventory-close") {
         inventoryVisible_ = false;
+        craftingVisible_ = false;
         ui_.SetPanelVisible("inventory-panel", false);
+        ui_.SetPanelVisible("crafting-panel", false);
         paused_ = pauseVisible_;
     } else if (action == "crafting-open") {
         inventoryVisible_ = false;
+        craftingVisible_ = true;
         ui_.SetPanelVisible("inventory-panel", false);
         ui_.SetPanelVisible("pause-panel", false);
         pauseVisible_ = false;
@@ -2075,6 +2206,7 @@ void Engine::HandleUiAction(const std::string& action) {
         RefreshCraftingUi();
         ui_.SetPanelVisible("crafting-panel", true);
     } else if (action == "crafting-close") {
+        craftingVisible_ = false;
         ui_.SetPanelVisible("crafting-panel", false);
         inventoryVisible_ = true;
         paused_ = true;

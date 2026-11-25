@@ -517,6 +517,8 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         private final int difficulty;
         private final boolean generateStructures;
         private final LanMultiplayerService multiplayer;
+        // Retains the session flag across GLSurfaceView surface recreation.
+        private boolean nativeSessionInitialised;
 
         EngineRenderer(Context context, SoundEffects soundEffects, float displayDensity,
                        boolean multiplayerMode, int playerSlot, String storagePath,
@@ -544,6 +546,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         @Override
         public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,
                                      javax.microedition.khronos.egl.EGLConfig config) {
+            final boolean restoringSession = nativeSessionInitialised;
             nativeReady = false;
             GLES20.glClearColor(0.035f, 0.055f, 0.08f, 1.0f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
@@ -551,52 +554,66 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                 byte[] atlas = readBlockAtlas(assetManager);
                 byte[] sheepModel = readOptionalSheepModel(assetManager);
                 byte[] sheepTexture = readOptionalSheepTexture(assetManager);
-                // Set mode and storage on the same GL thread as nativeInit/render.
-                NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
-                NativeBridge.nativeSetStoragePath(storagePath);
-                NativeBridge.nativeSetPlayerIdentity(multiplayer == null
-                        ? "local-device" : multiplayer.getLocalPlayerIdentity());
-                NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld, difficulty, generateStructures);
-                NativeBridge.nativeSetModsDirectory(modsDirectory);
-                int quality = Math.max(0, Math.min(2, preferences.getInt("graphics_quality", 1)));
-                int renderDistance = Math.max(1, Math.min(3,
-                        preferences.getInt("render_distance", 1) + 1));
-                boolean waterWaves = preferences.getBoolean("water_waves", true);
-                float fieldOfView = preferences.getInt("field_of_view", 68);
-                boolean contactShadows = preferences.getBoolean("contact_shadows", true);
-                int legacySensitivity = preferences.getInt("touch_sensitivity", 100);
-                float sensitivityX = preferences.getInt("touch_sensitivity_x", legacySensitivity) / 100.0f;
-                float sensitivityY = preferences.getInt("touch_sensitivity_y", legacySensitivity) / 100.0f;
-                float joystickDeadzone = preferences.getInt("joystick_deadzone", 12) / 100.0f;
-                boolean invertLookY = preferences.getBoolean("invert_look_y", false);
-                boolean leftHanded = preferences.getBoolean("left_handed_controls", false);
-                int controlMode = 0;
-                preferences.edit().putInt("control_mode", 0).apply();
-                int minimapShape = Math.max(0, Math.min(1, preferences.getInt("minimap_shape", 0)));
-                NativeBridge.nativeSetMinimapShape(minimapShape);
-                boolean showHudStats = preferences.getBoolean("show_hud_stats", true);
-                float hudScale = preferences.getInt("hud_scale", 100) / 100.0f;
-                NativeBridge.nativeSetGraphicsOptions(quality, renderDistance, waterWaves,
-                        fieldOfView, contactShadows);
-                NativeBridge.nativeSetShaderOptions(
-                        preferences.getBoolean("lava_animations", true),
-                        preferences.getBoolean("leaf_wind", true),
-                        preferences.getInt("leaf_wind_strength", 4) / 100.0f);
-                NativeBridge.nativeSetInputOptions(sensitivityX, sensitivityY, joystickDeadzone, invertLookY, leftHanded, controlMode, preferences.getBoolean("auto_jump", true));
-                NativeBridge.nativeSetHudOptions(showHudStats);
-                int animationQuality = Math.max(0, Math.min(2, preferences.getInt("animation_quality", 2)));
-                boolean worldAnimations = preferences.getBoolean("world_animations", true);
-                NativeBridge.nativeSetAnimationOptions(animationQuality, worldAnimations);
-                int[] avatarChoices = {
-                        preferences.getInt("avatar_piel", 0),
-                        preferences.getInt("avatar_cabello", 0),
-                        preferences.getInt("avatar_ojos", 0),
-                        preferences.getInt("avatar_ropa", 0),
-                        preferences.getInt("avatar_armadura", 0),
-                        preferences.getInt("avatar_accesorios", 0)
-                };
-                NativeBridge.nativeSetAvatarAppearance(avatarChoices);
-                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
+                // The first EGL context configures gameplay. Later contexts only rebuild GL resources.
+                final float hudScale = preferences.getInt("hud_scale", 100) / 100.0f;
+                final float fieldOfView = preferences.getInt("field_of_view", 68);
+                if (!restoringSession) {
+                    NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
+                    NativeBridge.nativeSetStoragePath(storagePath);
+                    NativeBridge.nativeSetPlayerIdentity(multiplayer == null
+                            ? "local-device" : multiplayer.getLocalPlayerIdentity());
+                    NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld, difficulty, generateStructures);
+                    NativeBridge.nativeSetModsDirectory(modsDirectory);
+                    int quality = Math.max(0, Math.min(2, preferences.getInt("graphics_quality", 1)));
+                    int renderDistance = Math.max(1, Math.min(3,
+                            preferences.getInt("render_distance", 1) + 1));
+                    boolean waterWaves = preferences.getBoolean("water_waves", true);
+                    boolean contactShadows = preferences.getBoolean("contact_shadows", true);
+                    int legacySensitivity = preferences.getInt("touch_sensitivity", 100);
+                    float sensitivityX = preferences.getInt("touch_sensitivity_x", legacySensitivity) / 100.0f;
+                    float sensitivityY = preferences.getInt("touch_sensitivity_y", legacySensitivity) / 100.0f;
+                    float joystickDeadzone = preferences.getInt("joystick_deadzone", 12) / 100.0f;
+                    boolean invertLookY = preferences.getBoolean("invert_look_y", false);
+                    boolean leftHanded = preferences.getBoolean("left_handed_controls", false);
+                    int controlMode = 0;
+                    preferences.edit().putInt("control_mode", 0).apply();
+                    int minimapShape = Math.max(0, Math.min(1, preferences.getInt("minimap_shape", 0)));
+                    NativeBridge.nativeSetMinimapShape(minimapShape);
+                    boolean showHudStats = preferences.getBoolean("show_hud_stats", true);
+                    NativeBridge.nativeSetGraphicsOptions(quality, renderDistance, waterWaves,
+                            fieldOfView, contactShadows);
+                    NativeBridge.nativeSetShaderOptions(
+                            preferences.getBoolean("lava_animations", true),
+                            preferences.getBoolean("leaf_wind", true),
+                            preferences.getInt("leaf_wind_strength", 4) / 100.0f);
+                    NativeBridge.nativeSetInputOptions(sensitivityX, sensitivityY, joystickDeadzone,
+                            invertLookY, leftHanded, controlMode,
+                            preferences.getBoolean("auto_jump", true));
+                    NativeBridge.nativeSetHudOptions(showHudStats);
+                    int animationQuality = Math.max(0, Math.min(2, preferences.getInt("animation_quality", 2)));
+                    boolean worldAnimations = preferences.getBoolean("world_animations", true);
+                    NativeBridge.nativeSetAnimationOptions(animationQuality, worldAnimations);
+                    int[] avatarChoices = {
+                            preferences.getInt("avatar_piel", 0),
+                            preferences.getInt("avatar_cabello", 0),
+                            preferences.getInt("avatar_ojos", 0),
+                            preferences.getInt("avatar_ropa", 0),
+                            preferences.getInt("avatar_armadura", 0),
+                            preferences.getInt("avatar_accesorios", 0)
+                    };
+                    NativeBridge.nativeSetAvatarAppearance(avatarChoices);
+                }
+                nativeReady = restoringSession
+                        ? NativeBridge.nativeRestoreGlContext(displayDensity * hudScale, atlas,
+                                ATLAS_WIDTH, ATLAS_HEIGHT, sheepTexture)
+                        : NativeBridge.nativeInit(displayDensity * hudScale, atlas,
+                                ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
+                if (!nativeReady && restoringSession) {
+                    final String restoreFailure = readNativeInitError();
+                    Log.w(TAG, "GL resource recovery failed; reopening the last saved world: " + restoreFailure);
+                    nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas,
+                            ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
+                }
                 if (!nativeReady) {
                     final String firstFailure = readNativeInitError();
                     // Retry once with a smaller workload only for resource-allocation failures.
@@ -605,7 +622,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                             || firstFailure.contains("malla")
                             || firstFailure.contains("OUT_OF_MEMORY")
                             || firstFailure.contains("0x0505");
-                    if (retryable) {
+                    if (retryable && !restoringSession) {
                         Log.w(TAG, "Retrying with conservative graphics settings: " + firstFailure);
                         NativeBridge.nativeSetGraphicsOptions(0, 1, false, fieldOfView, false);
                         nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
@@ -623,13 +640,16 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                         notifyError(buildStartupDiagnostic(firstFailure));
                     }
                 }
+                if (!nativeReady && restoringSession) nativeSessionInitialised = false;
                 if (nativeReady) {
+                    nativeSessionInitialised = true;
                     preferences.edit().putBoolean("achievement_world_entered", true).apply();
                     Log.i(TAG, "Native renderer initialised successfully");
                     notifyReady();
                 }
             } catch (LinkageError | RuntimeException error) {
                 nativeReady = false;
+                nativeSessionInitialised = false;
                 Log.e(TAG, "Native engine is unavailable", error);
                 notifyError("No se pudo cargar el motor nativo: " + error.getClass().getSimpleName());
             }

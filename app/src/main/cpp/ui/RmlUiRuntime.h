@@ -30,6 +30,7 @@ public:
     bool CrouchButtonAt(float x, float y) const;
     void UpdateAndRender();
     void SetStatus(const std::string& status);
+    void SetVitals(float health, float hunger, int armorPieces, std::uint32_t level, float xpProgress);
     void SetLeftHanded(bool enabled);
     void SetControlMode(int mode);
     void SetStatusVisible(bool visible) { showStats_ = visible; }

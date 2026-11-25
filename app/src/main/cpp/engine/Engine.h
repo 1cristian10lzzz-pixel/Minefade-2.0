@@ -24,6 +24,7 @@ namespace minefade {
 class Engine {
 public:
     bool Initialise(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight, const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize, const std::uint8_t* sheepTextureRgba, std::size_t sheepTextureBytes);
+    bool RestoreGlContext(float displayDensity, const std::uint8_t* atlasPixels, std::size_t atlasBytes, int atlasWidth, int atlasHeight, const std::uint8_t* sheepTextureRgba, std::size_t sheepTextureBytes);
     std::string LastInitError() const;
     bool IsUiReady() const;
     void FallbackAction(int action, bool pressed);
@@ -198,6 +199,7 @@ private:
     bool pendingAnimationsEnabled_{true};
     std::array<int, 6> avatarAppearance_{{0,0,0,0,0,0}};
     bool inventoryVisible_{false};
+    bool craftingVisible_{false};
     bool pauseVisible_{false};
     bool thirdPerson_{false};
     bool thirdPersonFront_{false};
