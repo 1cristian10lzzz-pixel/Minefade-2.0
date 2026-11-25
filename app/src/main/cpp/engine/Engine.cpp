@@ -825,14 +825,21 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         if (!loadedExistingWorld) {
             world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);
         }
-        world_.GenerateAround(8, 8, 1);
-        if (!(loadedExistingWorld && multiplayerSlot_ == 0)) {
-            const int spawnX = 8 + (multiplayerSlot_ % 4) * 2;
-            const int spawnZ = 8 + ((multiplayerSlot_ / 4) % 4) * 2;
+        const bool isExistingHostWorld = loadedExistingWorld && multiplayerSlot_ == 0;
+        const int spawnX = 8 + (multiplayerSlot_ % 4) * 2;
+        const int spawnZ = 8 + ((multiplayerSlot_ / 4) % 4) * 2;
+        if (!isExistingHostWorld) {
             player_.position = {static_cast<float>(spawnX),
                                 static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f,
                                 static_cast<float>(spawnZ)};
         }
+        // Loaded worlds may have their player thousands of blocks from origin.
+        // Generate the first resident ring around the actual saved position.
+        const int generationX = isExistingHostWorld
+            ? static_cast<int>(std::floor(player_.position.x)) : spawnX;
+        const int generationZ = isExistingHostWorld
+            ? static_cast<int>(std::floor(player_.position.z)) : spawnZ;
+        world_.GenerateAround(generationX, generationZ, 1);
     } else if (!storagePath_.empty()) {
         loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
         if (!loadedExistingWorld) {
