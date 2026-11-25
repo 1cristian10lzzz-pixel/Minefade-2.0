@@ -718,6 +718,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     starterChestEnabled_ = pendingStarterChestEnabled_;
     requestedWorldSeed_ = pendingWorldSeed_;
     flatWorld_ = pendingFlatWorld_;
+    difficulty_ = pendingDifficulty_;
+    generateStructures_ = pendingGenerateStructures_;
     graphicsQuality_ = pendingGraphicsQuality_;
     renderDistanceChunks_ = pendingRenderDistanceChunks_;
     waterWaves_ = pendingWaterWaves_;
@@ -813,15 +815,24 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     starterChestContents_ = {{1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u}};
     bool loadedExistingWorld = false;
     if (multiplayerMode_) {
-        // All LAN peers start from the same deterministic seed. The host's block
-        // edits are then replicated as authoritative block-change events.
-        world_ = VoxelWorld(0x4D464445u);
+        // The host opens the selected local save; joining peers generate the same
+        // deterministic terrain from the host's advertised seed and settings.
+        const bool hasWorldSavePath = storagePath_.size() >= 8u &&
+            storagePath_.compare(storagePath_.size() - 8u, 8u, ".mfworld") == 0;
+        if (multiplayerSlot_ == 0 && hasWorldSavePath) {
+            loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
+        }
+        if (!loadedExistingWorld) {
+            world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);
+        }
         world_.GenerateAround(8, 8, 1);
-        const int spawnX = 8 + (multiplayerSlot_ % 4) * 2;
-        const int spawnZ = 8 + ((multiplayerSlot_ / 4) % 4) * 2;
-        player_.position = {static_cast<float>(spawnX),
-                            static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f,
-                            static_cast<float>(spawnZ)};
+        if (!(loadedExistingWorld && multiplayerSlot_ == 0)) {
+            const int spawnX = 8 + (multiplayerSlot_ % 4) * 2;
+            const int spawnZ = 8 + ((multiplayerSlot_ / 4) % 4) * 2;
+            player_.position = {static_cast<float>(spawnX),
+                                static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f,
+                                static_cast<float>(spawnZ)};
+        }
     } else if (!storagePath_.empty()) {
         loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
         if (!loadedExistingWorld) {
@@ -835,7 +846,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 if (!backupError) ENGINE_LOGE("Unreadable world preserved at %s", backupPath.c_str());
                 else ENGINE_LOGE("Could not preserve unreadable world: %s", backupError.message().c_str());
             }
-            world_ = VoxelWorld(requestedWorldSeed_, flatWorld_);
+            world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);
             world_.GenerateAround(8, 8, 0);
             player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
         }
@@ -1357,11 +1368,13 @@ void Engine::Render() {
                 applyPlayerDamage(fallDamage, "Daño por caída");
             }
 
-            const bool moving = std::abs(player_.movementX) + std::abs(player_.movementY) > 0.12f;
-            hungerExhaustion_ += safeDelta * (moving ? 0.020f : 0.0012f);
-            while (hungerExhaustion_ >= 1.0f && playerHunger_ > 0.0f) {
-                hungerExhaustion_ -= 1.0f;
-                playerHunger_ = std::max(0.0f, playerHunger_ - 1.0f);
+            if (difficulty_ != 0) {
+                const bool moving = std::abs(player_.movementX) + std::abs(player_.movementY) > 0.12f;
+                hungerExhaustion_ += safeDelta * (moving ? 0.020f : 0.0012f);
+                while (hungerExhaustion_ >= 1.0f && playerHunger_ > 0.0f) {
+                    hungerExhaustion_ -= 1.0f;
+                    playerHunger_ = std::max(0.0f, playerHunger_ - 1.0f);
+                }
             }
 
             if (playerHunger_ >= 18.0f && playerHealth_ < 20.0f) {
@@ -1375,7 +1388,7 @@ void Engine::Render() {
                 regenerationTimer_ = 0.0f;
             }
 
-            if (playerHunger_ <= 0.0f) {
+            if (difficulty_ != 0 && playerHunger_ <= 0.0f) {
                 starvationTimer_ += safeDelta;
                 if (starvationTimer_ >= 8.0f) {
                     starvationTimer_ = std::fmod(starvationTimer_, 8.0f);
@@ -1386,7 +1399,7 @@ void Engine::Render() {
             }
 
             hostileDamageCooldown_ = std::max(0.0f, hostileDamageCooldown_ - safeDelta);
-            if (hostileDamageCooldown_ <= 0.0f) {
+            if (difficulty_ != 0 && hostileDamageCooldown_ <= 0.0f) {
                 const bool hostileNearby = std::any_of(entities_.Entities().begin(),
                     entities_.Entities().end(), [this](const Entity& entity) {
                         if (entity.kind != 4 && entity.kind != 5) return false;
@@ -1396,7 +1409,8 @@ void Engine::Render() {
                         return dx * dx + dy * dy + dz * dz < 1.65f;
                     });
                 if (hostileNearby) {
-                    applyPlayerDamage(2.0f, "Ataque enemigo");
+                    const float hostileDamage = difficulty_ == 1 ? 1.0f : (difficulty_ == 3 ? 3.0f : 2.0f);
+                    applyPlayerDamage(hostileDamage, "Ataque enemigo");
                     hostileDamageCooldown_ = 1.25f;
                 }
             }
@@ -1429,15 +1443,17 @@ void Engine::Render() {
         // Survival worlds spawn a limited number of hostiles after dusk.
         // Spawn anchors are placed away from the player so enemies approach
         // through their normal pursuit steering instead of appearing at contact range.
-        if (gameMode_ != 1 && environment_.Daylight() < 0.22f) {
+        if (gameMode_ != 1 && difficulty_ != 0 && environment_.Daylight() < 0.22f) {
             hostileSpawnTimer_ += safeDelta;
-            if (hostileSpawnTimer_ >= 48.0f) {
+            const float hostileSpawnInterval = difficulty_ == 1 ? 78.0f : (difficulty_ == 3 ? 30.0f : 48.0f);
+            if (hostileSpawnTimer_ >= hostileSpawnInterval) {
                 const auto& currentEntities = entities_.Entities();
                 const std::size_t hostileCount = static_cast<std::size_t>(std::count_if(
                     currentEntities.begin(), currentEntities.end(), [](const Entity& entity) {
                         return entity.kind == 4 || entity.kind == 5;
                     }));
-                if (hostileCount < 4u && currentEntities.size() < 128u) {
+                const std::size_t hostileLimit = difficulty_ == 1 ? 2u : (difficulty_ == 3 ? 6u : 4u);
+                if (hostileCount < hostileLimit && currentEntities.size() < 128u) {
                     const float angle = static_cast<float>(hostileSpawnSequence_++) * 2.39996323f;
                     const Vec3 anchor{
                         player_.position.x + std::cos(angle) * 12.0f,
@@ -2844,7 +2860,7 @@ void Engine::SetStoragePath(std::string path) {
         storagePath_ = std::move(path) + "/worlds/default.mfworld";
 }
 
-void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld) {
+void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld, int difficulty, bool generateStructures) {
     // Setters are called before the next nativeInit, while the previous world may
     // still be ready/paused. Stage these values so they cannot be discarded or
     // applied to the outgoing world during a world transition.
@@ -2853,6 +2869,8 @@ void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, 
     pendingStarterChestEnabled_ = starterChest;
     pendingWorldSeed_ = seed == 0u ? 0x4D464445u : seed;
     pendingFlatWorld_ = flatWorld;
+    pendingDifficulty_ = std::clamp(difficulty, 0, 3);
+    pendingGenerateStructures_ = generateStructures;
 }
 
 void Engine::SetModsDirectory(std::string path) {
