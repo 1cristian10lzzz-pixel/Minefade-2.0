@@ -246,6 +246,7 @@ bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews,
         residentGpuBytes_ = addSaturated(residentGpuBytes_, entry.second.opaqueCapacityBytes);
         residentGpuBytes_ = addSaturated(residentGpuBytes_, entry.second.transparentCapacityBytes);
     }
+    residentGpuBytes_ = addSaturated(residentGpuBytes_, sortedTransparentCapacityBytes_);
     opaqueVertexCount_ = static_cast<GLsizei>(std::min(
         opaqueTotal, static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())));
     transparentVertexCount_ = static_cast<GLsizei>(std::min(
@@ -439,6 +440,12 @@ void WorldMeshRenderer::Shutdown() {
                     gpu.transparentCapacityBytes, gpu.transparentCount);
     }
     chunks_.clear();
+    if (sortedTransparentVbo_ != 0) glDeleteBuffers(1, &sortedTransparentVbo_);
+    if (sortedTransparentVao_ != 0) glDeleteVertexArrays(1, &sortedTransparentVao_);
+    sortedTransparentVbo_ = 0;
+    sortedTransparentVao_ = 0;
+    sortedTransparentCapacityBytes_ = 0u;
+    sortedTransparentVertices_.clear();
     opaqueVertexCount_ = 0;
     transparentVertexCount_ = 0;
     lastUploadCount_ = 0;
