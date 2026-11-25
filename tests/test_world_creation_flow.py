@@ -157,6 +157,9 @@ def test_world_options_are_persisted_and_passed_to_the_native_generator():
         assert f'json.opt' in manager and field in manager
         assert field in home
     assert "difficulty, generateStructures" in surface
+    assert "int difficulty, boolean generateStructures," in surface
+    assert "this.difficulty = Math.max(0, Math.min(3, difficulty));" in surface
+    assert "this.generateStructures = generateStructures;" in surface
     assert "difficulty_ != 0" in engine
     assert "generateStructures_ && dryLand" in world
     assert "pendingDifficulty_ = std::clamp(difficulty, 0, 3);" in engine
