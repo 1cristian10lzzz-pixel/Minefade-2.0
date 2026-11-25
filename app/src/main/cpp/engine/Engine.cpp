@@ -706,6 +706,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     selectedItemToastUntil_ = 0.0;
     firstPersonItemId_ = 0xffffu;
     firstPersonSwitchStarted_ = 0.0;
+    firstPersonActionStarted_ = 0.0;
+    firstPersonActionKind_ = 0;
     progressionXp_ = 0u;
     progressionBlocksMined_ = 0u;
     progressionBlocksPlaced_ = 0u;
@@ -1105,6 +1107,8 @@ void Engine::Shutdown(bool saveWorld) {
     firstPersonRenderer_.Shutdown();
     firstPersonItemId_ = 0xffffu;
     firstPersonSwitchStarted_ = 0.0;
+    firstPersonActionStarted_ = 0.0;
+    firstPersonActionKind_ = 0;
     if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
     if (entityVao_ != 0) glDeleteVertexArrays(1, &entityVao_);
     if (maesEntityVbo_ != 0) glDeleteBuffers(1, &maesEntityVbo_);
@@ -1747,13 +1751,33 @@ void Engine::Render() {
             const float switchProgress = std::clamp(switchElapsed / 0.22f, 0.0f, 1.0f);
             const float switchDip = (1.0f - switchProgress) *
                 std::sin((1.0f - switchProgress) * (kPi * 0.5f)) * 0.15f;
+            float actionAngle = 0.0f;
+            float actionLift = 0.0f;
+            if (firstPersonActionKind_ != 0) {
+                const float actionElapsed = static_cast<float>(
+                    std::max(0.0, ElapsedSeconds() - firstPersonActionStarted_));
+                if (actionElapsed < 0.24f) {
+                    const float phase = std::clamp(actionElapsed / 0.24f, 0.0f, 1.0f);
+                    const float envelope = std::sin(phase * kPi);
+                    if (firstPersonActionKind_ == 1) actionAngle = -0.48f * envelope;
+                    else if (firstPersonActionKind_ == 2) actionAngle = 0.34f * envelope;
+                    else if (firstPersonActionKind_ == 3) {
+                        actionAngle = -0.16f * envelope;
+                        actionLift = 0.07f * envelope;
+                    }
+                } else {
+                    firstPersonActionKind_ = 0;
+                }
+            }
             Mat4 viewModel{};
             viewModel.v[0] = 1.0f;
-            viewModel.v[5] = 1.0f;
-            viewModel.v[10] = 1.0f;
+            viewModel.v[5] = std::cos(actionAngle);
+            viewModel.v[6] = std::sin(actionAngle);
+            viewModel.v[9] = -std::sin(actionAngle);
+            viewModel.v[10] = std::cos(actionAngle);
             viewModel.v[15] = 1.0f;
             viewModel.v[12] = std::sin(player_.walkPhase) * 0.008f * movementAmount;
-            viewModel.v[13] = walkBob + idleBob - switchDip;
+            viewModel.v[13] = walkBob + idleBob - switchDip + actionLift;
             const Mat4 viewModelProjection = Multiply(projection, viewModel);
             glEnable(GL_DEPTH_TEST);
             glEnable(GL_CULL_FACE);
@@ -1970,6 +1994,8 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
                     static_cast<int>(placed.x), static_cast<int>(placed.y),
                     static_cast<int>(placed.z), static_cast<int>(selected)
                 });
+                firstPersonActionStarted_ = ElapsedSeconds();
+                firstPersonActionKind_ = 2; // PLACE: only after a successful world edit.
                 if (gameMode_ != 1) inventory_.ConsumeSelected();
                 if (progressionBlocksPlaced_ < 10000000u) ++progressionBlocksPlaced_;
                 if (gameMode_ != 1) AddProgressionXp(1u);
@@ -2071,6 +2097,8 @@ void Engine::HandleUiAction(const std::string& action) {
             if (restored <= 0.0f) {
                 ui_.SetChatMessage("Selecciona zanahorias o patatas para comer.");
             } else if (inventory_.ConsumeSelected(1u)) {
+                firstPersonActionStarted_ = ElapsedSeconds();
+                firstPersonActionKind_ = 3; // EAT: item was actually consumed.
                 playerHunger_ = std::min(20.0f, playerHunger_ + restored);
                 hungerExhaustion_ = 0.0f;
                 RefreshInventoryUi();
@@ -2096,6 +2124,8 @@ void Engine::HandleUiAction(const std::string& action) {
             int defeatedKind = -1;
             if (entities_.DamageNearest(player_.CameraPosition(), player_.Forward(),
                                         3.25f, damage, &defeated, &defeatedKind)) {
+                firstPersonActionStarted_ = ElapsedSeconds();
+                firstPersonActionKind_ = 1; // ATTACK: an enemy was actually hit.
                 if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
                 if (defeated) {
                     if (gameMode_ != 1) AddProgressionXp(20u);
@@ -2900,6 +2930,8 @@ void Engine::UpdateMining(float deltaSeconds) {
     Vec3 broken{};
     BlockId brokenType = BlockId::Air;
     if (world_.BreakRay(ViewPosition(), ViewDirection(), 6.0f, &broken, &brokenType)) {
+        firstPersonActionStarted_ = ElapsedSeconds();
+        firstPersonActionKind_ = 1; // MINE: a block was actually broken.
         pendingBlockEdits_.insert(pendingBlockEdits_.end(), {
             static_cast<int>(broken.x), static_cast<int>(broken.y), static_cast<int>(broken.z),
             static_cast<int>(BlockId::Air)
