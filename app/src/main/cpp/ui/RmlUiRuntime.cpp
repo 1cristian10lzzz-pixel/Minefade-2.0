@@ -142,8 +142,8 @@ button:active { background: #47789b; }
 .panel h1 { font-size: 20dp; margin: 0dp 0dp 10dp 0dp; color: #ffffff; }
 .panel p { font-size: 12dp; color: #c8d3db; margin: 3dp 0dp 12dp 0dp; }
 .panel .actions { flex-wrap: wrap; }
-#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; flex-direction: row; gap: 2dp; padding: 4dp; background: #1b3044d9; border: 1dp #dcebf088; border-radius: 11dp; }
-.slot { position: relative; width: 30dp; min-width: 30dp; height: 39dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #2a4259ed; border: 1dp #d8e6ee99; border-radius: 7dp; color: #ffffff; font-size: 9dp; }
+#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: -150dp; display: flex; flex-direction: row; gap: 2dp; padding: 3dp; background: #15263836; border: 1dp #dcebf044; border-radius: 9dp; }
+.slot { position: relative; width: 30dp; min-width: 20dp; height: 41dp; text-align: center; padding: 2dp; display: flex; align-items: center; justify-content: center; background: #223b52d8; border: 1dp #b5cad877; border-radius: 6dp; color: #ffffff; font-size: 9dp; }
 .slot:active { background: #486b78; }
 .slot img { width: 22dp; height: 22dp; display: block; margin: auto; }
 .slot .slot-count { position: absolute; right: 1dp; bottom: 0dp; color: #ffffff; font-size: 7dp; text-shadow: 0dp 1dp 2dp #000000; }
@@ -157,14 +157,14 @@ button:active { background: #47789b; }
 .inventory-icon { width: 19dp; height: 19dp; }
 #inventory, #pause, #perspective, #chat { width: 38dp; min-width: 38dp; height: 38dp; padding: 0dp; text-align: center; background: #142638cc; border: 1dp #d8e6ee77; border-radius: 11dp; }
 #movement-pad { position: absolute; z-index: 6; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; background: transparent; border: none; pointer-events: none; }
-.pad-arrow { position: absolute; width: 42dp; height: 42dp; display: flex; align-items: center; justify-content: center; text-align: center; color: #f5fbff; font-size: 21dp; font-weight: bold; text-shadow: 0dp 1dp 2dp #071321; border: 1dp #d7e8ef88; border-radius: 11dp; background: #1b3850dd; }
+.pad-arrow { position: absolute; width: 42dp; height: 42dp; display: flex; align-items: center; justify-content: center; text-align: center; color: #f5fbff; font-size: 21dp; font-weight: bold; text-shadow: 0dp 1dp 2dp #071321; border: 1dp #d7e8ef88; border-radius: 11dp; background: #1b3850dd; pointer-events: none; }
 #move-up { left: 45dp; top: 2dp; }
 #move-down { left: 45dp; bottom: 2dp; }
 #move-left { left: 2dp; top: 45dp; }
 #move-right { right: 2dp; top: 45dp; }
 #jump { position: absolute; z-index: 7; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; padding: 2dp; text-align: center; border-radius: 18dp; background: #2f6479f2; border: 2dp #d9e9a4ee; color: #ffffff; font-size: 20dp; }
 #attack { position: absolute; z-index: 7; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; padding: 1dp; text-align: center; border-radius: 16dp; background: #7d3d36ee; border: 2dp #f0c1a1cc; color: #fff7f0; font-size: 17dp; }
-#crouch { position: absolute; z-index: 7; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; padding: 1dp; text-align: center; border-radius: 14dp; background: #20394ce8; border: 1dp #c3d8e888; color: #f5fbff; font-size: 17dp; }
+#movement-pad #crouch { position: absolute; z-index: 8; left: 45dp; top: 45dp; right: auto; bottom: auto; width: 42dp; height: 42dp; padding: 0dp; text-align: center; border-radius: 11dp; background: #20394cf0; border: 1dp #c3d8e8aa; color: #f5fbff; font-size: 15dp; pointer-events: auto; }
 #inventory-panel { z-index: 9; left: 50%; top: 50%; width: 94%; height: 88%; margin-left: -47%; margin-top: -44%; padding: 7dp; background: #20344aef; border: 2dp #a9c1d4aa; border-radius: 13dp; overflow: hidden; }
 .inventory-layout { width: 100%; height: 100%; display: flex; flex-direction: row; gap: 8dp; }
 .inventory-left, .inventory-right { width: 50%; height: 100%; overflow-y: auto; background: #263449ee; border: 1dp #a8bdce66; border-radius: 9dp; padding: 7dp; }
@@ -220,6 +220,7 @@ button:active { background: #47789b; }
 <div id="movement-pad">
   <div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div>
   <div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div>
+  <button id="crouch">▣</button>
 </div>
 <div id="hint"></div>
 <div id="quickbar">
@@ -227,7 +228,7 @@ button:active { background: #47789b; }
   <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
   <button class="slot" id="slot-6">7</button><button class="slot" id="slot-7">8</button><button class="slot" id="slot-8">9</button>
 </div>
-<button id="crouch">↓</button><button id="jump">↑</button><button id="attack">⚔</button>
+<button id="jump">↑</button><button id="attack">⚔</button>
 <div id="target"><div id="target-name"></div><div id="target-progress"><div id="target-progress-fill"></div></div></div>
 <div id="selected-item"></div>
 <div id="pickup"></div>
@@ -395,7 +396,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #topbar { position: absolute; top: 8dp; right: 8dp; display: flex; }
 #topbar button { width: 38dp; height: 38dp; margin-left: 4dp; }
 #stats { position: absolute; left: 10dp; top: 10dp; display: block; font-size: 10dp; color: #ffffff; }
-#movement-pad { position: absolute; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; }
+#movement-pad { position: absolute; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; pointer-events: none; }
 .pad-arrow { position: absolute; width: 42dp; height: 42dp; text-align: center; background: rgba(25, 50, 73, 0.88); border: 1dp solid #e1efb8; border-radius: 11dp; font-size: 20dp; }
 #move-up { left: 45dp; top: 2dp; } #move-down { left: 45dp; bottom: 2dp; }
 #move-left { left: 2dp; top: 45dp; } #move-right { right: 2dp; top: 45dp; }
@@ -404,7 +405,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 .slot img { width: 22dp; height: 22dp; }
 #jump { position: absolute; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; font-size: 20dp; }
 #attack { position: absolute; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; font-size: 17dp; }
-#crouch { position: absolute; right: 82dp; bottom: 65dp; width: 44dp; height: 44dp; font-size: 16dp; }
+#movement-pad #crouch { position: absolute; left: 45dp; top: 45dp; right: auto; bottom: auto; width: 42dp; height: 42dp; font-size: 15dp; pointer-events: auto; }
 #minimap { position: absolute; top: 54dp; left: 10dp; width: 64dp; height: 64dp; border: 1dp solid #ffffff88; background-color: rgba(18, 43, 64, 0.70); }
 #target { position: absolute; top: 58%; left: 50%; margin-left: -70dp; width: 140dp; text-align: center; display: none; }
 #selected-item { position: absolute; left: 50%; bottom: 58dp; margin-left: -76dp; width: 152dp; text-align: center; display: none; }
@@ -423,13 +424,13 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <button id="pause">Ⅱ</button>
 </div>
 <div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
-<div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div></div>
+<div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div><button id="crouch">▣</button></div>
 <div id="quickbar">
 <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
 <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
 <button class="slot" id="slot-6">7</button><button class="slot" id="slot-7">8</button><button class="slot" id="slot-8">9</button>
 </div>
-<button id="jump">↑</button><button id="crouch">↓</button><button id="attack">⚔</button>
+<button id="jump">↑</button><button id="attack">⚔</button>
 <div id="crosshair"></div>
 <div id="target"><div id="target-name"></div><div id="target-progress-fill"></div></div>
 <div id="selected-item"></div><div id="pickup"></div>
@@ -489,6 +490,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     document_->Show();
     context_->Update();
     ready_ = true;
+    ApplyResponsiveLayout();
     SetMinimapShape(minimapShape_);
     __android_log_print(ANDROID_LOG_INFO, kTag, "RmlUi %s initialised with OpenGL ES backend", Rml::GetVersion().c_str());
     return true;
@@ -545,7 +547,10 @@ void RmlUiRuntime::Resize(int width, int height) {
     width_ = width > 0 ? width : 1;
     height_ = height > 0 ? height : 1;
     renderer_.SetViewport(width_, height_);
-    if (context_ != nullptr) context_->SetDimensions({width_, height_});
+    if (context_ != nullptr) {
+        context_->SetDimensions({width_, height_});
+        ApplyResponsiveLayout();
+    }
 }
 
 bool RmlUiRuntime::IsInMovementPad(float x, float y) const {
@@ -562,7 +567,6 @@ bool RmlUiRuntime::IsInMovementPad(float x, float y) const {
 bool RmlUiRuntime::MovementVectorAt(float x, float y, float& moveX, float& moveY) const {
     moveX = 0.0f;
     moveY = 0.0f;
-    if (!IsInMovementPad(x, y)) return false;
     const float size = 132.0f * density_;
     const float margin = 14.0f * density_;
     const float bottom = 54.0f * density_;
@@ -573,11 +577,26 @@ bool RmlUiRuntime::MovementVectorAt(float x, float y, float& moveX, float& moveY
     const auto hit = [x,y,button](float l, float t) {
         return x >= l && x <= l + button && y >= t && y <= t + button;
     };
-    if (hit(left + offset, top + 2.0f * density_)) moveY = 1.0f;
-    else if (hit(left + offset, top + size - button - 2.0f * density_)) moveY = -1.0f;
-    else if (hit(left + 2.0f * density_, top + offset)) moveX = -1.0f;
-    else if (hit(left + size - button - 2.0f * density_, top + offset)) moveX = 1.0f;
-    return true;
+    // Only the four visible directional buttons capture movement. The gaps and
+    // centre are not a giant invisible joystick hitbox: they remain available
+    // for camera look or the dedicated crouch control.
+    if (hit(left + offset, top + 2.0f * density_)) { moveY = 1.0f; return true; }
+    if (hit(left + offset, top + size - button - 2.0f * density_)) { moveY = -1.0f; return true; }
+    if (hit(left + 2.0f * density_, top + offset)) { moveX = -1.0f; return true; }
+    if (hit(left + size - button - 2.0f * density_, top + offset)) { moveX = 1.0f; return true; }
+    return false;
+}
+
+bool RmlUiRuntime::CrouchButtonAt(float x, float y) const {
+    const float size = 132.0f * density_;
+    const float margin = 14.0f * density_;
+    const float bottom = 54.0f * density_;
+    const float left = leftHanded_ ? static_cast<float>(width_) - margin - size : margin;
+    const float top = static_cast<float>(height_) - bottom - size;
+    const float startX = left + 45.0f * density_;
+    const float startY = top + 45.0f * density_;
+    const float button = 42.0f * density_;
+    return x >= startX && x <= startX + button && y >= startY && y <= startY + button;
 }
 
 bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
@@ -618,6 +637,24 @@ bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
         return !consumed;
     }
     return false;
+}
+
+void RmlUiRuntime::ApplyResponsiveLayout() {
+    if (document_ == nullptr) return;
+    const float availableDp = static_cast<float>(width_) / density_ - 20.0f;
+    const float slotWidth = std::clamp((availableDp - 28.0f) / 9.0f, 19.0f, 30.0f);
+    const float totalWidth = slotWidth * 9.0f + 28.0f;
+    if (Rml::Element* quickbar = document_->GetElementById("quickbar")) {
+        quickbar->SetProperty("margin-left", "-" + std::to_string(totalWidth * 0.5f) + "dp");
+    }
+    for (int slot = 0; slot < 9; ++slot) {
+        const std::string id = "slot-" + std::to_string(slot);
+        if (Rml::Element* element = document_->GetElementById(id)) {
+            const std::string value = std::to_string(slotWidth) + "dp";
+            element->SetProperty("width", value);
+            element->SetProperty("min-width", value);
+        }
+    }
 }
 
 void RmlUiRuntime::UpdateAndRender() {
