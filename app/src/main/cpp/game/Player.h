@@ -37,6 +37,8 @@ public:
     void SetSpeedMultiplier(float multiplier) { speedMultiplier = multiplier; }
     void SetJumpMultiplier(float multiplier);
     void SetAppearance(const std::array<int, 6>& appearance);
+    std::array<float, 3> FirstPersonSkinColor() const;
+    std::array<float, 3> FirstPersonSleeveColor() const;
     void SetAnimationOptions(std::uint8_t quality, bool enabled);
     void SetContactShadows(bool enabled) { contactShadows = enabled; }
     // Keeps saved player positions out of solid blocks and finds nearby open ground.
