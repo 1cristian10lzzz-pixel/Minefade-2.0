@@ -129,9 +129,10 @@ def test_lan_fingerprint_errors_fail_closed_and_incompatible_games_are_filtered(
 
 
 def test_hostile_entities_spawn_at_night_with_a_population_cap():
-    assert "hostileSpawnTimer_ >= 48.0f" in ENGINE
     assert "environment_.Daylight() < 0.22f" in ENGINE
-    assert "hostileCount < 4u" in ENGINE
+    assert "hostileSpawnInterval = difficulty_ == 1 ? 78.0f : (difficulty_ == 3 ? 30.0f : 48.0f);" in ENGINE
+    assert "hostileLimit = difficulty_ == 1 ? 2u : (difficulty_ == 3 ? 6u : 4u);" in ENGINE
+    assert "hostileCount < hostileLimit" in ENGINE
     assert "hostileSpawnSequence_" in ENGINE
     assert "entities_.SpawnEntity(anchor, kind, world_)" in ENGINE
     assert "hostileSpawnTimer_ = 0.0f;" in ENGINE
