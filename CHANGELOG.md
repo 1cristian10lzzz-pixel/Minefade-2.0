@@ -1,5 +1,15 @@
 # Registro de cambios — Minefade 2.0
 
+## Candidata 2.3.0 — barra rápida y mano en primera persona
+- La barra conserva sus nueve IDs y el estado real de inventario; ancho, slots, iconos y márgenes se recalculan desde el ancho actual de Surface.
+- La selección usa una placa clara de alto contraste y el nombre del objeto desaparece tras 1,25 segundos.
+- Se añade un renderer independiente para manga, antebrazo, muñeca, palma, pulgar y dedos; reutiliza las paletas del avatar.
+- Bloques usan atlas; palo, pico, hacha, pala, espada, azada y armadura tienen siluetas específicas.
+- El viewmodel se dibuja en coordenadas de cámara después del transparente y antes del HUD, y se desactiva en tercera persona.
+- Se añade balanceo de reposo/caminar, transición de cambio de item y gestos breves ligados a minado, colocación, ataque confirmado y comida consumida.
+- Las subidas de sus tres capas son transaccionales y conservan el viewmodel anterior si alguna falla.
+- La matriz visual final requiere capturas y pruebas en Android físico; el build/CI no sustituye esa validación.
+
 ## Candidata 2.3.0 — controles, renderer y progresión
 - La quickbar se ajusta al ancho/densidad de pantalla; se reducen fondos y bordes para evitar tapar el mundo.
 - El D-pad responde únicamente dentro de las cuatro direcciones visibles; el centro queda para agacharse y los huecos dejan de secuestrar gestos de cámara.
