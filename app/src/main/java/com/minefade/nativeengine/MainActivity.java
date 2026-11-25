@@ -500,14 +500,32 @@ public final class MainActivity extends Activity {
     }
 
     private void showFallbackCraftingDialog() {
-        final String[] recipeIds = {"planks","sticks","table","torch","chest","furnace",
-                "wooden_door","trapdoor","ladder","fence","wooden_slab","oak_stairs",
-                "stone_stairs","wooden_pickaxe","stone_pickaxe","iron_pickaxe",
-                "wooden_axe","stone_axe","wooden_sword","iron_sword"};
-        final String[] labels = {"Tablones","Palos","Mesa de trabajo","Antorchas","Cofre","Horno",
-                "Puerta","Trampilla","Escalera de mano","Valla","Losa","Escaleras de madera",
-                "Escaleras de piedra","Pico de madera","Pico de piedra","Pico de hierro",
-                "Hacha de madera","Hacha de piedra","Espada de madera","Espada de hierro"};
+        final String[] recipeIds = {
+                "planks","sticks","table","torch","chest","furnace","glass","stone",
+                "wooden_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door",
+                "trapdoor","ladder","fence","fence_gate","wooden_slab","stone_slab",
+                "oak_stairs","spruce_stairs","birch_stairs","jungle_stairs","stone_stairs",
+                "stonebrick","stone_brick_stairs","sandstone","sandstone_stairs","cobblestone_wall",
+                "iron_bars","glass_pane","iron_block","gold_block","copper_block","diamond_block",
+                "emerald_block","redstone_block","coal_block","hopper","anvil","stonecutter",
+                "dropper","piston","redstone_torch","redstone_lamp","wooden_pickaxe","stone_pickaxe",
+                "iron_pickaxe","copper_pickaxe","diamond_pickaxe","wooden_axe","stone_axe","iron_axe",
+                "wooden_sword","stone_sword","iron_sword","iron_ingot","gold_ingot","copper_ingot",
+                "golden_rail","detector_rail","activator_rail"
+        };
+        final String[] labels = {
+                "Tablones","Palos","Mesa de trabajo","Antorchas","Cofre","Horno","Cristal (horno)","Piedra (horno)",
+                "Puerta","Puerta de abeto","Puerta de abedul","Puerta de jungla","Puerta de acacia","Puerta de roble oscuro",
+                "Trampilla","Escalera de mano","Valla","Puerta de valla","Losa de madera","Losa de piedra (cortapiedras)",
+                "Escaleras de roble","Escaleras de abeto","Escaleras de abedul","Escaleras de jungla","Escaleras de piedra",
+                "Ladrillos de piedra","Escaleras de ladrillo de piedra","Arenisca","Escaleras de arenisca","Muro de adoquín",
+                "Rejas de hierro","Paneles de cristal","Bloque de hierro","Bloque de oro","Bloque de cobre","Bloque de diamante",
+                "Bloque de esmeralda","Bloque de redstone","Bloque de carbón","Tolva","Yunque","Cortapiedras",
+                "Soltador","Pistón","Antorcha de redstone","Lámpara de redstone","Pico de madera","Pico de piedra",
+                "Pico de hierro","Pico de cobre","Pico de diamante","Hacha de madera","Hacha de piedra","Hacha de hierro",
+                "Espada de madera","Espada de piedra","Espada de hierro","Lingote de hierro (horno)","Lingote de oro (horno)",
+                "Lingote de cobre (horno)","Raíl propulsor","Raíl detector","Raíl activador"
+        };
         new AlertDialog.Builder(this).setTitle("Libro de fabricación")
                 .setItems(labels, (dialog, which) -> {
                     if (surfaceView == null) return;

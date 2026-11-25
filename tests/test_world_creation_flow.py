@@ -278,3 +278,20 @@ def test_lan_host_checks_persistent_player_identity_before_accepting_claim_block
     assert "NativeBridge.nativeCanModifyBlockForIdentity" in lan
     assert "BLOCK_DENIED" in lan
     assert "Java_com_minefade_nativeengine_NativeBridge_nativeCanModifyBlockForIdentity" in native
+
+
+
+def test_crafting_uses_distinct_furnace_and_stonecutter_stations_and_expanded_recipes():
+    engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+    header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    activity = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
+    assert "std::array<Ingredient, 9> ingredients{};" in engine
+    assert "bool needsFurnace = false;" in engine
+    assert "bool needsStonecutter = false;" in engine
+    assert "bool Engine::HasNearbyFurnace() const" in engine
+    assert "bool Engine::HasNearbyStonecutter() const" in engine
+    assert 'recipe == "piston"' in engine and 'recipe == "hopper"' in engine
+    assert 'recipe == "glass"' in engine and 'recipe == "golden_rail"' in engine
+    assert 'findId("minefade_raw_" + metal)' in engine
+    assert "HasNearbyBlock(const std::string& blockKey) const;" in header
+    assert "iron_bars" in activity and "redstone_lamp" in activity

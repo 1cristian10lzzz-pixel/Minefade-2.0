@@ -99,7 +99,10 @@ private:
     void TakeStarterChestContents();
     void RefreshInventoryUi();
     void RefreshCraftingUi();
+    bool HasNearbyBlock(const std::string& blockKey) const;
     bool HasNearbyCraftingTable() const;
+    bool HasNearbyFurnace() const;
+    bool HasNearbyStonecutter() const;
     bool CraftRecipe(const std::string& recipe);
     void UpdateMining(float deltaSeconds);
     Vec3 ViewPosition() const;

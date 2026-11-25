@@ -2114,27 +2114,36 @@ void Engine::HandleUiAction(const std::string& action) {
 }
 
 
-bool Engine::HasNearbyCraftingTable() const {
+bool Engine::HasNearbyBlock(const std::string& blockKey) const {
+    const BlockDefinition* definition = FindBlockDefinition(blockKey);
+    if (definition == nullptr) return false;
+    const BlockId stationId = static_cast<BlockId>(definition->id);
     const int centerX = static_cast<int>(std::floor(player_.position.x));
     const int centerY = static_cast<int>(std::floor(player_.position.y));
     const int centerZ = static_cast<int>(std::floor(player_.position.z));
     for (int y = std::max(0, centerY - 1); y <= std::min(VoxelWorld::kWorldHeight - 1, centerY + 2); ++y) {
         for (int z = centerZ - 2; z <= centerZ + 2; ++z) {
             for (int x = centerX - 2; x <= centerX + 2; ++x) {
-                if (world_.GetBlock(x, y, z) == BlockId::CraftingTable) return true;
+                if (world_.GetBlock(x, y, z) == stationId) return true;
             }
         }
     }
     return false;
 }
 
+bool Engine::HasNearbyCraftingTable() const { return HasNearbyBlock("crafting_table"); }
+bool Engine::HasNearbyFurnace() const { return HasNearbyBlock("furnace"); }
+bool Engine::HasNearbyStonecutter() const { return HasNearbyBlock("stonecutter"); }
+
 bool Engine::CraftRecipe(const std::string& recipe) {
     struct Ingredient { std::uint16_t id; std::uint16_t amount; };
-    std::array<Ingredient, 3> ingredients{};
+    std::array<Ingredient, 9> ingredients{};
     std::size_t ingredientCount = 0u;
     std::uint16_t outputId = 0u;
     std::uint16_t outputAmount = 1u;
     bool needsTable = false;
+    bool needsFurnace = false;
+    bool needsStonecutter = false;
     const auto addIngredient = [&ingredients, &ingredientCount](std::uint16_t id, std::uint16_t amount) {
         if (id == 0u || amount == 0u || ingredientCount >= ingredients.size()) return false;
         ingredients[ingredientCount++] = {id, amount};
@@ -2211,15 +2220,127 @@ bool Engine::CraftRecipe(const std::string& recipe) {
         outputId = findId("rail"); outputAmount = 16u; needsTable = true;
     } else if (recipe == "copper_ingot" || recipe == "iron_ingot" || recipe == "gold_ingot") {
         const std::string metal = recipe.substr(0, recipe.find('_'));
-        addIngredient(findId(metal + "_ore"), 1u);
-        addIngredient(findId("coal_ore"), 1u);
+        if (!addIngredient(findId("minefade_raw_" + metal), 1u) ||
+            !addIngredient(findId("coal_ore"), 1u)) return false;
         outputId = findId("minefade_" + recipe);
-        needsTable = true;
+        needsFurnace = true;
     } else if (recipe == "diamond_gem" || recipe == "emerald_gem") {
         const std::string gem = recipe.substr(0, recipe.find('_'));
         addIngredient(findId(gem + "_ore"), 1u);
         outputId = findId("minefade_" + gem);
-        needsTable = true;
+    } else if (recipe == "glass" || recipe == "stone") {
+        if (!addIngredient(findId(recipe == "glass" ? "sand" : "cobblestone"), 1u) ||
+            !addIngredient(findId("coal_ore"), 1u)) return false;
+        outputId = findId(recipe);
+        needsFurnace = true;
+    } else if (recipe == "iron_block" || recipe == "gold_block" ||
+               recipe == "copper_block" || recipe == "diamond_block" ||
+               recipe == "emerald_block" || recipe == "coal_block" ||
+               recipe == "redstone_block") {
+        std::string material = recipe.substr(0, recipe.find('_'));
+        if (material == "iron" || material == "gold" || material == "copper")
+            material = "minefade_" + material + "_ingot";
+        else if (material == "diamond" || material == "emerald")
+            material = "minefade_" + material;
+        else if (material == "redstone") material = "redstone_wire";
+        else if (material == "coal") material = "coal_ore";
+        if (!addIngredient(findId(material), 9u)) return false;
+        outputId = findId(recipe); needsTable = true;
+    } else if (recipe == "iron_bars") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u)) return false;
+        outputId = findId("iron_bars"); outputAmount = 16u; needsTable = true;
+    } else if (recipe == "glass_pane") {
+        if (!addIngredient(findId("glass"), 6u)) return false;
+        outputId = findId("glass_pane"); outputAmount = 16u; needsTable = true;
+    } else if (recipe == "cobblestone_wall") {
+        if (!addIngredient(findId("cobblestone"), 6u)) return false;
+        outputId = findId("cobblestone_wall"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "nether_brick_fence") {
+        if (!addIngredient(findId("nether_brick"), 6u)) return false;
+        outputId = findId("nether_brick_fence"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "stonebrick") {
+        if (!addIngredient(findId("stone"), 4u)) return false;
+        outputId = findId("stonebrick"); outputAmount = 4u; needsTable = true;
+    } else if (recipe == "stonecutter") {
+        if (!addIngredient(findId("stone"), 3u) ||
+            !addIngredient(findId("minefade_iron_ingot"), 1u)) return false;
+        outputId = findId("stonecutter"); needsTable = true;
+    } else if (recipe == "hopper") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 5u) ||
+            !addIngredient(findId("chest"), 1u)) return false;
+        outputId = findId("hopper"); needsTable = true;
+    } else if (recipe == "anvil") {
+        if (!addIngredient(findId("iron_block"), 3u) ||
+            !addIngredient(findId("minefade_iron_ingot"), 4u)) return false;
+        outputId = findId("anvil"); needsTable = true;
+    } else if (recipe == "dropper") {
+        if (!addIngredient(findId("cobblestone"), 7u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("dropper"); needsTable = true;
+    } else if (recipe == "piston") {
+        if (!addIngredient(findId("planks"), 3u) ||
+            !addIngredient(findId("cobblestone"), 4u) ||
+            !addIngredient(findId("minefade_iron_ingot"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("piston"); needsTable = true;
+    } else if (recipe == "redstone_torch") {
+        if (!addIngredient(findId("redstone_wire"), 1u) ||
+            !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("redstone_torch");
+    } else if (recipe == "redstone_lamp") {
+        if (!addIngredient(findId("glowstone"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 4u)) return false;
+        outputId = findId("redstone_lamp"); needsTable = true;
+    } else if (recipe == "fence_gate") {
+        if (!addIngredient(findId("planks"), 2u) ||
+            !addIngredient(findId("minefade_stick"), 4u)) return false;
+        outputId = findId("fence_gate"); needsTable = true;
+    } else if (recipe == "sandstone") {
+        if (!addIngredient(findId("sand"), 4u)) return false;
+        outputId = findId("sandstone");
+    } else if (recipe == "stone_slab") {
+        if (!addIngredient(findId("stone"), 3u)) return false;
+        outputId = findId("stone_slab"); outputAmount = 6u; needsStonecutter = true;
+    } else if (recipe == "stone_brick_stairs" || recipe == "brick_stairs" ||
+               recipe == "nether_brick_stairs" || recipe == "sandstone_stairs" ||
+               recipe == "spruce_stairs" || recipe == "birch_stairs" ||
+               recipe == "jungle_stairs" || recipe == "acacia_stairs" ||
+               recipe == "dark_oak_stairs" || recipe == "cherry_stairs") {
+        std::string material = "planks";
+        if (recipe == "stone_brick_stairs") material = "stonebrick";
+        else if (recipe == "brick_stairs") material = "brick_block";
+        else if (recipe == "nether_brick_stairs") material = "nether_brick";
+        else if (recipe == "sandstone_stairs") material = "sandstone";
+        if (!addIngredient(findId(material), 6u)) return false;
+        outputId = findId(recipe); outputAmount = 4u;
+        needsStonecutter = material != "planks";
+        needsTable = material == "planks";
+    } else if (recipe == "spruce_door" || recipe == "birch_door" ||
+               recipe == "jungle_door" || recipe == "acacia_door" ||
+               recipe == "dark_oak_door") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId(recipe); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "spruce_fence_gate" || recipe == "birch_fence_gate" ||
+               recipe == "jungle_fence_gate" || recipe == "acacia_fence_gate" ||
+               recipe == "dark_oak_fence_gate") {
+        if (!addIngredient(findId("planks"), 2u) ||
+            !addIngredient(findId("minefade_stick"), 4u)) return false;
+        outputId = findId(recipe); needsTable = true;
+    } else if (recipe == "golden_rail") {
+        if (!addIngredient(findId("minefade_gold_ingot"), 6u) ||
+            !addIngredient(findId("minefade_stick"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("golden_rail"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "detector_rail") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u) ||
+            !addIngredient(findId("stone_pressure_plate"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("detector_rail"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "activator_rail") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u) ||
+            !addIngredient(findId("minefade_stick"), 2u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("activator_rail"); outputAmount = 6u; needsTable = true;
     } else {
         const std::size_t split = recipe.find('_');
         if (split == std::string::npos) return false;
@@ -2260,6 +2381,14 @@ bool Engine::CraftRecipe(const std::string& recipe) {
     }
     if (needsTable && !HasNearbyCraftingTable()) {
         ui_.SetChatMessage("Necesitas una mesa de trabajo cerca para fabricar este objeto.");
+        return false;
+    }
+    if (needsFurnace && !HasNearbyFurnace()) {
+        ui_.SetChatMessage("Necesitas un horno cerca para fundir este material.");
+        return false;
+    }
+    if (needsStonecutter && !HasNearbyStonecutter()) {
+        ui_.SetChatMessage("Necesitas un cortapiedras cerca para fabricar esta pieza.");
         return false;
     }
     // Craft against a private inventory copy. Either the ingredients and output
@@ -2384,7 +2513,13 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
     if (verb == "fabricar" || verb == "craft") {
         std::string recipe;
         input >> recipe;
-        if (recipe.empty()) return "Uso: /fabricar planks, sticks, table, torch o nombre de receta.";
+        if (recipe.empty() || recipe == "help" || recipe == "list")
+            return "Recetas: planks, sticks, table, torch, chest, furnace, glass, stone, "
+                   "wooden_door, trapdoor, ladder, fence, fence_gate, iron_bars, glass_pane, "
+                   "stonebrick, cobblestone_wall, nether_brick_fence, iron_block, gold_block, "
+                   "copper_block, diamond_block, emerald_block, coal_block, redstone_block, "
+                   "hopper, anvil, stonecutter, dropper, piston, redstone_torch, redstone_lamp, "
+                   "wooden/stone/copper/iron/gold/diamond/emerald tools and armor.";
         std::transform(recipe.begin(), recipe.end(), recipe.begin(),
             [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return CraftRecipe(recipe) ? "Fabricación completada: " + recipe + "." :
