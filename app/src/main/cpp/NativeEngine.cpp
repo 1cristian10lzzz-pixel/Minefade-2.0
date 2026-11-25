@@ -228,6 +228,12 @@ Java_com_minefade_nativeengine_NativeBridge_nativeGetQuickbarSnapshot(JNIEnv* en
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeGetProgressionSnapshot(JNIEnv* env, jclass) {
+    const std::string snapshot = minefade::GetEngine().ProgressionSnapshot();
+    return env->NewStringUTF(snapshot.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeExecuteCommand(JNIEnv* env, jclass, jstring command) {
     if (command == nullptr) return env->NewStringUTF("Comando vacío.");
     const char* chars = env->GetStringUTFChars(command, nullptr);
