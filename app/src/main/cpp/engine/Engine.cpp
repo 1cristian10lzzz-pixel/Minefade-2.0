@@ -1785,8 +1785,8 @@ void Engine::Render() {
             }
             const std::uint32_t intoLevel = progressionXp_ - spent;
             std::snprintf(status, sizeof(status),
-                          "NV %u · XP %u/%u · VIDA %.0f · COMIDA %.0f · FPS %.0f",
-                          level, intoLevel, needed, std::ceil(playerHealth_), std::floor(playerHunger_), fps_);
+                          "VIDA %.0f/20 · COMIDA %.0f/20 · NV %u · XP %u/%u · FPS %.0f",
+                          std::ceil(playerHealth_), std::floor(playerHunger_), level, intoLevel, needed, fps_);
         }
         ui_.SetStatus(status);
 
