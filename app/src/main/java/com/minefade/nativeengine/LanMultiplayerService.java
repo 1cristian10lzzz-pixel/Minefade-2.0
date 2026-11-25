@@ -58,12 +58,28 @@ public final class LanMultiplayerService implements Closeable {
         public final String host;
         public final int port;
         public final String contentFingerprint;
+        public final long worldSeed;
+        public final int gameMode;
+        public final boolean allowCheats;
+        public final boolean starterChest;
+        public final boolean flatWorld;
+        public final int difficulty;
+        public final boolean generateStructures;
 
-        GameInfo(String name, String host, int port, String contentFingerprint) {
+        GameInfo(String name, String host, int port, String contentFingerprint,
+                 long worldSeed, int gameMode, boolean allowCheats, boolean starterChest,
+                 boolean flatWorld, int difficulty, boolean generateStructures) {
             this.name = name == null || name.isEmpty() ? "Partida Minefade" : name;
             this.host = host;
             this.port = port;
             this.contentFingerprint = contentFingerprint == null ? "" : contentFingerprint;
+            this.worldSeed = worldSeed;
+            this.gameMode = Math.max(WorldManager.SURVIVAL, Math.min(WorldManager.ADVENTURE, gameMode));
+            this.allowCheats = allowCheats;
+            this.starterChest = starterChest;
+            this.flatWorld = flatWorld;
+            this.difficulty = Math.max(0, Math.min(3, difficulty));
+            this.generateStructures = generateStructures;
         }
 
         @Override public String toString() {
@@ -199,6 +215,13 @@ public final class LanMultiplayerService implements Closeable {
     private volatile String playerName = "Jugador";
     private volatile String advertisedName = "Minefade";
     private volatile String contentFingerprint = "";
+    private volatile long advertisedWorldSeed = 0x4D464445L;
+    private volatile int advertisedGameMode = WorldManager.SURVIVAL;
+    private volatile boolean advertisedAllowCheats;
+    private volatile boolean advertisedStarterChest;
+    private volatile boolean advertisedFlatWorld;
+    private volatile int advertisedDifficulty = 2;
+    private volatile boolean advertisedGenerateStructures = true;
 
     public LanMultiplayerService(Context context) {
         appContext = context.getApplicationContext();
@@ -241,6 +264,13 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     public void startHost(String nickname, Listener callback) {
+        startHost(nickname, 0x4D464445L, WorldManager.SURVIVAL, false, false,
+                false, 2, true, callback);
+    }
+
+    public void startHost(String nickname, long worldSeed, int gameMode, boolean allowCheats,
+                          boolean starterChest, boolean flatWorld, int difficulty,
+                          boolean generateStructures, Listener callback) {
         stopDiscovery();
         stopSession();
         listener = callback;
@@ -250,6 +280,13 @@ public final class LanMultiplayerService implements Closeable {
         localPlayerId = 0;
         playerNames.clear();
         playerNames.put(0, playerName);
+        advertisedWorldSeed = worldSeed;
+        advertisedGameMode = Math.max(WorldManager.SURVIVAL, Math.min(WorldManager.ADVENTURE, gameMode));
+        advertisedAllowCheats = allowCheats;
+        advertisedStarterChest = starterChest;
+        advertisedFlatWorld = flatWorld;
+        advertisedDifficulty = Math.max(0, Math.min(3, difficulty));
+        advertisedGenerateStructures = generateStructures;
         remotePlayers.clear();
         inboundBlockEdits.clear();
         postStatus("Preparando partida local…");
@@ -270,6 +307,13 @@ public final class LanMultiplayerService implements Closeable {
                 service.setPort(server.getLocalPort());
                 service.setAttribute("protocol", String.valueOf(PROTOCOL_VERSION));
                 service.setAttribute("content", contentFingerprint);
+                service.setAttribute("seed", Long.toString(advertisedWorldSeed));
+                service.setAttribute("mode", Integer.toString(advertisedGameMode));
+                service.setAttribute("cheats", Boolean.toString(advertisedAllowCheats));
+                service.setAttribute("chest", Boolean.toString(advertisedStarterChest));
+                service.setAttribute("flat", Boolean.toString(advertisedFlatWorld));
+                service.setAttribute("difficulty", Integer.toString(advertisedDifficulty));
+                service.setAttribute("structures", Boolean.toString(advertisedGenerateStructures));
                 NsdManager.RegistrationListener registration = new NsdManager.RegistrationListener() {
                     @Override public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
                         Log.e(TAG, "NSD registration failed: " + errorCode);
@@ -348,8 +392,16 @@ public final class LanMultiplayerService implements Closeable {
                             }
                             InetAddress address = info.getHost();
                             if (address == null || info.getPort() <= 0) return;
-                            GameInfo game = new GameInfo(info.getServiceName(),
-                                    address.getHostAddress(), info.getPort(), fingerprint);
+                            long worldSeed = parseLong(readNsdAttribute(info, "seed"), 0x4D464445L);
+                            int gameMode = parseInt(readNsdAttribute(info, "mode"), WorldManager.SURVIVAL);
+                            boolean allowCheats = Boolean.parseBoolean(readNsdAttribute(info, "cheats"));
+                            boolean starterChest = Boolean.parseBoolean(readNsdAttribute(info, "chest"));
+                            boolean flatWorld = Boolean.parseBoolean(readNsdAttribute(info, "flat"));
+                            int difficulty = parseInt(readNsdAttribute(info, "difficulty"), 2);
+                            boolean generateStructures = !"false".equalsIgnoreCase(readNsdAttribute(info, "structures"));
+                            GameInfo game = new GameInfo(info.getServiceName(), address.getHostAddress(),
+                                    info.getPort(), fingerprint, worldSeed, gameMode, allowCheats,
+                                    starterChest, flatWorld, difficulty, generateStructures);
                             discoveredGames.put(game.name, game);
                             notifyGames();
                         }
@@ -741,6 +793,11 @@ public final class LanMultiplayerService implements Closeable {
 
     private static String finite(float value) {
         return Float.isFinite(value) ? Float.toString(value) : "0";
+    }
+
+    private static long parseLong(String value, long fallback) {
+        try { return Long.parseLong(value); }
+        catch (NumberFormatException ignored) { return fallback; }
     }
 
     private static int parseInt(String value, int fallback) {
