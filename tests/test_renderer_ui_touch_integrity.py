@@ -11,6 +11,7 @@ ACTIVITY = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
 RML = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
 RML_GL = (CPP / "ui/RmlUiOpenGLES.cpp").read_text(encoding="utf-8")
 ENGINE = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
+RENDERER = (CPP / "render/WorldMeshRenderer.cpp").read_text(encoding="utf-8")
 
 
 def hud_document() -> str:
