@@ -60,7 +60,7 @@ def test_fallback_world_camera_touch_and_discrete_dpad_cancel_release():
     assert "attachFallbackHoldAction(crouch, 1);" in ACTIVITY
     assert "state == MotionEvent.ACTION_UP || state == MotionEvent.ACTION_CANCEL" in ACTIVITY
     assert "surfaceView.dispatchFallbackAction(action, false);" in ACTIVITY
-    assert "dispatchFallbackTouch(pointerAction, event.getPointerId(i)" not in ACTIVITY
+    assert "surfaceView.dispatchFallbackTouch(mapped, event.getPointerId(index)" in ACTIVITY
 
 
 def test_rmlui_texture_upload_saves_resets_and_restores_all_unpack_state():
