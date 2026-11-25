@@ -185,10 +185,10 @@ Java_com_minefade_nativeengine_NativeBridge_nativeSetStoragePath(JNIEnv* env, jc
 extern "C" JNIEXPORT void JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeSetWorldOptions(
         JNIEnv*, jclass, jint gameMode, jboolean allowCheats, jboolean starterChest, jlong seed,
-        jboolean flatWorld) {
+        jboolean flatWorld, jint difficulty, jboolean generateStructures) {
     minefade::GetEngine().SetWorldOptions(static_cast<int>(gameMode),
         allowCheats == JNI_TRUE, starterChest == JNI_TRUE, static_cast<std::uint32_t>(seed),
-        flatWorld == JNI_TRUE);
+        flatWorld == JNI_TRUE, static_cast<int>(difficulty), generateStructures == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT void JNICALL
