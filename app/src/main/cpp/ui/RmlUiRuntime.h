@@ -30,7 +30,7 @@ public:
     bool CrouchButtonAt(float x, float y) const;
     void UpdateAndRender();
     void SetStatus(const std::string& status);
-    void SetLeftHanded(bool enabled) { leftHanded_ = enabled; }
+    void SetLeftHanded(bool enabled);
     void SetControlMode(int mode);
     void SetStatusVisible(bool visible) { showStats_ = visible; }
     void SetTargetBlock(const std::string& name, float progress);
