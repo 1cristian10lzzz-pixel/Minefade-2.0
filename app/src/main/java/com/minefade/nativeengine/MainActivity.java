@@ -47,6 +47,13 @@ public final class MainActivity extends Activity {
     private final java.util.ArrayList<String> chatMessages = new java.util.ArrayList<>();
     private TextView activeChatHistory;
     private ScrollView activeChatScroll;
+    private final Runnable progressionRefresh = new Runnable() {
+        @Override public void run() {
+            if (!activityResumed || !engineReady || surfaceView == null) return;
+            surfaceView.requestProgressionSnapshot(MainActivity.this::updateProgressionPreferences);
+            mainHandler.postDelayed(this, 1000L);
+        }
+    };
     private final Runnable fallbackQuickbarRefresh = new Runnable() {
         @Override public void run() {
             if (fallbackOverlay == null || surfaceView == null || !engineReady) return;
@@ -128,6 +135,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showHome() {
+        mainHandler.removeCallbacks(progressionRefresh);
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
         mainHandler.removeCallbacks(fallbackQuickbarRefresh);
@@ -212,6 +220,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startGame(boolean multiplayer, int playerSlot, WorldManager.WorldInfo world) {
+        mainHandler.removeCallbacks(progressionRefresh);
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
         if (surfaceView != null) {
@@ -268,6 +277,8 @@ public final class MainActivity extends Activity {
                         engineReady = true;
                         mainHandler.removeCallbacks(engineTimeout);
                         mainHandler.postDelayed(exitPoll, 200L);
+                        mainHandler.removeCallbacks(progressionRefresh);
+                        mainHandler.post(progressionRefresh);
                         hideLoadingOverlay();
                         if (surfaceView != null && !surfaceView.isNativeHudAvailable()) {
                             android.util.Log.e("Minefade", "RmlUi unavailable; installing Android touch fallback: "
@@ -461,6 +472,30 @@ public final class MainActivity extends Activity {
             }
             return true;
         });
+    }
+
+    private void updateProgressionPreferences(String snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) return;
+        String[] values = snapshot.split("\\\\|", -1);
+        if (values.length != 7 || !"v1".equals(values[0])) return;
+        try {
+            int mined = Math.max(0, Integer.parseInt(values[1]));
+            int placed = Math.max(0, Integer.parseInt(values[2]));
+            int collected = Math.max(0, Integer.parseInt(values[3]));
+            int jumps = Math.max(0, Integer.parseInt(values[4]));
+            boolean entered = "1".equals(values[5]);
+            int xp = Math.max(0, Integer.parseInt(values[6]));
+            getSharedPreferences("minefade_ui", MODE_PRIVATE).edit()
+                    .putInt("achievement_blocks_mined", mined)
+                    .putInt("achievement_blocks_placed", placed)
+                    .putInt("achievement_items_collected", collected)
+                    .putInt("achievement_jumps", jumps)
+                    .putBoolean("achievement_world_entered", entered)
+                    .putInt("achievement_xp", xp)
+                    .apply();
+        } catch (NumberFormatException ignored) {
+            android.util.Log.w("Minefade", "Ignored malformed progression snapshot");
+        }
     }
 
     private void updateFallbackQuickbar(String snapshot) {
@@ -965,6 +1000,7 @@ public final class MainActivity extends Activity {
         activityResumed = false;
         mainHandler.removeCallbacks(exitPoll);
         mainHandler.removeCallbacks(engineTimeout);
+        mainHandler.removeCallbacks(progressionRefresh);
         if (surfaceView != null) {
             saveCurrentWorldPreview();
             surfaceView.pauseNativeEngine();
@@ -981,7 +1017,10 @@ public final class MainActivity extends Activity {
         if (surfaceView != null) {
             surfaceView.onResume();
             surfaceView.resumeNativeEngine();
-            if (engineReady) mainHandler.post(exitPoll);
+            if (engineReady) {
+                mainHandler.post(exitPoll);
+                mainHandler.post(progressionRefresh);
+            }
         }
     }
 
@@ -989,6 +1028,7 @@ public final class MainActivity extends Activity {
     protected void onDestroy() {
         mainHandler.removeCallbacks(exitPoll);
         mainHandler.removeCallbacks(engineTimeout);
+        mainHandler.removeCallbacks(progressionRefresh);
         if (lanMultiplayer != null) lanMultiplayer.close();
         if (soundEffects != null) soundEffects.release();
         super.onDestroy();
