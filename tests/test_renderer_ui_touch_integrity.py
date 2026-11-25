@@ -52,11 +52,15 @@ def test_surface_action_cancel_releases_all_motion_event_pointers():
     assert "NativeBridge.nativeTouch(3, pointerIds[i], pointerXs[i], pointerYs[i]);" in cancel_body
 
 
-def test_fallback_world_and_joystick_cancel_release_all_pointers():
-    assert ACTIVITY.count("action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_CANCEL") >= 2
-    assert ACTIVITY.count("action == MotionEvent.ACTION_CANCEL ? 3 : 2") >= 2
-    assert ACTIVITY.count("event.getPointerCount()") >= 2
-    assert "dispatchFallbackTouch(pointerAction, event.getPointerId(i)" in ACTIVITY
+def test_fallback_world_camera_touch_and_discrete_dpad_cancel_release():
+    assert "overlay.setOnTouchListener((view, event) -> dispatchFallbackWorldTouch(event));" in ACTIVITY
+    assert "FrameLayout joystick" not in ACTIVITY
+    for direction, action in (("up", 6), ("down", 7), ("left", 8), ("right", 9)):
+        assert f"attachFallbackHoldAction({direction}, {action});" in ACTIVITY
+    assert "attachFallbackHoldAction(crouch, 1);" in ACTIVITY
+    assert "state == MotionEvent.ACTION_UP || state == MotionEvent.ACTION_CANCEL" in ACTIVITY
+    assert "surfaceView.dispatchFallbackAction(action, false);" in ACTIVITY
+    assert "dispatchFallbackTouch(pointerAction, event.getPointerId(i)" not in ACTIVITY
 
 
 def test_rmlui_texture_upload_saves_resets_and_restores_all_unpack_state():
