@@ -2621,6 +2621,22 @@ bool Engine::CraftRecipe(const std::string& recipe) {
             !addIngredient(findId("minefade_stick"), 2u) ||
             !addIngredient(findId("redstone_wire"), 1u)) return false;
         outputId = findId("activator_rail"); outputAmount = 6u; needsTable = true;
+    } else if (const ModRecipeDefinition* modRecipe =
+                   ModContentRegistry::Instance().FindRecipe(recipe);
+               modRecipe != nullptr) {
+        for (const ModRecipeIngredient& ingredient : modRecipe->ingredients) {
+            const BlockId item = ResolveModBlockId(ingredient.itemId);
+            if (item == BlockId::Air ||
+                !addIngredient(static_cast<std::uint16_t>(item), ingredient.count)) return false;
+        }
+        const BlockId output = ResolveModBlockId(modRecipe->outputId);
+        if (output == BlockId::Air) return false;
+        outputId = static_cast<std::uint16_t>(output);
+        outputAmount = modRecipe->outputCount;
+        if (modRecipe->station == "crafting_table" || modRecipe->station == "anvil")
+            needsTable = true;
+        else if (modRecipe->station == "furnace") needsFurnace = true;
+        else if (modRecipe->station == "stonecutter") needsStonecutter = true;
     } else {
         const std::size_t split = recipe.find('_');
         if (split == std::string::npos) return false;
@@ -3239,9 +3255,26 @@ void Engine::RefreshCraftingUi() {
     std::string markup;
     markup.reserve(9000u);
     int index = 0;
-    const auto addRecipe = [&markup, &index](const std::string& recipe, const std::string& label) {
+    const auto escapeMarkup = [](std::string_view value) {
+        std::string escaped;
+        escaped.reserve(value.size());
+        for (const char c : value) {
+            switch (c) {
+                case '&': escaped += "&amp;"; break;
+                case '<': escaped += "&lt;"; break;
+                case '>': escaped += "&gt;"; break;
+                case '"': escaped += "&quot;"; break;
+                case '\\'': escaped += "&#39;"; break;
+                default: escaped.push_back(c); break;
+            }
+        }
+        return escaped;
+    };
+    const auto addRecipe = [&markup, &index, &escapeMarkup](
+            const std::string& recipe, const std::string& label) {
         markup += "<button id='crafting-recipe-" + std::to_string(index++) +
-            "' data-action='craft-" + recipe + "'>" + label + "</button>";
+            "' data-action='craft-" + escapeMarkup(recipe) + "'>" +
+            escapeMarkup(label) + "</button>";
     };
     markup += "<div class='recipe-category'>BÁSICOS</div>";
     addRecipe("planks", "Tronco → 4 tablones");
@@ -3285,6 +3318,18 @@ void Engine::RefreshCraftingUi() {
         for (const auto& item : gear) {
             std::string label = std::string(item.second) + " de " + tier.second;
             addRecipe(std::string(tier.first) + "_" + item.first, label);
+        }
+    }
+    const auto& modRecipes = ModContentRegistry::Instance().Recipes();
+    if (!modRecipes.empty()) {
+        markup += "<div class='recipe-category'>RECETAS DE MODS</div>";
+        for (const ModRecipeDefinition& recipe : modRecipes) {
+            const BlockId outputId = ResolveModBlockId(recipe.outputId);
+            const BlockDefinition* output = GetBlockDefinition(outputId);
+            const std::string outputName = output != nullptr ? output->nameEs : recipe.outputId;
+            const std::string label = recipe.name + " → " +
+                std::to_string(recipe.outputCount) + " " + outputName;
+            addRecipe(recipe.id, label);
         }
     }
     ui_.SetCraftingContents(markup);
