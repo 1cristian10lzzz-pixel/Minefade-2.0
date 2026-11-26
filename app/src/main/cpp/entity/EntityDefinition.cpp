@@ -5,7 +5,8 @@
 namespace minefade {
 namespace {
 bool SafeResourcePath(const std::string& path) {
-    if (path.empty() || path.front() == '/' || path.find("..") != std::string::npos ||
+    if (path.empty()) return true; // Animation/controller paths are optional.
+    if (path.front() == '/' || path.find("..") != std::string::npos ||
         path.find('\\') != std::string::npos) return false;
     return path.find(':') == std::string::npos;
 }
