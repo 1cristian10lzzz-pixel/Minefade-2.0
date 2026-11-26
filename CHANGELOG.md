@@ -1,5 +1,14 @@
 # Registro de cambios — Minefade 2.0
 
+## Auditoría y correcciones del renderer — noviembre de 2026
+- El pase de mundo ya no depende de que exista geometría opaca: agua/transparencias y entidades no quedan bloqueadas si una escena solo tiene geometría no opaca.
+- Las subidas de un chunk se preparan en VAO/VBO temporales para sus dos pases; la malla GPU anterior se conserva hasta que ambos pases se suben correctamente.
+- Se añaden pruebas de regresión para ambos fallos.
+- Pendiente estructural confirmado: el juego limita el meshing normal a un chunk por ciclo de 1/30 s desde el hilo de render; esto impide aprovechar el camino de dos workers. Hace falta una cola persistente con snapshots inmutables y validación de revisión.
+- Pendiente visual/rendimiento: el orden transparente se calcula por centro de chunk y no por superficies; el presupuesto GPU es fijo por nivel gráfico. Medir antes de cambiar el streaming de buffers.
+- No se cambian los formatos MFVOX ni IDs de bloques. El APK sigue necesitando CI correcto y pruebas en Android real antes de declararse estable.
+
+
 ## Actualización 2.2 — sistema de mods de datos ampliado
 - Se incorporan propiedades compatibles para velocidad agachada, velocidad pasiva/hostil, radios de huida y alerta, radio de aparición y límite de entidades.
 - Se añade aparición periódica y limitada de fauna pasiva a una distancia configurable del jugador; permanece desactivada en mods antiguos que no indiquen intervalo.
