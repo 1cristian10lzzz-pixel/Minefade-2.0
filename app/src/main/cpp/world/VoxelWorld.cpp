@@ -35,7 +35,7 @@ std::uint32_t Hash(std::uint32_t x) {
 float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 bool IsValidBlock(BlockId block) {
-    return static_cast<std::size_t>(block) < GetBlockDefinitionCount();
+    return GetBlockDefinition(block) != nullptr;
 }
 
 bool IsTargetable(BlockId block) {
