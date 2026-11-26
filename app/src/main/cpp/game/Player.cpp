@@ -34,6 +34,9 @@ int FloorToInt(float value) { return static_cast<int>(std::floor(value)); }
 
 std::uint16_t MaxToolDurability(const BlockDefinition* definition) {
     if (definition == nullptr) return 0u;
+    if (definition->durability > 0u &&
+        (definition->attackDamage > 0.0f || definition->preferredTool != BlockTool::None))
+        return definition->durability;
     const std::string_view key(definition->key);
     if (key.find("_pickaxe") == std::string_view::npos &&
         key.find("_axe") == std::string_view::npos &&
@@ -409,7 +412,9 @@ bool Inventory::EquipArmorFromSlot(std::size_t slot) {
     if (definition == nullptr) return false;
     const std::string_view key(definition->key);
     std::size_t armorSlot = 4u;
-    if (key.find("_helmet") != std::string_view::npos) armorSlot = 0u;
+    if (definition->armorSlot < equippedArmor.size()) {
+        armorSlot = definition->armorSlot;
+    } else if (key.find("_helmet") != std::string_view::npos) armorSlot = 0u;
     else if (key.find("_chestplate") != std::string_view::npos) armorSlot = 1u;
     else if (key.find("_leggings") != std::string_view::npos) armorSlot = 2u;
     else if (key.find("_boots") != std::string_view::npos) armorSlot = 3u;
