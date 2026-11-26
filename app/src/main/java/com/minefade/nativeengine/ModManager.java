@@ -339,6 +339,376 @@ public final class ModManager {
         }
     }
 
+    /**
+     * Installs a bounded MFMod v3 content pack. The package contains only data
+     * and allowlisted resources; no scripts, JAR/DEX or native libraries execute.
+     */
+    private ModInfo importMod3(Uri uri) {
+        File temporaryRoot = null;
+        try {
+            Map<String, byte[]> entries = new LinkedHashMap<>();
+            Set<String> seen = new HashSet<>();
+            int expanded = 0;
+            int entryCount = 0;
+            try (InputStream raw = context.getContentResolver().openInputStream(uri);
+                 InputStream bounded = raw == null ? null : new BoundedInputStream(raw, 20L * 1024L * 1024L);
+                 ZipInputStream zip = bounded == null ? null : new ZipInputStream(bounded)) {
+                if (zip == null) return null;
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (++entryCount > 257 || entry.isDirectory()) return null;
+                    String name = entry.getName();
+                    if (!isSafeMod3Entry(name) || !seen.add(name) || "manifest.json".equals(name))
+                        return null;
+                    int maximum = maxMod3EntryBytes(name);
+                    ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maximum, 4096));
+                    byte[] buffer = new byte[4096];
+                    int count;
+                    while ((count = zip.read(buffer)) != -1) {
+                        if (output.size() + count > maximum || expanded + count > 32 * 1024 * 1024)
+                            return null;
+                        output.write(buffer, 0, count);
+                        expanded += count;
+                    }
+                    byte[] bytes = output.toByteArray();
+                    if (name.endsWith(".rgba") && bytes.length != 1024) return null;
+                    entries.put(name, bytes);
+                    zip.closeEntry();
+                }
+            }
+
+            byte[] manifestBytes = entries.remove("manifest.json");
+            byte[] gameplayBytes = entries.get("data/gameplay.mfmod");
+            if (manifestBytes == null || manifestBytes.length == 0 || manifestBytes.length > 65536 ||
+                    gameplayBytes == null || gameplayBytes.length == 0) return null;
+            JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
+            Set<String> allowedKeys = new HashSet<>();
+            Collections.addAll(allowedKeys, "format", "id", "name", "version", "engine_min",
+                    "engine_max", "entry", "description", "capabilities", "dependencies", "files");
+            if (manifest.length() != allowedKeys.size()) return null;
+            Iterator<String> keyIterator = manifest.keys();
+            while (keyIterator.hasNext()) if (!allowedKeys.contains(keyIterator.next())) return null;
+            if (manifest.getInt("format") != 3 ||
+                    !"data/gameplay.mfmod".equals(manifest.getString("entry"))) return null;
+
+            String id = manifest.getString("id");
+            String name = manifest.getString("name");
+            String packageVersion = manifest.getString("version");
+            String minimum = manifest.getString("engine_min");
+            String maximum = manifest.getString("engine_max");
+            String description = manifest.getString("description");
+            if (!id.matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
+                    name.trim().isEmpty() || name.length() > 96 || description.length() > 512 ||
+                    !isSemanticVersion(packageVersion) || !isSemanticVersion(minimum) ||
+                    !isSemanticVersion(maximum) || compareVersions(minimum, maximum) > 0 ||
+                    compareVersions(minimum, currentEngineVersion()) > 0 ||
+                    compareVersions(currentEngineVersion(), maximum) > 0) return null;
+
+            JSONObject files = manifest.getJSONObject("files");
+            if (files.length() != entries.size() || files.length() > 256) return null;
+            Iterator<String> fileIterator = files.keys();
+            while (fileIterator.hasNext()) {
+                String relative = fileIterator.next();
+                byte[] bytes = entries.get(relative);
+                if (bytes == null || !isSafeMod3Entry(relative)) return null;
+                JSONObject record = files.getJSONObject(relative);
+                if (record.length() != 2 || record.getInt("size") != bytes.length ||
+                        !sha256(bytes).equals(record.getString("sha256"))) return null;
+            }
+
+            JSONObject dependencies = manifest.getJSONObject("dependencies");
+            if (dependencies.length() > 64) return null;
+            Iterator<String> dependencyIterator = dependencies.keys();
+            while (dependencyIterator.hasNext()) {
+                String dependency = dependencyIterator.next();
+                if (!dependency.matches("[a-z0-9][a-z0-9_.-]{1,63}") ||
+                        dependencies.getString(dependency).length() > 64) return null;
+            }
+            JSONArray capabilities = manifest.getJSONArray("capabilities");
+            Set<String> allowedCapabilities = new HashSet<>();
+            Collections.addAll(allowedCapabilities, "blocks", "items", "recipes", "entities",
+                    "biomes", "structures", "textures", "models", "animations", "sounds", "ui");
+            Set<String> declaredCapabilities = new HashSet<>();
+            for (int i = 0; i < capabilities.length(); ++i) {
+                String capability = capabilities.getString(i);
+                if (!allowedCapabilities.contains(capability) || !declaredCapabilities.add(capability))
+                    return null;
+            }
+            if (!validateMod3Definitions(entries, id, declaredCapabilities)) return null;
+
+            File checkRoot = new File(modsDirectory, "." + id + "-" + System.nanoTime() + ".part");
+            if (!checkRoot.mkdirs()) return null;
+            temporaryRoot = checkRoot;
+            writeMod3File(checkRoot, "manifest.json", manifestBytes);
+            for (Map.Entry<String, byte[]> entry : entries.entrySet())
+                writeMod3File(checkRoot, entry.getKey(), entry.getValue());
+
+            File gameplayFile = new File(new File(checkRoot, "data"), "gameplay.mfmod");
+            ModInfo validated = read(gameplayFile);
+            if (validated == null || !id.equals(validated.id) || !name.equals(validated.name) ||
+                    !"false".equals(validated.settings.get("enabled"))) return null;
+            for (ModInfo existing : listMods()) {
+                if (existing.id.equalsIgnoreCase(id)) return existing;
+            }
+            File destination = new File(modsDirectory, id);
+            if (destination.exists()) return null;
+            Os.rename(checkRoot.getAbsolutePath(), destination.getAbsolutePath());
+            temporaryRoot = null;
+            return read(new File(new File(destination, "data"), "gameplay.mfmod"));
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (temporaryRoot != null) deleteTree(temporaryRoot);
+        }
+    }
+
+    private static final class BoundedInputStream extends FilterInputStream {
+        private final long maximum;
+        private long consumed;
+        BoundedInputStream(InputStream input, long maximum) {
+            super(input);
+            this.maximum = maximum;
+        }
+        @Override public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0 && ++consumed > maximum)
+                throw new IOException("El ZIP comprimido supera 20 MiB.");
+            return value;
+        }
+        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+            int allowed = (int)Math.min(length, maximum - consumed + 1L);
+            int count = super.read(buffer, offset, allowed);
+            if (count > 0) {
+                consumed += count;
+                if (consumed > maximum)
+                    throw new IOException("El ZIP comprimido supera 20 MiB.");
+            }
+            return count;
+        }
+    }
+
+    private static boolean isSafeMod3Entry(String name) {
+        if (name == null || name.isEmpty() || name.startsWith("/") ||
+                name.indexOf('\\\\') >= 0 || name.indexOf(':') >= 0) return false;
+        String[] parts = name.split("/", -1);
+        for (String part : parts)
+            if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
+        Set<String> dataFiles = new HashSet<>();
+        Collections.addAll(dataFiles, "data/gameplay.mfmod", "data/blocks.json", "data/items.json",
+                "data/recipes.json", "data/entities.json", "data/biomes.json",
+                "data/structures.json", "data/ui.json", "data/sounds.json");
+        if (dataFiles.contains(name)) return true;
+        if (!name.startsWith("assets/") || parts.length < 3) return false;
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".rgba") || lower.endsWith(".png") || lower.endsWith(".webp") ||
+                lower.endsWith(".mfmodel") || lower.endsWith(".json") || lower.endsWith(".wav") ||
+                lower.endsWith(".ogg") || lower.endsWith(".rml") || lower.endsWith(".rcss");
+    }
+
+    private static int maxMod3EntryBytes(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".mfmodel")) return 8 * 1024 * 1024;
+        if (lower.endsWith(".wav") || lower.endsWith(".ogg")) return 4 * 1024 * 1024;
+        if (lower.endsWith(".rgba") || lower.endsWith(".png") || lower.endsWith(".webp"))
+            return 2 * 1024 * 1024;
+        if (lower.endsWith(".json") || lower.endsWith(".rml") || lower.endsWith(".rcss") ||
+                lower.endsWith(".mfmod")) return 1024 * 1024;
+        return 0;
+    }
+
+    private static void writeMod3File(File root, String relative, byte[] bytes) throws IOException {
+        File target = new File(root, relative.replace("/", File.separator));
+        String rootPath = root.getCanonicalPath() + File.separator;
+        if (!target.getCanonicalPath().startsWith(rootPath)) throw new IOException("Ruta fuera del paquete.");
+        File parent = target.getParentFile();
+        if (parent == null || (!parent.isDirectory() && !parent.mkdirs()))
+            throw new IOException("No se pudo crear el directorio del recurso.");
+        try (FileOutputStream output = new FileOutputStream(target, false)) {
+            output.write(bytes);
+            output.flush();
+            output.getFD().sync();
+        }
+    }
+
+    private static boolean validMod3Id(String value, String modId) {
+        if (value == null || !value.startsWith(modId + ":")) return false;
+        return value.substring(modId.length() + 1).matches("[a-z0-9][a-z0-9_.-]{1,63}");
+    }
+
+    private static boolean validateMod3Definitions(Map<String, byte[]> files, String modId,
+                                                    Set<String> capabilities) {
+        try {
+            byte[] raw = files.get("data/blocks.json");
+            if (raw != null) {
+                if (!capabilities.contains("blocks")) return false;
+                JSONArray blocks = new JSONArray(new String(raw, StandardCharsets.UTF_8));
+                if (blocks.length() > 256) return false;
+                Set<String> ids = new HashSet<>();
+                for (int i = 0; i < blocks.length(); i++) {
+                    JSONObject block = blocks.getJSONObject(i);
+                    String id = block.getString("id");
+                    if (!validMod3Id(id, modId) || !ids.add(id) ||
+                            block.getString("name").trim().isEmpty() ||
+                            block.getString("name").length() > 96 ||
+                            !isFiniteInRange(block.optString("hardness", "1"), 0.0f, 100.0f) ||
+                            !isIntegerInRange(block.optString("stack_limit", "64"), 1, 999)) return false;
+                    String shape = block.optString("shape", "cube");
+                    if (!("cube".equals(shape) || "slab".equals(shape) || "stairs".equals(shape) ||
+                            "cross_plant".equals(shape) || "thin".equals(shape) || "pane".equals(shape) ||
+                            "fence".equals(shape) || "door".equals(shape) || "trapdoor".equals(shape)))
+                        return false;
+                    JSONObject textures = block.getJSONObject("textures");
+                    for (String face : new String[]{"top", "side", "bottom"}) {
+                        String resource = textures.getString(face);
+                        byte[] pixels = files.get(resource);
+                        if (pixels == null || !resource.endsWith(".rgba") || pixels.length != 1024) return false;
+                    }
+                }
+            }
+            raw = files.get("data/items.json");
+            if (raw != null) {
+                if (!capabilities.contains("items")) return false;
+                JSONArray items = new JSONArray(new String(raw, StandardCharsets.UTF_8));
+                if (items.length() > 256) return false;
+                Set<String> ids = new HashSet<>();
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.getJSONObject(i);
+                    String id = item.getString("id");
+                    String icon = item.getString("icon");
+                    byte[] pixels = files.get(icon);
+                    String type = item.optString("type", "item");
+                    if (!validMod3Id(id, modId) || !ids.add(id) ||
+                            item.getString("name").trim().isEmpty() || pixels == null ||
+                            !icon.endsWith(".rgba") || pixels.length != 1024 ||
+                            !isIntegerInRange(item.optString("stack_limit", "64"), 1, 999) ||
+                            !("item".equals(type) || "weapon".equals(type) ||
+                              "tool".equals(type) || "armor".equals(type))) return false;
+                    if ("weapon".equals(type) || "tool".equals(type)) {
+                        if (!isFiniteInRange(item.optString("damage", "1"), 0.0f, 100.0f) ||
+                                !isIntegerInRange(item.optString("durability", "100"), 1, 100000)) return false;
+                    }
+                    if ("armor".equals(type)) {
+                        String slot = item.optString("armor_slot", "");
+                        if (!("helmet".equals(slot) || "chestplate".equals(slot) ||
+                                "leggings".equals(slot) || "boots".equals(slot)) ||
+                                !isIntegerInRange(item.optString("protection", "1"), 0, 20) ||
+                                !isIntegerInRange(item.optString("durability", "100"), 1, 100000))
+                            return false;
+                    }
+                }
+            }
+            raw = files.get("data/recipes.json");
+            if (raw != null) {
+                if (!capabilities.contains("recipes")) return false;
+                JSONArray recipes = new JSONArray(new String(raw, StandardCharsets.UTF_8));
+                if (recipes.length() > 512) return false;
+                Set<String> ids = new HashSet<>();
+                for (int i = 0; i < recipes.length(); i++) {
+                    JSONObject recipe = recipes.getJSONObject(i);
+                    String id = recipe.getString("id");
+                    if (!validMod3Id(id, modId) || !ids.add(id)) return false;
+                    JSONObject output = recipe.getJSONObject("output");
+                    if (!validMod3Id(output.getString("id"), modId) ||
+                            !isIntegerInRange(output.optString("count", "1"), 1, 999)) return false;
+                    JSONArray ingredients = recipe.getJSONArray("ingredients");
+                    if (ingredients.length() < 1 || ingredients.length() > 9) return false;
+                    for (int j = 0; j < ingredients.length(); j++) {
+                        JSONObject ingredient = ingredients.getJSONObject(j);
+                        if (!validMod3Id(ingredient.getString("id"), modId) ||
+                                !isIntegerInRange(ingredient.optString("count", "1"), 1, 999)) return false;
+                    }
+                }
+            }
+            raw = files.get("data/entities.json");
+            if (raw != null) {
+                if (!capabilities.contains("entities")) return false;
+                JSONArray entities = new JSONArray(new String(raw, StandardCharsets.UTF_8));
+                if (entities.length() > 128) return false;
+                Set<String> ids = new HashSet<>();
+                for (int i = 0; i < entities.length(); i++) {
+                    JSONObject entity = entities.getJSONObject(i);
+                    String id = entity.getString("id");
+                    String model = entity.getString("model");
+                    String texture = entity.getString("texture");
+                    if (!validMod3Id(id, modId) || !ids.add(id) ||
+                            !model.endsWith(".mfmodel") || !files.containsKey(model) ||
+                            !files.containsKey(texture) ||
+                            !(texture.endsWith(".rgba") || texture.endsWith(".png") || texture.endsWith(".webp")) ||
+                            !isFiniteInRange(entity.optString("width", "0.8"), 0.1f, 16.0f) ||
+                            !isFiniteInRange(entity.optString("height", "1.0"), 0.1f, 32.0f) ||
+                            !isFiniteInRange(entity.optString("eye_height", "0.7"), 0.1f, 32.0f))
+                        return false;
+                }
+            }
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean isValidInstalledV3Package(File gameplayFile, Map<String,String> gameplayValues) {
+        File manifestFile = packageManifestFor(gameplayFile);
+        if (manifestFile == null || manifestFile.length() <= 0L || manifestFile.length() > 65536L)
+            return false;
+        try {
+            byte[] manifestBytes = readBoundedFile(manifestFile, 65536);
+            JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
+            Set<String> required = new HashSet<>();
+            Collections.addAll(required, "format", "id", "name", "version", "engine_min",
+                    "engine_max", "entry", "description", "capabilities", "dependencies", "files");
+            if (manifest.length() != required.size()) return false;
+            Iterator<String> keys = manifest.keys();
+            while (keys.hasNext()) if (!required.contains(keys.next())) return false;
+            if (manifest.getInt("format") != 3 ||
+                    !"data/gameplay.mfmod".equals(manifest.getString("entry")) ||
+                    !gameplayValues.get("id").equals(manifest.getString("id")) ||
+                    !gameplayValues.get("name").equals(manifest.getString("name"))) return false;
+            String version = manifest.getString("version");
+            String minimum = manifest.getString("engine_min");
+            String maximum = manifest.getString("engine_max");
+            if (!isSemanticVersion(version) || !isSemanticVersion(minimum) ||
+                    !isSemanticVersion(maximum) || compareVersions(minimum, maximum) > 0 ||
+                    compareVersions(minimum, currentEngineVersion()) > 0 ||
+                    compareVersions(currentEngineVersion(), maximum) > 0) return false;
+            JSONObject files = manifest.getJSONObject("files");
+            if (files.length() <= 0 || files.length() > 256) return false;
+            File root = gameplayFile.getParentFile().getParentFile();
+            String rootCanonical = root.getCanonicalPath() + File.separator;
+            Iterator<String> fileKeys = files.keys();
+            int seen = 0;
+            while (fileKeys.hasNext()) {
+                String relative = fileKeys.next();
+                if (!isSafeMod3Entry(relative)) return false;
+                File target = new File(root, relative.replace("/", File.separator));
+                if (!target.getCanonicalPath().startsWith(rootCanonical) ||
+                        !target.isFile()) return false;
+                JSONObject record = files.getJSONObject(relative);
+                if (record.length() != 2 || record.getLong("size") != target.length() ||
+                        target.length() > maxMod3EntryBytes(relative) ||
+                        !record.getString("sha256").equals(sha256(readBoundedFile(target, maxMod3EntryBytes(relative)))))
+                    return false;
+                seen++;
+            }
+            return seen == files.length();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static byte[] readBoundedFile(File file, int maximum) throws IOException {
+        if (file.length() < 0 || file.length() > maximum) throw new IOException("Archivo demasiado grande.");
+        try (InputStream input = new FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream((int)file.length())) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > maximum) throw new IOException("Archivo demasiado grande.");
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        }
+    }
+
     private static void deleteTree(File file) {
         if (file == null || !file.exists()) return;
         File[] children = file.listFiles();
