@@ -1107,36 +1107,199 @@ def main():
     print(f'Atlas SHA-256: {atlas_sha256}')
     # Compact native registry.
     h=[]
-    h += ['#pragma once','#include <cstddef>','#include <cstdint>','#include <string_view>','namespace minefade {',
+    h += ['#pragma once','#include <cstddef>','#include <cstdint>','#include <string>','#include <string_view>','namespace minefade {',
           'enum class BlockId : std::uint16_t {']
     for idx,(key,_) in enumerate(entries): h.append(f'    {names[idx]} = {idx},')
     h += ['    Count = '+str(len(entries)),'};',
           'enum class BlockShape : std::uint8_t { None, Cube, Slab, Stairs, CrossPlant, Thin, Pane, Fence, Door, Trapdoor, Fluid, Scaffolding };',
           'enum class BlockTool : std::uint8_t { None, Pickaxe, Axe, Shovel, Shears };',
           'enum BlockFlags : std::uint16_t { BlockCollidable=1, BlockOpaque=2, BlockTransparent=4, BlockFluid=8, BlockPlant=16, BlockEmissive=32, BlockPlaceable=64 };',
-          'struct BlockDefinition { BlockId id; const char* key; const char* nameEs; const char* sound; const char* textureTop; const char* textureSide; const char* textureBottom; std::uint16_t tileTop, tileSide, tileBottom; float hardness; std::uint16_t dropId; std::uint8_t stackLimit; std::uint8_t lightLevel; std::uint16_t flags; BlockShape shape; BlockTool preferredTool; };',
+          'struct BlockDefinition {',
+          '    BlockId id; const char* key; const char* nameEs; const char* sound;',
+          '    const char* textureTop; const char* textureSide; const char* textureBottom;',
+          '    std::uint16_t tileTop, tileSide, tileBottom; float hardness;',
+          '    std::uint16_t dropId; std::uint8_t stackLimit; std::uint8_t lightLevel;',
+          '    std::uint16_t flags; BlockShape shape; BlockTool preferredTool;',
+          '    float attackDamage{0.0f}; std::uint16_t durability{0u};',
+          '    std::uint8_t armorProtection{0u}; std::uint8_t armorSlot{255u};',
+          '};',
+          'struct ModBlockRegistration {',
+          '    std::string key, nameEs, sound, textureTop, textureSide, textureBottom;',
+          '    std::uint16_t tileTop{0u}, tileSide{0u}, tileBottom{0u};',
+          '    float hardness{1.0f}; std::uint16_t dropId{0u};',
+          '    std::uint8_t stackLimit{64u}, lightLevel{0u};',
+          '    std::uint16_t flags{BlockCollidable | BlockOpaque | BlockPlaceable};',
+          '    BlockShape shape{BlockShape::Cube}; BlockTool preferredTool{BlockTool::None};',
+          '    float attackDamage{0.0f}; std::uint16_t durability{0u};',
+          '    std::uint8_t armorProtection{0u}, armorSlot{255u};',
+          '};',
           'const BlockDefinition* GetBlockDefinition(BlockId id) noexcept;',
           'const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept;',
           'std::size_t GetBlockDefinitionCount() noexcept;',
+          'const BlockDefinition* GetBlockDefinitionByIndex(std::size_t index) noexcept;',
+          'bool RegisterModBlock(ModBlockRegistration definition, BlockId* registeredId = nullptr, std::string* error = nullptr);',
+          'void ClearModBlockDefinitions() noexcept;',
+          'void SetBlockAtlasDimensions(std::size_t width, std::size_t height) noexcept;',
           'bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept;',
           'void GetAtlasUv(std::uint16_t tile, float& u0, float& v0, float& u1, float& v1) noexcept;',
           '} // namespace minefade']
     OUT_H.write_text('\n'.join(h)+'\n',encoding='utf-8')
     shapes=['None','Cube','Slab','Stairs','CrossPlant','Thin','Pane','Fence','Door','Trapdoor','Fluid','Scaffolding']
     tools=['None','Pickaxe','Axe','Shovel','Shears']
-    c=['#include "BlockRegistry.h"','#include "BlockAtlasManifest.h"','#include <algorithm>','#include <array>','#include <cmath>','namespace minefade {','namespace {',f'constexpr std::array<BlockDefinition, {len(catalogue)}> kBlocks{{{{']
+    dynamic_cpp = r"""namespace {
+struct DynamicBlockStorage {
+    std::string key;
+    std::string name;
+    std::string sound;
+    std::string top;
+    std::string side;
+    std::string bottom;
+    BlockDefinition definition{};
+};
+std::map<std::uint16_t, std::unique_ptr<DynamicBlockStorage>> gDynamicBlocks;
+std::unordered_map<std::string, std::uint16_t> gDynamicKeys;
+std::size_t gAtlasWidth = kBlockAtlasWidth;
+std::size_t gAtlasHeight = kBlockAtlasHeight;
+
+std::uint16_t StableModBlockId(std::string_view key) noexcept {
+    std::uint32_t hash = 2166136261u;
+    for (const unsigned char value : key) {
+        hash ^= static_cast<std::uint32_t>(value);
+        hash *= 16777619u;
+    }
+    constexpr std::uint32_t first = static_cast<std::uint32_t>(BlockId::Count);
+    constexpr std::uint32_t span = 65536u - first;
+    return static_cast<std::uint16_t>(first + (hash % span));
+}
+}
+
+const BlockDefinition* GetBlockDefinition(BlockId id) noexcept {
+    const auto index = static_cast<std::size_t>(id);
+    if (index < kBlocks.size()) return &kBlocks[index];
+    const auto found = gDynamicBlocks.find(static_cast<std::uint16_t>(index));
+    return found == gDynamicBlocks.end() ? nullptr : &found->second->definition;
+}
+
+const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept {
+    for (const auto& block : kBlocks) if (key == block.key) return &block;
+    const auto found = gDynamicKeys.find(std::string(key));
+    if (found == gDynamicKeys.end()) return nullptr;
+    return GetBlockDefinition(static_cast<BlockId>(found->second));
+}
+
+std::size_t GetBlockDefinitionCount() noexcept {
+    return kBlocks.size() + gDynamicBlocks.size();
+}
+
+const BlockDefinition* GetBlockDefinitionByIndex(std::size_t index) noexcept {
+    if (index < kBlocks.size()) return &kBlocks[index];
+    index -= kBlocks.size();
+    for (const auto& entry : gDynamicBlocks) {
+        if (index == 0u) return &entry.second->definition;
+        --index;
+    }
+    return nullptr;
+}
+
+bool RegisterModBlock(ModBlockRegistration source, BlockId* registeredId, std::string* error) {
+    if (error != nullptr) error->clear();
+    const auto fail = [error](const char* message) {
+        if (error != nullptr) *error = message;
+        return false;
+    };
+    if (source.key.size() < 4u || source.key.size() > 129u ||
+        source.key.find(':') == std::string::npos ||
+        source.key.find('/') != std::string::npos ||
+        source.key.find("..") != std::string::npos) return fail("invalid namespaced block id");
+    for (const unsigned char c : source.key) {
+        const bool allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                             c == '_' || c == '-' || c == '.' || c == ':';
+        if (!allowed) return fail("block id contains unsupported characters");
+    }
+    if (source.nameEs.empty() || source.nameEs.size() > 96u ||
+        !std::isfinite(source.hardness) || source.hardness < 0.0f ||
+        source.hardness > 100.0f || source.stackLimit == 0u ||
+        source.stackLimit > 99u || source.lightLevel > 15u ||
+        !std::isfinite(source.attackDamage) || source.attackDamage < 0.0f ||
+        source.attackDamage > 100.0f) return fail("invalid block/item properties");
+    if (source.tileTop >= 65535u || source.tileSide >= 65535u ||
+        source.tileBottom >= 65535u) return fail("invalid texture tile index");
+    if (gDynamicKeys.find(source.key) != gDynamicKeys.end())
+        return fail("duplicate dynamic block id");
+    const std::uint16_t numericId = StableModBlockId(source.key);
+    if (numericId < static_cast<std::uint16_t>(BlockId::Count) ||
+        gDynamicBlocks.find(numericId) != gDynamicBlocks.end())
+        return fail("stable block id collision; choose a different namespaced id");
+
+    auto storage = std::make_unique<DynamicBlockStorage>();
+    storage->key = std::move(source.key);
+    storage->name = std::move(source.nameEs);
+    storage->sound = std::move(source.sound);
+    storage->top = std::move(source.textureTop);
+    storage->side = std::move(source.textureSide);
+    storage->bottom = std::move(source.textureBottom);
+    storage->definition = BlockDefinition{
+        static_cast<BlockId>(numericId), storage->key.c_str(), storage->name.c_str(),
+        storage->sound.c_str(), storage->top.c_str(), storage->side.c_str(),
+        storage->bottom.c_str(), source.tileTop, source.tileSide, source.tileBottom,
+        source.hardness, source.dropId, source.stackLimit, source.lightLevel, source.flags,
+        source.shape, source.preferredTool, source.attackDamage, source.durability,
+        source.armorProtection, source.armorSlot
+    };
+    gDynamicKeys.emplace(storage->key, numericId);
+    gDynamicBlocks.emplace(numericId, std::move(storage));
+    if (registeredId != nullptr) *registeredId = static_cast<BlockId>(numericId);
+    return true;
+}
+
+void ClearModBlockDefinitions() noexcept {
+    gDynamicKeys.clear();
+    gDynamicBlocks.clear();
+}
+
+void SetBlockAtlasDimensions(std::size_t width, std::size_t height) noexcept {
+    if (width >= kBlockAtlasCellSize && width <= 8192u &&
+        height >= kBlockAtlasCellSize && height <= 16384u &&
+        width % kBlockAtlasColumns == 0u) {
+        gAtlasWidth = width;
+        gAtlasHeight = height;
+    }
+}
+
+bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept {
+    const auto* block = GetBlockDefinition(id);
+    return block && (block->flags & static_cast<std::uint16_t>(flag)) != 0;
+}
+
+void GetAtlasUv(std::uint16_t tile, float& u0, float& v0,
+                float& u1, float& v1) noexcept {
+    const std::size_t tileIndex = static_cast<std::size_t>(tile);
+    const std::size_t availableRows = gAtlasHeight / kBlockAtlasCellSize;
+    const std::size_t tileCount = std::min(
+        GetBlockDefinitionCount() * 3u, availableRows * kBlockAtlasColumns);
+    if (tileIndex >= tileCount) {
+        u0 = v0 = u1 = v1 = 0.0f;
+        return;
+    }
+    const std::size_t col = tileIndex % kBlockAtlasColumns;
+    const std::size_t row = tileIndex / kBlockAtlasColumns;
+    const float atlasWidth = static_cast<float>(gAtlasWidth);
+    const float atlasHeight = static_cast<float>(gAtlasHeight);
+    const float x = static_cast<float>(col * kBlockAtlasCellSize + kBlockAtlasPadding);
+    const float y = static_cast<float>(row * kBlockAtlasCellSize + kBlockAtlasPadding);
+    u0 = (x + 0.5f) / atlasWidth;
+    u1 = (x + static_cast<float>(kBlockAtlasTileSize) - 0.5f) / atlasWidth;
+    v0 = (y + 0.5f) / atlasHeight;
+    v1 = (y + static_cast<float>(kBlockAtlasTileSize) - 0.5f) / atlasHeight;
+}
+"""
+    c=['#include "BlockRegistry.h"','#include "BlockAtlasManifest.h"','#include <algorithm>','#include <array>','#include <cmath>','#include <cstdint>','#include <limits>','#include <memory>','#include <map>','#include <string>','#include <unordered_map>','namespace minefade {','namespace {',f'constexpr std::array<BlockDefinition, {len(catalogue)}> kBlocks{{{{']
     for d in catalogue:
         c.append('    BlockDefinition{BlockId::%s, "%s", "%s", "%s", "%s", "%s", "%s", %d, %d, %d, %.2ff, %d, %d, %d, %d, BlockShape::%s, BlockTool::%s},' % (
             d['enum'],d['key'],d['name_es'].replace('\\','\\\\').replace('"','\\"'),d['sound'],
             d['texture_aliases']['top'],d['texture_aliases']['side'],d['texture_aliases']['bottom'],
             d['atlas']['top'],d['atlas']['side'],d['atlas']['bottom'],d['hardness'],d['drop_id'],d['stack_limit'],d['light'],d['flags'],d['shape'],d['tool']))
-    c += ['}};','} // namespace',
-          'const BlockDefinition* GetBlockDefinition(BlockId id) noexcept { const auto index=static_cast<std::size_t>(id); return index<kBlocks.size()?&kBlocks[index]:nullptr; }',
-          'const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept { for (const auto& block:kBlocks) if (key==block.key) return &block; return nullptr; }',
-          'std::size_t GetBlockDefinitionCount() noexcept { return kBlocks.size(); }',
-          'bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept { const auto* block=GetBlockDefinition(id); return block && (block->flags & static_cast<std::uint16_t>(flag))!=0; }',
-          f'void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept {{ const std::size_t tileIndex=static_cast<std::size_t>(tile); const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (tileIndex>=tileCount || tileIndex>=kBlockAtlasTileCount) {{ u0=v0=u1=v1=0.0f; return; }} const std::size_t col=tileIndex%kBlockAtlasColumns,row=tileIndex/kBlockAtlasColumns; const float atlasWidth=static_cast<float>(kBlockAtlasWidth),atlasHeight=static_cast<float>(kBlockAtlasHeight); const float x=static_cast<float>(col*kBlockAtlasCellSize+kBlockAtlasPadding),y=static_cast<float>(row*kBlockAtlasCellSize+kBlockAtlasPadding); u0=(x+0.5f)/atlasWidth; u1=(x+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasWidth; v0=(y+0.5f)/atlasHeight; v1=(y+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasHeight; }}',
-          '} // namespace minefade']
+    c += ['}};'] + dynamic_cpp.splitlines() + ['} // namespace minefade']
     OUT_CPP.write_text('\n'.join(c)+'\n',encoding='utf-8')
     md=['# Minefade — catálogo de bloques base 1.8 y extensiones modernas','',f'**Entradas registradas: {len(catalogue)}.** Cada ID tiene nombre en español, clase geométrica, propiedades físicas, resistencia, herramienta preferida, sonido de material, alias de textura y tres celdas propias de atlas (superior/lateral/inferior).','', 'Las definiciones de nombres y alias proceden del `blocks.json` del APK aportado. Las texturas del atlas son pixel-art procedimental original generado por Minefade; no se redistribuyen los PNG de Minecraft.','', '| ID | Nombre Minefade | Clave de origen | Forma | Resistencia | Herramienta |','|---:|---|---|---|---:|---|']
     for d in catalogue: md.append(f"| {d['id']} | {d['name_es']} | `{d['key']}` | {d['shape']} | {d['hardness']} | {d['tool']} |")
