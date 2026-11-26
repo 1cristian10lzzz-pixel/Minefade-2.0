@@ -161,6 +161,7 @@ void ModContentRegistry::Clear() noexcept {
     biomes_.clear();
     structures_.clear();
     entities_.clear();
+    textureTiles_.clear();
 }
 
 bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
@@ -202,7 +203,7 @@ bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
     if (fsError) { error = "no se pudo recorrer la carpeta de mods"; return false; }
     std::sort(packages.begin(), packages.end());
 
-    std::uint32_t nextTile = static_cast<std::uint32_t>(kBlockAtlasTileCount);
+    std::uint16_t nextTile = static_cast<std::uint16_t>(kBlockAtlasTileCount);
     std::unordered_map<std::string, std::uint16_t> textureTiles;
     std::set<std::string> packageIds;
     for (const auto& package : packages) {
@@ -225,7 +226,7 @@ bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
             return false;
         }
         if (!LoadPackage(package, expandedAtlas, baseAtlasWidth,
-                         expandedAtlasHeight, *reinterpret_cast<std::uint16_t*>(&nextTile),
+                         expandedAtlasHeight, nextTile,
                          error)) return false;
     }
     // The runtime atlas keeps the original 32-column cell layout and only grows
@@ -243,8 +244,11 @@ bool ModContentRegistry::RegisterTexture(const std::filesystem::path& packageRoo
                                          std::uint16_t& tile, std::string& error) {
     if (!SafeAssetPath(relativePath)) { error = "ruta de textura no permitida"; return false; }
     const std::string cacheKey = packageRoot.generic_string() + "|" + std::string(relativePath);
-    static std::unordered_map<std::string, std::uint16_t> unusedTextureCache;
-    (void)unusedTextureCache;
+    const auto cached = textureTiles_.find(cacheKey);
+    if (cached != textureTiles_.end()) {
+        tile = cached->second;
+        return true;
+    }
     std::vector<std::uint8_t> pixels;
     if (!ReadFile(packageRoot / std::filesystem::path(relativePath), 1024u, pixels) ||
         pixels.size() != 1024u) {
@@ -278,7 +282,7 @@ bool ModContentRegistry::RegisterTexture(const std::filesystem::path& packageRoo
             std::copy_n(pixels.data() + sourceIndex, 4u, atlas.data() + targetIndex);
         }
     }
-    (void)cacheKey;
+    textureTiles_.emplace(cacheKey, tile);
     return true;
 }
 
