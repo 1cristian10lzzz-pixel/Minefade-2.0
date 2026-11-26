@@ -3264,7 +3264,7 @@ void Engine::RefreshCraftingUi() {
                 case '<': escaped += "&lt;"; break;
                 case '>': escaped += "&gt;"; break;
                 case '"': escaped += "&quot;"; break;
-                case '\\'': escaped += "&#39;"; break;
+                case 39: escaped += "&#39;"; break;
                 default: escaped.push_back(c); break;
             }
         }
