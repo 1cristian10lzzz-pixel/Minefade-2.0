@@ -91,6 +91,7 @@ public final class ModManager {
         if (uri == null) return null;
         String raw = new File(uri.getLastPathSegment() == null ? "paquete.mfmod"
                 : uri.getLastPathSegment()).getName();
+        if (raw.toLowerCase(Locale.ROOT).endsWith(".mfmod3")) return importMod3(uri);
         if (raw.toLowerCase(Locale.ROOT).endsWith(".mfmod2")) return importMod2(uri);
         String safe = raw.replaceAll("[^a-zA-Z0-9._-]", "_");
         String lowerName = safe.toLowerCase(Locale.ROOT);
@@ -193,7 +194,15 @@ public final class ModManager {
             byte[] updatedGameplay = data.toString().getBytes(StandardCharsets.UTF_8);
             if (!writeAtomically(info.file, updatedGameplay)) return false;
             if (manifest != null && packageManifest != null) {
-                manifest.put("sha256", sha256(updatedGameplay));
+                if (manifest.optInt("format", -1) == 3) {
+                    JSONObject fileIndex = manifest.getJSONObject("files");
+                    JSONObject gameplayRecord = fileIndex.getJSONObject("data/gameplay.mfmod");
+                    gameplayRecord.put("size", updatedGameplay.length);
+                    gameplayRecord.put("sha256", sha256(updatedGameplay));
+                    manifest.put("files", fileIndex);
+                } else {
+                    manifest.put("sha256", sha256(updatedGameplay));
+                }
                 if (!writeAtomically(packageManifest,
                         manifest.toString().getBytes(StandardCharsets.UTF_8))) {
                     writeAtomically(info.file, previousGameplay);
@@ -538,7 +547,9 @@ public final class ModManager {
                 if (!isSupportedKey(key) || values.containsKey(key)) return null;
                 values.put(key, content);
             }
-            if (!isValidPack(values) || !isValidInstalledV2Package(file, values)) return null;
+            if (!isValidPack(values) ||
+                    (!isValidInstalledV2Package(file, values) &&
+                     !isValidInstalledV3Package(file, values))) return null;
             return new ModInfo(file, values);
         } catch (Exception ignored) {
             return null;
