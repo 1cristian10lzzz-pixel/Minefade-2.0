@@ -1732,8 +1732,8 @@ bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
         if (encoded == 0u) continue;
         const std::uint32_t itemId = encoded / 1000u;
         const std::uint32_t quantity = encoded % 1000u;
-        const BlockDefinition* definition = itemId < GetBlockDefinitionCount()
-            ? GetBlockDefinition(static_cast<BlockId>(itemId)) : nullptr;
+        const BlockDefinition* definition =
+            GetBlockDefinition(static_cast<BlockId>(itemId));
         if (definition == nullptr || quantity == 0u || (definition->stackLimit > 0u && quantity > definition->stackLimit)) {
             encoded = 0u;
         }
