@@ -6,6 +6,7 @@
 #include "../app/src/main/cpp/entity/LegacyModelAdapter.h"
 #include "../app/src/main/cpp/entity/Skeleton.h"
 #include "../app/src/main/cpp/entity/AnimationController.h"
+#include "../app/src/main/cpp/mods/JsonLite.h"
 #include "../app/src/main/cpp/entity/EntityVisualSystem.h"
 
 #include <algorithm>
@@ -25,6 +26,59 @@
 using namespace minefade;
 
 int main() {
+    // Strict JSON parsing rejects duplicate keys, malformed nesting and invalid values.
+    JsonValue parsedModJson;
+    std::string jsonDiagnostic;
+    const std::string modJson = R"({"id":"testmod:basalt","name":"Basalto","numbers":[1,2,3]})";
+    assert(ParseJson(modJson, parsedModJson, jsonDiagnostic));
+    assert(parsedModJson.Find("id") != nullptr);
+    assert(*parsedModJson.Find("id")->String() == "testmod:basalt");
+    assert(!ParseJson(R"({"id":"one","id":"two"})", parsedModJson, jsonDiagnostic));
+
+    // Dynamic namespaced block IDs remain outside the 414 stable vanilla IDs.
+    // The same registered block must survive mesh generation and MFVOX save/load.
+    const std::size_t baseDefinitionCount = GetBlockDefinitionCount();
+    ModBlockRegistration modBlock;
+    modBlock.key = "testmod:basalt";
+    modBlock.nameEs = "Basalto";
+    modBlock.sound = "stone";
+    modBlock.textureTop = "assets/textures/basalt.rgba";
+    modBlock.textureSide = "assets/textures/basalt.rgba";
+    modBlock.textureBottom = "assets/textures/basalt.rgba";
+    modBlock.tileTop = 1242u;
+    modBlock.tileSide = 1243u;
+    modBlock.tileBottom = 1244u;
+    modBlock.hardness = 3.0f;
+    modBlock.flags = BlockCollidable | BlockOpaque | BlockPlaceable;
+    modBlock.shape = BlockShape::Cube;
+    BlockId modBlockId = BlockId::Air;
+    assert(RegisterModBlock(modBlock, &modBlockId, &jsonDiagnostic));
+    assert(static_cast<std::uint16_t>(modBlockId) >=
+           static_cast<std::uint16_t>(BlockId::Count));
+    assert(GetBlockDefinitionCount() == baseDefinitionCount + 1u);
+    assert(GetBlockDefinition(modBlockId) != nullptr);
+    assert(FindBlockDefinition("testmod:basalt") == GetBlockDefinition(modBlockId));
+    assert(GetBlockDefinitionByIndex(GetBlockDefinitionCount() - 1u) != nullptr);
+
+    VoxelWorld modBlockWorld(0x4d4f4433u);
+    modBlockWorld.GenerateAround(8, 8, 0);
+    assert(modBlockWorld.SetBlock(8, 80, 8, modBlockId));
+    assert(modBlockWorld.GetBlock(8, 80, 8) == modBlockId);
+    std::vector<WorldVertex> modBlockMesh;
+    modBlockWorld.BuildMesh(modBlockMesh, 8, 8, 0);
+    assert(!modBlockMesh.empty());
+    const std::string modBlockSave = "/tmp/minefade-mod-block-smoke.mfworld";
+    const Vec3 modBlockPlayer{8.0f, 82.0f, 8.0f};
+    std::array<std::uint32_t, 36> modInventory{};
+    assert(modBlockWorld.Save(modBlockSave, modBlockPlayer, modInventory));
+    VoxelWorld modBlockLoaded;
+    Vec3 modBlockLoadedPlayer{};
+    std::array<std::uint32_t, 36> modLoadedInventory{};
+    assert(modBlockLoaded.Load(modBlockSave, modBlockLoadedPlayer, modLoadedInventory));
+    assert(modBlockLoaded.GetBlock(8, 80, 8) == modBlockId);
+    std::filesystem::remove(modBlockSave);
+    ClearModBlockDefinitions();
+
     VoxelWorld world(123456u);
     // Exercise the exact default game seed and the same one-chunk spawn path
     // used by Engine::Initialise, not only arbitrary test seeds.
