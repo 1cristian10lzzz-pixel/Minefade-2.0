@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Regression tests for the safe MFMod v3 content package format."""
+from __future__ import annotations
+
+import json
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.mfmod3 import create_package, validate_package
+
+
+class ModPackV3Tests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.mod = self.root / "source"
+        (self.mod / "data").mkdir(parents=True)
+        (self.mod / "assets" / "textures").mkdir(parents=True)
+        gameplay = (
+            "id=content_test\nname=Content Test\nversion=1.0\n"
+            "enabled=false\nplayer.speed=1.0\n"
+        )
+        (self.mod / "data" / "gameplay.mfmod").write_text(gameplay, encoding="utf-8")
+        # A non-compressible deterministic RGBA tile (16x16x4).
+        tile = bytes((index * 37 + 13) % 256 for index in range(1024))
+        (self.mod / "assets" / "textures" / "basalt.rgba").write_bytes(tile)
+        (self.mod / "data" / "blocks.json").write_text(json.dumps([{
+            "id": "content_test:basalt", "name": "Basalto", "shape": "cube",
+            "hardness": 2.0, "tool": "pickaxe", "stack_limit": 64,
+            "textures": {
+                "top": "assets/textures/basalt.rgba",
+                "side": "assets/textures/basalt.rgba",
+                "bottom": "assets/textures/basalt.rgba",
+            },
+        }]), encoding="utf-8")
+        (self.mod / "data" / "items.json").write_text(json.dumps([
+            {"id": "content_test:steel_sword", "name": "Espada de acero",
+             "type": "weapon", "icon": "assets/textures/basalt.rgba",
+             "damage": 8, "durability": 650, "stack_limit": 1},
+            {"id": "content_test:steel_helmet", "name": "Casco de acero",
+             "type": "armor", "icon": "assets/textures/basalt.rgba",
+             "armor_slot": "helmet", "protection": 3,
+             "durability": 500, "stack_limit": 1},
+        ]), encoding="utf-8")
+        (self.mod / "data" / "recipes.json").write_text(json.dumps([{
+            "id": "content_test:steel_sword_recipe",
+            "output": {"id": "content_test:steel_sword", "count": 1},
+            "ingredients": [{"id": "content_test:basalt", "count": 2}],
+            "station": "crafting_table",
+        }]), encoding="utf-8")
+        self.package = self.root / "content_test.mfmod3"
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def create_valid(self):
+        return create_package(self.mod, self.package, "2.3.1", "2.3.99",
+                              version="1.0.0", description="Paquete de prueba")
+
+    def test_create_and_validate_blocks_items_recipes_package(self):
+        result = self.create_valid()
+        self.assertEqual(result["id"], "content_test")
+        self.assertEqual(result["files"], 5)
+        self.assertIn("blocks", result["capabilities"])
+        self.assertIn("items", result["capabilities"])
+        self.assertIn("recipes", result["capabilities"])
+        self.assertIn("textures", result["capabilities"])
+        self.assertGreater(result["expanded_bytes"], 1024)
+
+    def test_rejects_path_traversal(self):
+        self.create_valid()
+        with zipfile.ZipFile(self.package, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("../outside.txt", b"bad")
+        with self.assertRaisesRegex(ValueError, "ruta o tipo"):
+            validate_package(self.package)
+
+    def test_rejects_native_or_executable_assets(self):
+        (self.mod / "assets" / "textures" / "payload.so").write_bytes(b"native")
+        with self.assertRaisesRegex(ValueError, "ruta o tipo"):
+            self.create_valid()
+
+    def test_rejects_wrong_texture_size(self):
+        (self.mod / "assets" / "textures" / "basalt.rgba").write_bytes(b"short")
+        with self.assertRaisesRegex(ValueError, "16x16"):
+            self.create_valid()
+
+    def test_rejects_missing_texture_reference(self):
+        blocks = json.loads((self.mod / "data" / "blocks.json").read_text(encoding="utf-8"))
+        blocks[0]["textures"]["side"] = "assets/textures/missing.rgba"
+        (self.mod / "data" / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "recurso inexistente"):
+            self.create_valid()
+
+    def test_rejects_foreign_namespace_for_new_block(self):
+        blocks = json.loads((self.mod / "data" / "blocks.json").read_text(encoding="utf-8"))
+        blocks[0]["id"] = "other_mod:basalt"
+        (self.mod / "data" / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "namespace debe ser"):
+            self.create_valid()
+
+    def test_rejects_recipe_without_ingredients(self):
+        recipes = json.loads((self.mod / "data" / "recipes.json").read_text(encoding="utf-8"))
+        recipes[0]["ingredients"] = []
+        (self.mod / "data" / "recipes.json").write_text(json.dumps(recipes), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "sin ingredientes"):
+            self.create_valid()
+
+    def test_rejects_ui_action_outside_allowlist(self):
+        (self.mod / "assets" / "ui").mkdir()
+        (self.mod / "assets" / "ui" / "screen.rml").write_text("<rml/>", encoding="utf-8")
+        (self.mod / "data" / "ui.json").write_text(json.dumps({
+            "screens": [{
+                "document": "assets/ui/screen.rml",
+                "actions": ["execute_shell"],
+            }]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "acción no permitida"):
+            self.create_valid()
+
+    def test_tampered_asset_fails_sha256(self):
+        self.create_valid()
+        with zipfile.ZipFile(self.package, "r") as source:
+            entries = {item.filename: source.read(item.filename)
+                       for item in source.infolist() if not item.is_dir()}
+        entries["assets/textures/basalt.rgba"] = b"x" * 1024
+        with zipfile.ZipFile(self.package, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            for name, payload in entries.items():
+                target.writestr(name, payload)
+        with self.assertRaisesRegex(ValueError, "hash o tamaño no coincide"):
+            validate_package(self.package)
+
+    def test_rejects_new_pack_outside_engine_version_range(self):
+        self.create_valid()
+        with self.assertRaisesRegex(ValueError, "fuera del rango"):
+            validate_package(self.package, "3.0.0")
+
+    def test_legacy_gameplay_must_remain_disabled_on_import(self):
+        gameplay = self.mod / "data" / "gameplay.mfmod"
+        gameplay.write_text(gameplay.read_text(encoding="utf-8").replace(
+            "enabled=false", "enabled=true"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "desactivados"):
+            self.create_valid()
+
+
+if __name__ == "__main__":
+    unittest.main()
