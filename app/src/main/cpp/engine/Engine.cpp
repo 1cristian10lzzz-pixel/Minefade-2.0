@@ -837,6 +837,49 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     atlasWidth = expandedModAtlasWidth;
     atlasHeight = expandedModAtlasHeight;
 
+    // Load every registered external model before spawning its entity kind.
+    for (const ModEntityDefinition& modEntity : ModContentRegistry::Instance().Entities()) {
+        if (modEntity.runtimeKind < 64 || modEntity.modelPath.empty()) continue;
+        const std::size_t separator = modEntity.id.find(':');
+        if (separator == std::string::npos) continue;
+        const std::filesystem::path packageRoot =
+            std::filesystem::path(modsDirectory_) / modEntity.id.substr(0u, separator);
+        std::error_code pathError;
+        const std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(packageRoot, pathError);
+        if (pathError) continue;
+        const std::filesystem::path modelFile =
+            std::filesystem::weakly_canonical(packageRoot / modEntity.modelPath, pathError);
+        if (pathError) continue;
+        const std::string rootPrefix = canonicalRoot.generic_string() + "/";
+        const std::string modelName = modelFile.generic_string();
+        if (modelName.rfind(rootPrefix, 0u) != 0u ||
+            !std::filesystem::is_regular_file(modelFile, pathError) || pathError) continue;
+        const std::uintmax_t modelBytes = std::filesystem::file_size(modelFile, pathError);
+        if (pathError || modelBytes == 0u || modelBytes > 8u * 1024u * 1024u) continue;
+        std::ifstream modelStream(modelFile, std::ios::binary);
+        if (!modelStream) continue;
+        std::vector<std::uint8_t> modelData(
+            std::istreambuf_iterator<char>(modelStream), std::istreambuf_iterator<char>());
+        if (modelData.size() != modelBytes) continue;
+
+        EntityDefinition definition;
+        definition.identifier = modEntity.id;
+        definition.legacyKind = modEntity.runtimeKind;
+        definition.modelPath = modEntity.modelPath;
+        definition.texturePath = modEntity.texturePath;
+        definition.animationPath = modEntity.animationPath;
+        definition.controllerPath = modEntity.controllerPath;
+        definition.width = modEntity.width;
+        definition.height = modEntity.height;
+        definition.eyeHeight = modEntity.eyeHeight;
+        std::string modelError;
+        if (!entityVisuals_.LoadModEntityModel(modEntity.runtimeKind, definition,
+                modelData.data(), modelData.size(), modelError)) {
+            ENGINE_LOGW("Mod entity model %s was rejected: %s",
+                        modEntity.id.c_str(), modelError.c_str());
+        }
+    }
+
     // Clear any stale driver error before attributing a failure to a startup stage.
     while (glGetError() != GL_NO_ERROR) { }
     if (!CreateWorldProgram()) {
@@ -1065,6 +1108,13 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     for (int i = 0; i < modRabbitSpawns_; ++i) entities_.SpawnEntity(modSpawn, 6, world_);
     for (int i = 0; i < modZombieSpawns_; ++i) entities_.SpawnEntity(modSpawn, 4, world_);
     for (int i = 0; i < modSkeletonSpawns_; ++i) entities_.SpawnEntity(modSpawn, 5, world_);
+    for (const ModEntityDefinition& modEntity : ModContentRegistry::Instance().Entities()) {
+        if (!entityVisuals_.IsModEntityReady(modEntity.runtimeKind)) continue;
+        for (int count = 0; count < modEntity.spawnCount; ++count) {
+            if (!entities_.SpawnModEntity(modSpawn, modEntity.runtimeKind,
+                    modEntity.health, modEntity.damage, modEntity.hostile, world_)) break;
+        }
+    }
     // Build the spawn chunk synchronously so the first world frame contains terrain.
     world_.BuildMesh(meshBuildScratch_, static_cast<int>(std::floor(player_.position.x)),
         static_cast<int>(std::floor(player_.position.z)), 0, nullptr, nullptr, 0u, false);
@@ -1592,7 +1642,7 @@ void Engine::Render() {
             if (difficulty_ != 0 && hostileDamageCooldown_ <= 0.0f) {
                 const bool hostileNearby = std::any_of(entities_.Entities().begin(),
                     entities_.Entities().end(), [this](const Entity& entity) {
-                        if (entity.kind != 4 && entity.kind != 5) return false;
+                        if (!entity.hostile) return false;
                         const float dx = entity.position.x - player_.position.x;
                         const float dy = entity.position.y - player_.position.y;
                         const float dz = entity.position.z - player_.position.z;
@@ -1641,7 +1691,7 @@ void Engine::Render() {
                 const auto& currentEntities = entities_.Entities();
                 const std::size_t hostileCount = static_cast<std::size_t>(std::count_if(
                     currentEntities.begin(), currentEntities.end(), [](const Entity& entity) {
-                        return entity.kind == 4 || entity.kind == 5;
+                        return entity.hostile;
                     }));
                 const std::size_t hostileLimit = difficulty_ == 1 ? 2u : (difficulty_ == 3 ? 6u : 4u);
                 if (hostileCount < hostileLimit && currentEntities.size() < 128u) {
