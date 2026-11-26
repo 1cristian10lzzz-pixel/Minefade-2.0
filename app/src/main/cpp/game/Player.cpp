@@ -638,7 +638,35 @@ bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWo
     entity.speed = 0.12f + std::fmod(index, 4.0f) * 0.025f;
     entity.kind = kind;
     entity.health = kind == 5 ? 10.0f : (kind == 4 ? 8.0f : 5.0f);
+    entity.hostile = kind == 4 || kind == 5;
+    entity.attackDamage = kind == 5 ? 3.0f : 2.0f;
     entity.behaviorTimer = 2.5f + std::fmod(index * 0.87f, 4.0f);
+    entities_.push_back(entity);
+    return true;
+}
+
+bool EntitySystem::SpawnModEntity(const Vec3& nearPosition, int kind, float health,
+                                  float damage, bool hostile, const VoxelWorld& world) {
+    if (entities_.size() >= maxEntities_ || kind < 64 ||
+        !std::isfinite(health) || !std::isfinite(damage) ||
+        health < 1.0f || health > 10000.0f || damage < 0.0f || damage > 100.0f)
+        return false;
+    const float index = static_cast<float>(entities_.size());
+    const float angle = index * 2.39996323f;
+    const float radius = spawnRadius_ + std::fmod(index, 3.0f) * 0.35f;
+    Entity entity;
+    entity.position.x = nearPosition.x + std::cos(angle) * radius;
+    entity.position.z = nearPosition.z + std::sin(angle) * radius;
+    entity.position.y = static_cast<float>(world.GetSurfaceHeight(
+        FloorToInt(entity.position.x), FloorToInt(entity.position.z))) + 1.0f;
+    entity.phase = animationTime_ + index * 0.73f;
+    entity.speed = 0.16f;
+    entity.kind = kind;
+    entity.health = health;
+    entity.attackDamage = damage;
+    entity.hostile = hostile;
+    entity.modded = true;
+    entity.behaviorTimer = 2.0f + std::fmod(index * 0.87f, 3.0f);
     entities_.push_back(entity);
     return true;
 }
@@ -662,7 +690,7 @@ bool EntitySystem::DamageNearest(const Vec3& origin, const Vec3& direction,
     float bestDistanceSquared = maximumDistanceSquared;
     for (std::size_t index = 0; index < entities_.size(); ++index) {
         const Entity& entity = entities_[index];
-        if (entity.kind != 4 && entity.kind != 5) continue;
+        if (!entity.hostile) continue;
         const Vec3 delta{entity.position.x - origin.x,
                          entity.position.y + 0.7f - origin.y,
                          entity.position.z - origin.z};
@@ -722,7 +750,7 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         const float towardX = player.position.x - entity.position.x;
         const float towardZ = player.position.z - entity.position.z;
         const float distanceSquared = towardX * towardX + towardZ * towardZ;
-        const bool passive = entity.kind != 4 && entity.kind != 5;
+        const bool passive = !entity.hostile;
         const float fleeDistanceSquared = fleeRadius_ * fleeRadius_;
         const float alertDistanceSquared = alertRadius_ * alertRadius_;
         const bool closeForFlee = passive && distanceSquared < fleeDistanceSquared;
@@ -796,6 +824,22 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         } else if (entity.behavior == 2) {
             // Eating animals hold position and keep a slow animation clock.
             entity.phase = std::fmod(entity.phase + dt * 0.55f, 4096.0f);
+        } else if (entity.modded) {
+            entity.behaviorTimer -= dt;
+            if (entity.behaviorTimer <= 0.0f) {
+                entity.phase = std::fmod(entity.phase + 1.1f, 4096.0f);
+                entity.behaviorTimer = 2.0f + std::abs(std::sin(entity.phase)) * 2.5f;
+            }
+            const float step = entity.speed * speedMultiplier_ * passiveSpeedMultiplier_ * dt * 0.45f;
+            const float nextX = entity.position.x + std::cos(entity.phase) * step;
+            const float nextZ = entity.position.z + std::sin(entity.phase) * step;
+            if (!world.IsSolid(FloorToInt(nextX), FloorToInt(entity.position.y + 0.25f),
+                               FloorToInt(nextZ))) {
+                entity.position.x = nextX;
+                entity.position.z = nextZ;
+                entity.position.y = static_cast<float>(world.GetSurfaceHeight(
+                    FloorToInt(nextX), FloorToInt(nextZ))) + 1.0f;
+            }
         } else {
             MfEntityState state{entity.position.x, entity.position.y, entity.position.z,
                                 entity.phase, std::clamp(entity.speed * speedMultiplier_ *
@@ -829,7 +873,7 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             ambientSpawnElapsed_ = std::fmod(ambientSpawnElapsed_, ambientSpawnInterval_);
             const std::size_t passiveCount = static_cast<std::size_t>(std::count_if(
                 entities_.begin(), entities_.end(), [](const Entity& entity) {
-                    return entity.kind != 4 && entity.kind != 5;
+                    return !entity.hostile;
                 }));
             if (passiveCount < static_cast<std::size_t>(passiveEntityCap_)) {
                 static constexpr std::array<int, 5> passiveKinds{{0, 1, 2, 3, 6}};
