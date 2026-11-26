@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
+#include <memory>
+#include <string>
+#include <unordered_map>
 namespace minefade {
 namespace {
 constexpr std::array<BlockDefinition, 414> kBlocks{{
@@ -422,9 +426,140 @@ constexpr std::array<BlockDefinition, 414> kBlocks{{
     BlockDefinition{BlockId::MinefadeDiamond, "minefade_diamond", "Diamante", "", "", "", "", 1239, 1240, 1241, -1.00f, 0, 64, 0, 0, BlockShape::None, BlockTool::None},
 }};
 } // namespace
-const BlockDefinition* GetBlockDefinition(BlockId id) noexcept { const auto index=static_cast<std::size_t>(id); return index<kBlocks.size()?&kBlocks[index]:nullptr; }
-const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept { for (const auto& block:kBlocks) if (key==block.key) return &block; return nullptr; }
-std::size_t GetBlockDefinitionCount() noexcept { return kBlocks.size(); }
-bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept { const auto* block=GetBlockDefinition(id); return block && (block->flags & static_cast<std::uint16_t>(flag))!=0; }
-void GetAtlasUv(std::uint16_t tile,float& u0,float& v0,float& u1,float& v1) noexcept { const std::size_t tileIndex=static_cast<std::size_t>(tile); const std::size_t tileCount=GetBlockDefinitionCount()*3u; if (tileIndex>=tileCount || tileIndex>=kBlockAtlasTileCount) { u0=v0=u1=v1=0.0f; return; } const std::size_t col=tileIndex%kBlockAtlasColumns,row=tileIndex/kBlockAtlasColumns; const float atlasWidth=static_cast<float>(kBlockAtlasWidth),atlasHeight=static_cast<float>(kBlockAtlasHeight); const float x=static_cast<float>(col*kBlockAtlasCellSize+kBlockAtlasPadding),y=static_cast<float>(row*kBlockAtlasCellSize+kBlockAtlasPadding); u0=(x+0.5f)/atlasWidth; u1=(x+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasWidth; v0=(y+0.5f)/atlasHeight; v1=(y+static_cast<float>(kBlockAtlasTileSize)-0.5f)/atlasHeight; }
+namespace {
+struct DynamicBlockStorage {
+    std::string key;
+    std::string name;
+    std::string sound;
+    std::string top;
+    std::string side;
+    std::string bottom;
+    BlockDefinition definition{};
+};
+std::unordered_map<std::uint16_t, std::unique_ptr<DynamicBlockStorage>> gDynamicBlocks;
+std::unordered_map<std::string, std::uint16_t> gDynamicKeys;
+std::size_t gAtlasWidth = kBlockAtlasWidth;
+std::size_t gAtlasHeight = kBlockAtlasHeight;
+
+std::uint16_t StableModBlockId(std::string_view key) noexcept {
+    std::uint32_t hash = 2166136261u;
+    for (const unsigned char value : key) {
+        hash ^= static_cast<std::uint32_t>(value);
+        hash *= 16777619u;
+    }
+    constexpr std::uint32_t first = static_cast<std::uint32_t>(BlockId::Count);
+    constexpr std::uint32_t span = 65536u - first;
+    return static_cast<std::uint16_t>(first + (hash % span));
+}
+}
+
+const BlockDefinition* GetBlockDefinition(BlockId id) noexcept {
+    const auto index = static_cast<std::size_t>(id);
+    if (index < kBlocks.size()) return &kBlocks[index];
+    const auto found = gDynamicBlocks.find(static_cast<std::uint16_t>(index));
+    return found == gDynamicBlocks.end() ? nullptr : &found->second->definition;
+}
+
+const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept {
+    for (const auto& block : kBlocks) if (key == block.key) return &block;
+    const auto found = gDynamicKeys.find(std::string(key));
+    if (found == gDynamicKeys.end()) return nullptr;
+    return GetBlockDefinition(static_cast<BlockId>(found->second));
+}
+
+std::size_t GetBlockDefinitionCount() noexcept {
+    return kBlocks.size() + gDynamicBlocks.size();
+}
+
+bool RegisterModBlock(ModBlockRegistration source, BlockId* registeredId, std::string* error) {
+    if (error != nullptr) error->clear();
+    const auto fail = [error](const char* message) {
+        if (error != nullptr) *error = message;
+        return false;
+    };
+    if (source.key.size() < 4u || source.key.size() > 129u ||
+        source.key.find(':') == std::string::npos ||
+        source.key.find('/') != std::string::npos ||
+        source.key.find("..") != std::string::npos) return fail("invalid namespaced block id");
+    for (const unsigned char c : source.key) {
+        const bool allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                             c == '_' || c == '-' || c == '.' || c == ':';
+        if (!allowed) return fail("block id contains unsupported characters");
+    }
+    if (source.nameEs.empty() || source.nameEs.size() > 96u ||
+        !std::isfinite(source.hardness) || source.hardness < 0.0f ||
+        source.hardness > 100.0f || source.stackLimit == 0u ||
+        source.stackLimit > 99u || source.lightLevel > 15u ||
+        !std::isfinite(source.attackDamage) || source.attackDamage < 0.0f ||
+        source.attackDamage > 100.0f) return fail("invalid block/item properties");
+    if (source.tileTop >= 65535u || source.tileSide >= 65535u ||
+        source.tileBottom >= 65535u) return fail("invalid texture tile index");
+    if (gDynamicKeys.find(source.key) != gDynamicKeys.end())
+        return fail("duplicate dynamic block id");
+    const std::uint16_t numericId = StableModBlockId(source.key);
+    if (numericId < static_cast<std::uint16_t>(BlockId::Count) ||
+        gDynamicBlocks.find(numericId) != gDynamicBlocks.end())
+        return fail("stable block id collision; choose a different namespaced id");
+
+    auto storage = std::make_unique<DynamicBlockStorage>();
+    storage->key = std::move(source.key);
+    storage->name = std::move(source.nameEs);
+    storage->sound = std::move(source.sound);
+    storage->top = std::move(source.textureTop);
+    storage->side = std::move(source.textureSide);
+    storage->bottom = std::move(source.textureBottom);
+    storage->definition = BlockDefinition{
+        static_cast<BlockId>(numericId), storage->key.c_str(), storage->name.c_str(),
+        storage->sound.c_str(), storage->top.c_str(), storage->side.c_str(),
+        storage->bottom.c_str(), source.tileTop, source.tileSide, source.tileBottom,
+        source.hardness, source.dropId, source.stackLimit, source.lightLevel, source.flags,
+        source.shape, source.preferredTool, source.attackDamage, source.durability,
+        source.armorProtection, source.armorSlot
+    };
+    gDynamicKeys.emplace(storage->key, numericId);
+    gDynamicBlocks.emplace(numericId, std::move(storage));
+    if (registeredId != nullptr) *registeredId = static_cast<BlockId>(numericId);
+    return true;
+}
+
+void ClearModBlockDefinitions() noexcept {
+    gDynamicKeys.clear();
+    gDynamicBlocks.clear();
+}
+
+void SetBlockAtlasDimensions(std::size_t width, std::size_t height) noexcept {
+    if (width >= kBlockAtlasCellSize && width <= 8192u &&
+        height >= kBlockAtlasCellSize && height <= 16384u &&
+        width % kBlockAtlasColumns == 0u) {
+        gAtlasWidth = width;
+        gAtlasHeight = height;
+    }
+}
+
+bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept {
+    const auto* block = GetBlockDefinition(id);
+    return block && (block->flags & static_cast<std::uint16_t>(flag)) != 0;
+}
+
+void GetAtlasUv(std::uint16_t tile, float& u0, float& v0,
+                float& u1, float& v1) noexcept {
+    const std::size_t tileIndex = static_cast<std::size_t>(tile);
+    const std::size_t availableRows = gAtlasHeight / kBlockAtlasCellSize;
+    const std::size_t tileCount = std::min(
+        GetBlockDefinitionCount() * 3u, availableRows * kBlockAtlasColumns);
+    if (tileIndex >= tileCount) {
+        u0 = v0 = u1 = v1 = 0.0f;
+        return;
+    }
+    const std::size_t col = tileIndex % kBlockAtlasColumns;
+    const std::size_t row = tileIndex / kBlockAtlasColumns;
+    const float atlasWidth = static_cast<float>(gAtlasWidth);
+    const float atlasHeight = static_cast<float>(gAtlasHeight);
+    const float x = static_cast<float>(col * kBlockAtlasCellSize + kBlockAtlasPadding);
+    const float y = static_cast<float>(row * kBlockAtlasCellSize + kBlockAtlasPadding);
+    u0 = (x + 0.5f) / atlasWidth;
+    u1 = (x + static_cast<float>(kBlockAtlasTileSize) - 0.5f) / atlasWidth;
+    v0 = (y + 0.5f) / atlasHeight;
+    v1 = (y + static_cast<float>(kBlockAtlasTileSize) - 0.5f) / atlasHeight;
+}
 } // namespace minefade
