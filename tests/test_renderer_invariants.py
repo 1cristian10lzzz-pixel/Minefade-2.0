@@ -94,6 +94,27 @@ def test_gpu_chunk_uploads_are_bounded_and_nearest_first():
     assert "glDepthMask(GL_TRUE);" in render
 
 
+def test_failed_chunk_upload_keeps_last_valid_gpu_mesh():
+    sync = RENDERER[RENDERER.index("bool WorldMeshRenderer::Sync"):
+                    RENDERER.index("bool WorldMeshRenderer::IsVisible")]
+    assert "GpuChunk staged{};" in sync
+    assert "GpuChunk previous = gpu;" in sync
+    assert "gpu = staged;" in sync
+    assert "ReleasePass(previous.opaqueVao" in sync
+    assert "ReleasePass(previous.transparentVao" in sync
+    assert "gpu.opaqueCount = 0;" not in sync
+    assert "gpu.transparentCount = 0;" not in sync
+
+
+def test_world_passes_do_not_depend_on_opaque_geometry_existing():
+    render = ENGINE[ENGINE.index("void Engine::Render()"):
+                    ENGINE.index("void Engine::Touch")]
+    assert "if (worldProgram_ != 0) {" in render
+    assert "worldRenderer_.DrawOpaque(frustum);" in render
+    assert "worldRenderer_.DrawTransparent(frustum, eye);" in render
+    assert "if (worldProgram_ != 0 && worldRenderer_.OpaqueVertexCount() > 0)" not in render
+
+
 if __name__ == "__main__":
     test_chunk_cache_is_revision_driven_not_outer_border_driven()
     test_terrain_gpu_resources_are_incremental_per_chunk()
@@ -101,4 +122,6 @@ if __name__ == "__main__":
     test_chunk_mesh_work_is_budgeted_and_nearby_first()
     test_both_shaders_sample_raw_opengl_atlas_rows_without_double_flip()
     test_gpu_chunk_uploads_are_bounded_and_nearest_first()
+    test_failed_chunk_upload_keeps_last_valid_gpu_mesh()
+    test_world_passes_do_not_depend_on_opaque_geometry_existing()
     print("Minefade renderer invariants passed.")
