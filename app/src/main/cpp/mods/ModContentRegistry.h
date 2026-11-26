@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -95,6 +96,7 @@ private:
     std::vector<ModBiomeDefinition> biomes_;
     std::vector<ModStructureDefinition> structures_;
     std::vector<ModEntityDefinition> entities_;
+    std::map<std::string, std::uint16_t> textureTiles_;
 };
 
 BlockId ResolveModBlockId(std::string_view namespacedId) noexcept;
