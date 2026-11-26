@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "minefade_core.h"
+#include "../mods/ModContentRegistry.h"
 
 #include <android/log.h>
 
@@ -810,6 +811,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         }
         ENGINE_LOGE("World initialisation failed: %s; releasing partial GL and UI state",
                     lastInitError_.c_str());
+        ModContentRegistry::Instance().Clear();
         Shutdown();
         return false;
     };
@@ -817,6 +819,23 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     if (minefade_core_abi_version() != MINEFADE_CORE_ABI_VERSION) {
         return failInitialisation("La versión ABI del núcleo Rust no coincide con la esperada por el motor C++.");
     }
+
+    // Load data definitions before world/save loading, so the stable namespaced
+    // block IDs are already registered when MFVOX data is decoded.
+    LoadEnabledMods();
+    std::vector<std::uint8_t> expandedModAtlas;
+    int expandedModAtlasWidth = atlasWidth;
+    int expandedModAtlasHeight = atlasHeight;
+    std::string modContentError;
+    if (!ModContentRegistry::Instance().Load(modsDirectory_, atlasPixels, atlasBytes,
+            atlasWidth, atlasHeight, expandedModAtlas,
+            expandedModAtlasWidth, expandedModAtlasHeight, modContentError)) {
+        return failInitialisation("No se pudieron cargar los recursos de mods: " + modContentError);
+    }
+    atlasPixels = expandedModAtlas.data();
+    atlasBytes = expandedModAtlas.size();
+    atlasWidth = expandedModAtlasWidth;
+    atlasHeight = expandedModAtlasHeight;
 
     // Clear any stale driver error before attributing a failure to a startup stage.
     while (glGetError() != GL_NO_ERROR) { }
@@ -1029,7 +1048,6 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     footstepElapsed_ = 0.0f;
     lastChunkX_ = static_cast<int>(std::floor(player_.position.x / 16.0f));
     lastChunkZ_ = static_cast<int>(std::floor(player_.position.z / 16.0f));
-    LoadEnabledMods();
     player_.SetSpeedMultiplier(modPlayerSpeed_);
     player_.SetJumpMultiplier(modPlayerJump_);
     player_.crouchSpeedMultiplier = modCrouchSpeed_;
