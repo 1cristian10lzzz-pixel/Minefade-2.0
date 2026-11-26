@@ -231,6 +231,24 @@ bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
     // The runtime atlas keeps the original 32-column cell layout and only grows
     // by complete rows; this preserves all built-in texture coordinates.
     expandedAtlasWidth = baseAtlasWidth;
+    std::sort(entities_.begin(), entities_.end(),
+        [](const ModEntityDefinition& a, const ModEntityDefinition& b) {
+            return a.id < b.id;
+        });
+    if (entities_.size() > 128u) {
+        error = "demasiadas entidades de mods instaladas";
+        Clear();
+        return false;
+    }
+    std::set<std::string> entityIds;
+    for (std::size_t index = 0; index < entities_.size(); ++index) {
+        if (!entityIds.insert(entities_[index].id).second) {
+            error = "id de entidad mod duplicado: " + entities_[index].id;
+            Clear();
+            return false;
+        }
+        entities_[index].runtimeKind = 64 + static_cast<int>(index);
+    }
     SetBlockAtlasDimensions(static_cast<std::size_t>(expandedAtlasWidth),
                             static_cast<std::size_t>(expandedAtlasHeight));
     return true;
@@ -542,6 +560,11 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
             ModEntityDefinition entity;
             entity.id = GetString(value, "id");
             entity.name = GetString(value, "name", entity.id);
+            int spawnCount = 1;
+            if (!GetInteger(value, "spawn_count", 1, 0, 8, spawnCount)) {
+                error = "cantidad de aparición de entidad inválida"; return false;
+            }
+            entity.spawnCount = spawnCount;
             entity.modelPath = GetString(value, "model");
             entity.texturePath = GetString(value, "texture");
             entity.animationPath = GetString(value, "animations");
