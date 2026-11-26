@@ -366,6 +366,39 @@ int main() {
     edgeWorld.BuildMesh(edgeMesh, 8, 8, 0);
     assert(edgeMesh.size() >= 36u);
 
+    // Partial opaque shapes must not cull a neighbouring full cube face.
+    // A slab occupies only half the cell, so the stone's +X face must remain.
+    VoxelWorld partialOcclusionWorld(0x50415254u);
+    partialOcclusionWorld.GenerateAround(8, 8, 0);
+    assert(partialOcclusionWorld.SetBlock(8, 80, 8, BlockId::Stone));
+    assert(partialOcclusionWorld.SetBlock(9, 80, 8, BlockId::StoneSlab));
+    std::vector<WorldVertex> partialOcclusionMesh;
+    partialOcclusionWorld.BuildMesh(partialOcclusionMesh, 8, 8, 0);
+    const auto countPositiveXFaceTriangles = [](const std::vector<WorldVertex>& vertices,
+                                                 float planeX) {
+        std::size_t triangles = 0u;
+        for (std::size_t i = 0; i + 2u < vertices.size(); i += 3u) {
+            const WorldVertex& a = vertices[i];
+            const WorldVertex& b = vertices[i + 1u];
+            const WorldVertex& c = vertices[i + 2u];
+            const bool onPlane = std::abs(a.x - planeX) < 0.0001f &&
+                std::abs(b.x - planeX) < 0.0001f &&
+                std::abs(c.x - planeX) < 0.0001f;
+            const bool positiveNormal = a.nx > 0.99f && b.nx > 0.99f && c.nx > 0.99f;
+            const float maximumY = std::max({a.y, b.y, c.y});
+            if (onPlane && positiveNormal && maximumY > 80.9f) ++triangles;
+        }
+        return triangles;
+    };
+    assert(countPositiveXFaceTriangles(partialOcclusionMesh, 9.0f) == 2u);
+
+    // Replacing the slab with a complete opaque cube must remove that internal
+    // shared face, not leave a z-fighting surface inside the solid volume.
+    assert(partialOcclusionWorld.SetBlock(9, 80, 8, BlockId::Stone));
+    partialOcclusionMesh.clear();
+    partialOcclusionWorld.BuildMesh(partialOcclusionMesh, 8, 8, 0);
+    assert(countPositiveXFaceTriangles(partialOcclusionMesh, 9.0f) == 0u);
+
     std::vector<WorldVertex> transparentMesh;
     world.SetBlock(8, height + 8, 8, BlockId::Water);
     world.BuildMesh(mesh, 8, 8, 1, &transparentMesh);
