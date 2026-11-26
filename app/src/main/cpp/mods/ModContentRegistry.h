@@ -56,6 +56,8 @@ struct ModEntityDefinition {
     std::string texturePath;
     std::string animationPath;
     std::string controllerPath;
+    int runtimeKind{-1};
+    int spawnCount{1};
     float width{0.8f};
     float height{1.0f};
     float eyeHeight{0.7f};
