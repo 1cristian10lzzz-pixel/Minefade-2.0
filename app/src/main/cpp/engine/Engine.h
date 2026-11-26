@@ -7,6 +7,7 @@
 #include "../render/WorldMeshRenderer.h"
 #include "../render/FirstPersonRenderer.h"
 #include "../entity/EntityVisualSystem.h"
+#include "../mods/ModContentRegistry.h"
 
 #include <GLES3/gl3.h>
 
