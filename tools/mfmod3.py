@@ -141,7 +141,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
         if block.get("shape", "cube") not in SHAPES:
             raise ValueError(f"{identifier}: forma no compatible")
         _number(block.get("hardness", 1.0), f"{identifier}.hardness", 0.0, 100.0)
-        _int(block.get("stack_limit", 64), f"{identifier}.stack_limit", 1, 999)
+        _int(block.get("stack_limit", 64), f"{identifier}.stack_limit", 1, 99)
         if block.get("tool", "none") not in TOOLS:
             raise ValueError(f"{identifier}: herramienta no compatible")
         textures = block.get("textures")
@@ -163,7 +163,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
         if item_type not in ITEM_TYPES:
             raise ValueError(f"{identifier}: tipo de objeto no compatible")
         _resource(item.get("icon"), files, f"{identifier}.icon", {".rgba"})
-        _int(item.get("stack_limit", 64), f"{identifier}.stack_limit", 1, 999)
+        _int(item.get("stack_limit", 64), f"{identifier}.stack_limit", 1, 99)
         if item_type in {"weapon", "tool"}:
             _number(item.get("damage", 1.0), f"{identifier}.damage", 0.0, 100.0)
             _int(item.get("durability", 100), f"{identifier}.durability", 1, 100000)
@@ -211,6 +211,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
         _number(entity.get("width", 0.8), f"{identifier}.width", 0.1, 16.0)
         _number(entity.get("height", 1.0), f"{identifier}.height", 0.1, 32.0)
         _number(entity.get("eye_height", 0.7), f"{identifier}.eye_height", 0.1, 32.0)
+        _int(entity.get("spawn_count", 1), f"{identifier}.spawn_count", 0, 8)
         if "animations" in entity:
             _resource(entity["animations"], files, f"{identifier}.animations", {".json"})
             used_capabilities.add("animations")
@@ -251,8 +252,9 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
             position = block.get("pos")
             if not isinstance(position, list) or len(position) != 3:
                 raise ValueError(f"{identifier}.blocks[{j}]: pos inválida")
-            for axis, value in zip("xyz", position):
-                _int(value, f"{identifier}.blocks[{j}].{axis}", -64, 64)
+            _int(position[0], f"{identifier}.blocks[{j}].x", -7, 7)
+            _int(position[1], f"{identifier}.blocks[{j}].y", -64, 64)
+            _int(position[2], f"{identifier}.blocks[{j}].z", -7, 7)
             namespaced_reference(block.get("block"), mod_id, f"{identifier}.blocks[{j}].block")
         used_capabilities.add("structures")
 
