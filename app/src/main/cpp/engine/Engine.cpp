@@ -1169,7 +1169,7 @@ void Engine::Render() {
     glClearColor(sky[0], sky[1], sky[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if (worldProgram_ != 0 && worldRenderer_.OpaqueVertexCount() > 0) {
+    if (worldProgram_ != 0) {
         const Vec3 eye = ViewPosition();
         const Vec3 target = ViewTarget();
         const Mat4 projection = Perspective(fieldOfView_ * (kPi / 180.0f),
