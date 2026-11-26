@@ -204,7 +204,6 @@ bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
     std::sort(packages.begin(), packages.end());
 
     std::uint16_t nextTile = static_cast<std::uint16_t>(kBlockAtlasTileCount);
-    std::unordered_map<std::string, std::uint16_t> textureTiles;
     std::set<std::string> packageIds;
     for (const auto& package : packages) {
         std::vector<std::uint8_t> manifestBytes;
