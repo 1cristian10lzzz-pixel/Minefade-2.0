@@ -3,6 +3,7 @@ package com.minefade.nativeengine;
 import android.content.Context;
 import android.net.Uri;
 import android.system.Os;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -551,7 +552,7 @@ public final class ModManager {
                             block.getString("name").trim().isEmpty() ||
                             block.getString("name").length() > 96 ||
                             !isFiniteInRange(block.optString("hardness", "1"), 0.0f, 100.0f) ||
-                            !isIntegerInRange(block.optString("stack_limit", "64"), 1, 999)) return false;
+                            !isIntegerInRange(block.optString("stack_limit", "64"), 1, 99)) return false;
                     String shape = block.optString("shape", "cube");
                     if (!("cube".equals(shape) || "slab".equals(shape) || "stairs".equals(shape) ||
                             "cross_plant".equals(shape) || "thin".equals(shape) || "pane".equals(shape) ||
@@ -580,7 +581,7 @@ public final class ModManager {
                     if (!validMod3Id(id, modId) || !ids.add(id) ||
                             item.getString("name").trim().isEmpty() || pixels == null ||
                             !icon.endsWith(".rgba") || pixels.length != 1024 ||
-                            !isIntegerInRange(item.optString("stack_limit", "64"), 1, 999) ||
+                            !isIntegerInRange(item.optString("stack_limit", "64"), 1, 99) ||
                             !("item".equals(type) || "weapon".equals(type) ||
                               "tool".equals(type) || "armor".equals(type))) return false;
                     if ("weapon".equals(type) || "tool".equals(type)) {
@@ -608,13 +609,13 @@ public final class ModManager {
                     String id = recipe.getString("id");
                     if (!validMod3Id(id, modId) || !ids.add(id)) return false;
                     JSONObject output = recipe.getJSONObject("output");
-                    if (!validMod3Id(output.getString("id"), modId) ||
+                    if (!validMod3Reference(output.getString("id"), modId) ||
                             !isIntegerInRange(output.optString("count", "1"), 1, 999)) return false;
                     JSONArray ingredients = recipe.getJSONArray("ingredients");
                     if (ingredients.length() < 1 || ingredients.length() > 9) return false;
                     for (int j = 0; j < ingredients.length(); j++) {
                         JSONObject ingredient = ingredients.getJSONObject(j);
-                        if (!validMod3Id(ingredient.getString("id"), modId) ||
+                        if (!validMod3Reference(ingredient.getString("id"), modId) ||
                                 !isIntegerInRange(ingredient.optString("count", "1"), 1, 999)) return false;
                     }
                 }
@@ -636,14 +637,122 @@ public final class ModManager {
                             !(texture.endsWith(".rgba") || texture.endsWith(".png") || texture.endsWith(".webp")) ||
                             !isFiniteInRange(entity.optString("width", "0.8"), 0.1f, 16.0f) ||
                             !isFiniteInRange(entity.optString("height", "1.0"), 0.1f, 32.0f) ||
-                            !isFiniteInRange(entity.optString("eye_height", "0.7"), 0.1f, 32.0f))
+                            !isFiniteInRange(entity.optString("eye_height", "0.7"), 0.1f, 32.0f) ||
+                            !isIntegerInRange(entity.optString("spawn_count", "1"), 0, 8))
                         return false;
+                }
+            }
+            raw = files.get("data/biomes.json");
+            if (raw != null) {
+                if (!capabilities.contains("biomes")) return false;
+                JSONArray biomes = new JSONArray(new String(raw, StandardCharsets.UTF_8));
+                if (biomes.length() > 64) return false;
+                Set<String> ids = new HashSet<>();
+                for (int i = 0; i < biomes.length(); i++) {
+                    JSONObject biome = biomes.getJSONObject(i);
+                    String id = biome.getString("id");
+                    if (!validMod3Id(id, modId) || !ids.add(id)) return false;
+                    if (!validMod3ClimateRange(biome.optJSONArray("temperature")) ||
+                            !validMod3ClimateRange(biome.optJSONArray("humidity"))) return false;
+                    for (String field : new String[]{"surface", "filler"}) {
+                        if (biome.has(field) &&
+                                !validMod3Reference(biome.getString(field), modId)) return false;
+                    }
+                }
+            }
+            raw = files.get("data/structures.json");
+            if (raw != null) {
+                if (!capabilities.contains("structures")) return false;
+                JSONArray structures = new JSONArray(new String(raw, StandardCharsets.UTF_8));
+                if (structures.length() > 64) return false;
+                Set<String> ids = new HashSet<>();
+                for (int i = 0; i < structures.length(); i++) {
+                    JSONObject structure = structures.getJSONObject(i);
+                    String id = structure.getString("id");
+                    if (!validMod3Id(id, modId) || !ids.add(id)) return false;
+                    JSONArray blocks = structure.getJSONArray("blocks");
+                    if (blocks.length() < 1 || blocks.length() > 4096) return false;
+                    for (int j = 0; j < blocks.length(); j++) {
+                        JSONObject block = blocks.getJSONObject(j);
+                        JSONArray pos = block.getJSONArray("pos");
+                        if (pos.length() != 3 ||
+                                !isIntegerInRange(pos.optString(0), -7, 7) ||
+                                !isIntegerInRange(pos.optString(1), -64, 64) ||
+                                !isIntegerInRange(pos.optString(2), -7, 7) ||
+                                !validMod3Reference(block.getString("block"), modId)) return false;
+                    }
+                }
+            }
+            raw = files.get("data/ui.json");
+            if (raw != null) {
+                if (!capabilities.contains("ui")) return false;
+                JSONObject ui = new JSONObject(new String(raw, StandardCharsets.UTF_8));
+                JSONArray screens = ui.optJSONArray("screens");
+                if (screens == null || screens.length() > 16) return false;
+                Set<String> allowedActions = new HashSet<>();
+                Collections.addAll(allowedActions, "open_inventory", "open_crafting", "close_screen",
+                        "pause", "resume", "open_settings", "show_chat");
+                for (int i = 0; i < screens.length(); i++) {
+                    JSONObject screen = screens.getJSONObject(i);
+                    String document = screen.getString("document");
+                    if (!document.endsWith(".rml") || !files.containsKey(document)) return false;
+                    if (screen.has("style")) {
+                        String style = screen.getString("style");
+                        if (!style.endsWith(".rcss") || !files.containsKey(style)) return false;
+                    }
+                    JSONArray actions = screen.optJSONArray("actions");
+                    if (actions != null) {
+                        for (int j = 0; j < actions.length(); j++)
+                            if (!allowedActions.contains(actions.getString(j))) return false;
+                    }
+                }
+            }
+            raw = files.get("data/sounds.json");
+            if (raw != null) {
+                if (!capabilities.contains("sounds")) return false;
+                JSONObject sounds = new JSONObject(new String(raw, StandardCharsets.UTF_8));
+                if (sounds.length() > 128) return false;
+                Iterator<String> events = sounds.keys();
+                while (events.hasNext()) {
+                    String event = events.next();
+                    if (!event.matches("[a-z0-9_.-]{1,64}")) return false;
+                    Object config = sounds.get(event);
+                    String resource;
+                    if (config instanceof String) {
+                        resource = (String)config;
+                    } else if (config instanceof JSONObject) {
+                        JSONObject value = (JSONObject)config;
+                        resource = value.getString("file");
+                        double volume = value.optDouble("volume", 1.0);
+                        if (!Double.isFinite(volume) || volume < 0.0 || volume > 2.0) return false;
+                    } else return false;
+                    if (!(resource.endsWith(".wav") || resource.endsWith(".ogg")) ||
+                            !files.containsKey(resource)) return false;
                 }
             }
             return true;
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private static boolean validMod3ClimateRange(JSONArray range) {
+        if (range == null) return true;
+        if (range.length() != 2) return false;
+        double minimum = range.optDouble(0, Double.NaN);
+        double maximum = range.optDouble(1, Double.NaN);
+        return Double.isFinite(minimum) && Double.isFinite(maximum) &&
+                minimum >= -1.0 && maximum <= 1.0 && minimum <= maximum;
+    }
+
+    private static boolean validMod3Reference(String value, String modId) {
+        if (value == null) return false;
+        int split = value.indexOf(':');
+        if (split < 1 || split + 1 >= value.length()) return false;
+        String namespace = value.substring(0, split);
+        if (!namespace.equals(modId) && !namespace.equals("minecraft") &&
+                !namespace.equals("minefade")) return false;
+        return value.substring(split + 1).matches("[a-z0-9][a-z0-9_.-]{1,63}");
     }
 
     private boolean isValidInstalledV3Package(File gameplayFile, Map<String,String> gameplayValues) {
