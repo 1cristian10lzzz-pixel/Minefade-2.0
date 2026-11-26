@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <map>
 #include <string>
 #include <unordered_map>
 namespace minefade {
@@ -436,7 +437,7 @@ struct DynamicBlockStorage {
     std::string bottom;
     BlockDefinition definition{};
 };
-std::unordered_map<std::uint16_t, std::unique_ptr<DynamicBlockStorage>> gDynamicBlocks;
+std::map<std::uint16_t, std::unique_ptr<DynamicBlockStorage>> gDynamicBlocks;
 std::unordered_map<std::string, std::uint16_t> gDynamicKeys;
 std::size_t gAtlasWidth = kBlockAtlasWidth;
 std::size_t gAtlasHeight = kBlockAtlasHeight;
@@ -469,6 +470,16 @@ const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept {
 
 std::size_t GetBlockDefinitionCount() noexcept {
     return kBlocks.size() + gDynamicBlocks.size();
+}
+
+const BlockDefinition* GetBlockDefinitionByIndex(std::size_t index) noexcept {
+    if (index < kBlocks.size()) return &kBlocks[index];
+    index -= kBlocks.size();
+    for (const auto& entry : gDynamicBlocks) {
+        if (index == 0u) return &entry.second->definition;
+        --index;
+    }
+    return nullptr;
 }
 
 bool RegisterModBlock(ModBlockRegistration source, BlockId* registeredId, std::string* error) {
