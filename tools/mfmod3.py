@@ -59,6 +59,15 @@ def namespaced_id(value: Any, mod_id: str, field: str) -> str:
     return value
 
 
+def namespaced_reference(value: Any, mod_id: str, field: str) -> str:
+    if not isinstance(value, str) or ":" not in value:
+        raise ValueError(f"{field}: se esperaba id namespaced")
+    namespace, path = value.split(":", 1)
+    if namespace not in {mod_id, "minecraft", "minefade"} or not ID_RE.fullmatch(namespace) or not ID_RE.fullmatch(path):
+        raise ValueError(f"{field}: referencia namespaced inválida")
+    return value
+
+
 def _safe_path(name: str) -> bool:
     if not isinstance(name, str) or not name or name.startswith("/") or "\\" in name or ":" in name:
         return False
@@ -185,7 +194,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
         if not ingredients:
             raise ValueError(f"{identifier}: receta sin ingredientes")
         for j, ingredient in enumerate(ingredients):
-            namespaced_id(ingredient.get("id"), mod_id, f"{identifier}.ingredients[{j}].id")
+            namespaced_reference(ingredient.get("id"), mod_id, f"{identifier}.ingredients[{j}].id")
             _int(ingredient.get("count", 1), f"{identifier}.ingredients[{j}].count", 1, 999)
         if recipe.get("station", "inventory") not in STATIONS:
             raise ValueError(f"{identifier}: estación no permitida")
@@ -226,7 +235,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
                 raise ValueError(f"{identifier}.{climate}: rango invertido")
         for field in ("surface", "filler"):
             if field in biome:
-                namespaced_id(biome[field], mod_id, f"{identifier}.{field}")
+                namespaced_reference(biome[field], mod_id, f"{identifier}.{field}")
         used_capabilities.add("biomes")
 
     structures = _array(_read_json(files, "data/structures.json"), "structures", 64)
@@ -244,7 +253,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
                 raise ValueError(f"{identifier}.blocks[{j}]: pos inválida")
             for axis, value in zip("xyz", position):
                 _int(value, f"{identifier}.blocks[{j}].{axis}", -64, 64)
-            namespaced_id(block.get("block"), mod_id, f"{identifier}.blocks[{j}].block")
+            namespaced_reference(block.get("block"), mod_id, f"{identifier}.blocks[{j}].block")
         used_capabilities.add("structures")
 
     ui = _read_json(files, "data/ui.json")
