@@ -35,6 +35,8 @@ c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
   "$ROOT/app/src/main/cpp/entity/Skeleton.cpp" \
   "$ROOT/app/src/main/cpp/entity/AnimationController.cpp" \
   "$ROOT/app/src/main/cpp/entity/EntityVisualSystem.cpp" \
+  "$ROOT/app/src/main/cpp/mods/JsonLite.cpp" \
+  "$ROOT/app/src/main/cpp/mods/ModContentRegistry.cpp" \
   "$RUST_LIB" -ldl -lpthread -lm \
   -o "$BIN"
 "$BIN"
