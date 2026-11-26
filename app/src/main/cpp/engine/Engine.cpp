@@ -2902,8 +2902,10 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         int itemId = 0, amount = 1;
         if (!(input >> itemId)) return "Uso: /dar <id_del_bloque> [cantidad].";
         if (!(input >> amount)) amount = 1;
-        itemId = std::clamp(itemId, 1, static_cast<int>(GetBlockDefinitionCount()) - 1);
+        itemId = std::clamp(itemId, 1, 65535);
         amount = std::clamp(amount, 1, 999);
+        if (GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr)
+            return "El id no existe. Usa un bloque u objeto registrado.";
         if (!inventory_.Add(static_cast<std::uint16_t>(itemId), static_cast<std::uint16_t>(amount)))
             return "No hay espacio en el inventario o el bloque no admite esa cantidad.";
         RefreshInventoryUi();
@@ -3195,10 +3197,10 @@ void Engine::RefreshInventoryUi() {
     if (gameMode_ == 1) {
         markup.clear();
         markup += "<div class='creative-heading'>CATÁLOGO CREATIVO · SELECCIONA UN BLOQUE</div>";
-        for (std::size_t id = 1; id < GetBlockDefinitionCount(); ++id) {
-            const auto blockId = static_cast<BlockId>(id);
-            const BlockDefinition* definition = GetBlockDefinition(blockId);
-            if (definition == nullptr || !HasBlockFlag(blockId, BlockPlaceable)) continue;
+        for (std::size_t index = 1; index < GetBlockDefinitionCount(); ++index) {
+            const BlockDefinition* definition = GetBlockDefinitionByIndex(index);
+            if (definition == nullptr || !HasBlockFlag(definition->id, BlockPlaceable)) continue;
+            const auto id = static_cast<std::uint16_t>(definition->id);
             markup += "<div class='inventory-row creative-row'><img class='inventory-icon' src='minefade://block/"
                 + std::to_string(id) + "'/><span class='creative-name'>" + definition->nameEs
                 + "</span><button id='creative-select-" + std::to_string(id)
@@ -3958,7 +3960,8 @@ void Engine::ApplyRemoteBlockEdits(const int* values, std::size_t valueCount) {
     bool changed = false;
     for (std::size_t i = 0; i + 3u < valueCount; i += 4u) {
         const int x = values[i], y = values[i + 1u], z = values[i + 2u], id = values[i + 3u];
-        if (id < 0 || id >= static_cast<int>(GetBlockDefinitionCount())) continue;
+        if (id < 0 || id > 65535 ||
+            GetBlockDefinition(static_cast<BlockId>(id)) == nullptr) continue;
         const BlockId previous = world_.GetBlock(x, y, z);
         if (world_.SetBlock(x, y, z, static_cast<BlockId>(id))) {
             changed = true;
