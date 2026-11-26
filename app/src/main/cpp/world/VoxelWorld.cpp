@@ -389,6 +389,14 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
     for(int z=0;z<kChunkSize;++z)for(int x=0;x<kChunkSize;++x) {
         const int wx=chunkX*kChunkSize+x,wz=chunkZ*kChunkSize+z;
         const Biome biome=GetBiome(wx,wz); const int height=TerrainHeight(wx,wz);
+        const float climateTemperature = FractalNoise2D(
+            static_cast<float>(wx) * 0.0028f + 217.0f,
+            static_cast<float>(wz) * 0.0028f - 71.0f, 3, 0.52f, 2.0f);
+        const float climateHumidity = FractalNoise2D(
+            static_cast<float>(wx) * 0.0042f - 493.0f,
+            static_cast<float>(wz) * 0.0042f + 119.0f, 3, 0.54f, 2.0f);
+        const ModBiomeDefinition* customBiome =
+            FindModBiomeForClimate(climateTemperature, climateHumidity);
         for(int y=0;y<=height;++y) {
             BlockId block = y < 17 ? BlockId::Deepslate : BlockId::Stone;
             if(y==height) {
@@ -449,6 +457,19 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
                         else if(y<31 && ore>0.76f && caveB<-0.4f)block=BlockId::RedstoneOre;
                         else if(y<39 && ore<-0.83f && caveB>0.55f)block=BlockId::LapisOre;
                         else if(y<58 && ore>0.69f && ore<0.73f)block=BlockId::CopperOre;
+                    }
+                }
+            }
+            if (customBiome != nullptr && (y == height || y >= height - 3)) {
+                const std::string& customKey = y == height
+                    ? customBiome->surfaceBlock : customBiome->fillerBlock;
+                if (!customKey.empty()) {
+                    const BlockId customBlock = ResolveModBlockId(customKey);
+                    const BlockDefinition* customDefinition = GetBlockDefinition(customBlock);
+                    if (customBlock != BlockId::Air && customDefinition != nullptr &&
+                        customDefinition->shape == BlockShape::Cube &&
+                        (customDefinition->flags & BlockOpaque) != 0u) {
+                        block = customBlock;
                     }
                 }
             }
@@ -572,6 +593,48 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
             chunk.blocks[Index(9, altarY + 1, 8)] = BlockId::MossyCobblestone;
             if ((ruinHash & 2u) != 0u)
                 chunk.blocks[Index(8, altarY + 1, 7)] = BlockId::Stonebrick;
+        }
+    }
+
+    // Custom structures are generated deterministically from the world seed,
+    // chunk coordinates and namespaced structure id. A structure is placed only
+    // when every block remains inside its owning chunk, preventing streaming
+    // order from leaving half-built structures across chunk borders.
+    if (generateStructures_) {
+        const int anchorWorldX = chunkX * kChunkSize + kChunkSize / 2;
+        const int anchorWorldZ = chunkZ * kChunkSize + kChunkSize / 2;
+        const int anchorY = TerrainHeight(anchorWorldX, anchorWorldZ);
+        for (const ModStructureDefinition& structure :
+             ModContentRegistry::Instance().Structures()) {
+            if (structure.blocks.empty() || structure.chance <= 0.0f) continue;
+            std::uint32_t structureHash = seed_ ^
+                static_cast<std::uint32_t>(chunkX) * 0x9e3779b9u ^
+                static_cast<std::uint32_t>(chunkZ) * 0x85ebca6bu;
+            for (const unsigned char value : structure.id) {
+                structureHash ^= static_cast<std::uint32_t>(value);
+                structureHash *= 16777619u;
+            }
+            const float roll = static_cast<float>(Hash(structureHash)) /
+                static_cast<float>(std::numeric_limits<std::uint32_t>::max());
+            if (roll >= structure.chance) continue;
+            bool fitsChunk = true;
+            for (const ModStructureBlock& block : structure.blocks) {
+                if (block.x < -7 || block.x > 7 || block.z < -7 || block.z > 7 ||
+                    anchorY + block.y < 0 || anchorY + block.y >= kWorldHeight ||
+                    ResolveModBlockId(block.blockId) == BlockId::Air) {
+                    fitsChunk = false;
+                    break;
+                }
+            }
+            if (!fitsChunk) continue;
+            for (const ModStructureBlock& block : structure.blocks) {
+                const int x = kChunkSize / 2 + block.x;
+                const int z = kChunkSize / 2 + block.z;
+                const int y = anchorY + block.y;
+                const BlockId existing = chunk.blocks[Index(x, y, z)];
+                if (existing != BlockId::Air && !structure.replaceExisting) continue;
+                chunk.blocks[Index(x, y, z)] = ResolveModBlockId(block.blockId);
+            }
         }
     }
 
