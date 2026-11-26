@@ -1522,10 +1522,18 @@ void Engine::Render() {
             const auto applyPlayerDamage = [this](float rawDamage, const char* source) {
                 if (rawDamage <= 0.0f || !std::isfinite(rawDamage) || playerHealth_ <= 0.0f) return;
                 std::size_t armorPieces = 0u;
+                unsigned int modArmorProtection = 0u;
                 for (const std::uint16_t item : inventory_.equippedArmor) {
-                    if (item != 0u) ++armorPieces;
+                    if (item == 0u) continue;
+                    ++armorPieces;
+                    const BlockDefinition* armor =
+                        GetBlockDefinition(static_cast<BlockId>(item));
+                    if (armor != nullptr) modArmorProtection += armor->armorProtection;
                 }
-                const float armorFactor = std::max(0.55f, 1.0f - 0.08f * static_cast<float>(armorPieces));
+                const float armorFactor = modArmorProtection > 0u
+                    ? std::max(0.25f, 1.0f -
+                        static_cast<float>(std::min(modArmorProtection, 20u)) / 25.0f)
+                    : std::max(0.55f, 1.0f - 0.08f * static_cast<float>(armorPieces));
                 playerHealth_ = std::clamp(playerHealth_ - rawDamage * armorFactor, 0.0f, 20.0f);
                 ui_.SetChatMessage(std::string(source) + " · Vida " +
                     std::to_string(static_cast<int>(std::ceil(playerHealth_))) + "/20");
@@ -2269,6 +2277,8 @@ void Engine::HandleUiAction(const std::string& action) {
                 if (key.find("_sword") != std::string_view::npos) damage = 6.0f;
                 else if (key.find("_axe") != std::string_view::npos) damage = 4.0f;
                 else if (key.find("_pickaxe") != std::string_view::npos) damage = 3.0f;
+                if (held->attackDamage > 0.0f)
+                    damage = std::clamp(held->attackDamage, 0.0f, 100.0f);
             }
             bool defeated = false;
             int defeatedKind = -1;
