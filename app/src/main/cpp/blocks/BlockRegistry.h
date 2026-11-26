@@ -468,6 +468,7 @@ struct ModBlockRegistration {
 const BlockDefinition* GetBlockDefinition(BlockId id) noexcept;
 const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept;
 std::size_t GetBlockDefinitionCount() noexcept;
+const BlockDefinition* GetBlockDefinitionByIndex(std::size_t index) noexcept;
 bool RegisterModBlock(ModBlockRegistration definition, BlockId* registeredId = nullptr,
                       std::string* error = nullptr);
 void ClearModBlockDefinitions() noexcept;
