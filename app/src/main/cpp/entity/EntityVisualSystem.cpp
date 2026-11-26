@@ -139,8 +139,27 @@ bool EntityVisualSystem::LoadSheepModel(const std::uint8_t* bytes,std::size_t si
     return true;
 }
 
+bool EntityVisualSystem::LoadModEntityModel(int kind, const EntityDefinition& definition,
+                                             const std::uint8_t* bytes, std::size_t size,
+                                             std::string& error) {
+    if (kind < 64 || modModels_.find(kind) != modModels_.end()) {
+        error = "mod entity kind is invalid or duplicated";
+        return false;
+    }
+    ModelData candidate;
+    if (!ModelLoader::Load(bytes, size, candidate, error) ||
+        !ModelValidator::Validate(candidate, error)) return false;
+    EntityDefinition registered = definition;
+    registered.legacyKind = kind;
+    if (!registry_.Register(std::move(registered), error)) return false;
+    modModels_.emplace(kind, std::move(candidate));
+    error.clear();
+    return true;
+}
+
 void EntityVisualSystem::Clear() {
     sheepModel_={};
+    modModels_.clear();
     registry_.Clear();
     sheepValidated_=false;
     sheepDiagnostic_.clear();
@@ -150,10 +169,9 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
                                     std::vector<WorldVertex>& output,
                                     const CameraFrustum* frustum,
                                     bool textureAvailable) const {
-    if(!sheepValidated_ || !legacyAdapter_.UseMaes(sheepValidated_)) return;
-    for(const Entity& entity:entities) {
-        if(entity.kind!=0 || !IsVisible(entity,sheepModel_,frustum)) continue;
-
+    const auto appendModel = [&](const ModelData& model, const Entity& entity,
+                                 bool modelTextureAvailable) {
+        if (!IsVisible(entity, model, frustum)) return;
         EntityAnimationState animation;
         animation.time=entity.animationClock;
         animation.condition=entity.visualState;
@@ -161,7 +179,7 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
         animation.transitionSeconds=entity.visualTransitionSeconds;
 
         std::vector<AnimatedBonePose> pose;
-        if(!AnimationController::Evaluate(sheepModel_,animation,pose)) continue;
+        if(!AnimationController::Evaluate(model,animation,pose)) return;
         std::vector<ModelVec3> translations;
         std::vector<ModelQuaternion> rotations;
         std::vector<ModelVec3> scales;
@@ -174,13 +192,12 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
             scales.push_back(bone.scale);
         }
         std::vector<ModelMatrix> boneMatrices;
-        if(!Skeleton::BuildMatrices(sheepModel_,translations,rotations,scales,boneMatrices))
-            continue;
+        if(!Skeleton::BuildMatrices(model,translations,rotations,scales,boneMatrices)) return;
 
-        for(const ModelCube& cube:sheepModel_.cubes) {
+        for(const ModelCube& cube:model.cubes) {
             if(cube.boneIndex>=boneMatrices.size() ||
-               cube.materialIndex>=sheepModel_.materials.size()) continue;
-            const ModelMaterial& material=sheepModel_.materials[cube.materialIndex];
+               cube.materialIndex>=model.materials.size()) continue;
+            const ModelMaterial& material=model.materials[cube.materialIndex];
             const ModelMatrix& boneMatrix=boneMatrices[cube.boneIndex];
             for(std::size_t face=0;face<6u;++face) {
                 const auto localCorners=FaceCorners(cube,face);
@@ -195,9 +212,7 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
                     {{rect[2],rect[3]}},{{rect[0],rect[3]}}
                 }};
                 const std::size_t offset=face*4u;
-                // A valid GL texture uses the model's full UVs. If upload fails,
-                // preserve a representative face colour so the entity is still visible.
-                const std::array<float,3> color = textureAvailable
+                const std::array<float,3> color = modelTextureAvailable
                     ? std::array<float,3>{{material.baseColor[0],material.baseColor[1],material.baseColor[2]}}
                     : std::array<float,3>{{
                         (static_cast<float>(cube.faceColors[offset])/255.0f)*material.baseColor[0],
@@ -208,6 +223,16 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
                 AppendTriangle(output,worldCorners,uv,color,0,2,3);
             }
         }
+    };
+
+    if (sheepValidated_ && legacyAdapter_.UseMaes(sheepValidated_)) {
+        for (const Entity& entity : entities) {
+            if (entity.kind == 0) appendModel(sheepModel_, entity, textureAvailable);
+        }
+    }
+    for (const Entity& entity : entities) {
+        const auto found = modModels_.find(entity.kind);
+        if (found != modModels_.end()) appendModel(found->second, entity, false);
     }
 }
 
