@@ -121,21 +121,30 @@ bool WorldMeshRenderer::Sync(const std::vector<ChunkMeshView>& chunkViews,
         const auto key = std::make_pair(view.chunkX, view.chunkZ);
         GpuChunk& gpu = chunks_[key];
 
-        const bool opaqueOk = UploadPass(gpu.opaqueVao, gpu.opaqueVbo, gpu.opaqueCount,
-            *view.opaque, 0u, view.opaque->size());
-        const bool transparentOk = UploadPass(gpu.transparentVao, gpu.transparentVbo,
-            gpu.transparentCount, *view.transparent, 0u, view.transparent->size());
+        // Build both passes into temporary GPU objects. Keep the previous
+        // drawable mesh alive until the complete replacement has uploaded.
+        GpuChunk staged{};
+        const bool opaqueOk = UploadPass(staged.opaqueVao, staged.opaqueVbo,
+            staged.opaqueCount, *view.opaque, 0u, view.opaque->size());
+        const bool transparentOk = UploadPass(staged.transparentVao,
+            staged.transparentVbo, staged.transparentCount,
+            *view.transparent, 0u, view.transparent->size());
         if (!opaqueOk || !transparentOk) {
-            gpu.revision = 0;
-            gpu.opaqueCount = 0;
-            gpu.transparentCount = 0;
+            ReleasePass(staged.opaqueVao, staged.opaqueVbo, staged.opaqueCount);
+            ReleasePass(staged.transparentVao, staged.transparentVbo, staged.transparentCount);
             success = false;
             continue;
         }
 
-        gpu.revision = view.revision;
-        gpu.minY = view.minY;
-        gpu.maxY = view.maxY;
+        staged.revision = view.revision;
+        staged.minY = view.minY;
+        staged.maxY = view.maxY;
+
+        GpuChunk previous = gpu;
+        gpu = staged;
+        ReleasePass(previous.opaqueVao, previous.opaqueVbo, previous.opaqueCount);
+        ReleasePass(previous.transparentVao, previous.transparentVbo,
+                    previous.transparentCount);
         ++lastUploadCount_;
     }
 
