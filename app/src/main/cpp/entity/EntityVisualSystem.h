@@ -24,6 +24,7 @@ public:
                             std::string& error);
     void Clear();
     bool IsSheepReady() const { return sheepValidated_; }
+    bool IsModEntityReady(int kind) const { return modModels_.find(kind) != modModels_.end(); }
     const std::string& SheepDiagnostic() const { return sheepDiagnostic_; }
 
     void AppendMesh(const std::vector<Entity>& entities,
