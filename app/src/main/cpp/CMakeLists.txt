@@ -105,6 +105,8 @@ add_library(minefade_native SHARED
     entity/Skeleton.cpp
     entity/AnimationController.cpp
     entity/EntityVisualSystem.cpp
+    mods/JsonLite.cpp
+    mods/ModContentRegistry.cpp
     world/VoxelWorld.cpp
     blocks/BlockRegistry.cpp
     ui/RmlUiOpenGLES.cpp
