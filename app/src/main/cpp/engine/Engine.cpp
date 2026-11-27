@@ -1601,7 +1601,7 @@ void Engine::Render() {
                     miningPointerId_ = -1;
                     miningElapsed_ = 0.0f;
                     miningRequired_ = 0.0f;
-                    ui_.SetTargetBlock({}, 0.0f);
+                    SetTargetBlock({}, 0.0f);
                     ui_.SetPanelVisible("death-panel", true);
                 }
             };
@@ -2236,7 +2236,7 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
             miningElapsed_ = 0.0f;
             miningRequired_ = 0.0f;
         }
-        ui_.SetTargetBlock({}, 0.0f);
+        SetTargetBlock({}, 0.0f);
         touches_.erase(found);
     }
 }
@@ -2808,6 +2808,7 @@ std::string Engine::QuickbarSnapshot() const {
         const BlockDefinition* definition = itemId == 0u
             ? nullptr : GetBlockDefinition(static_cast<BlockId>(itemId));
         output << ';' << itemId << '|' << amount << '|'
+               << (definition == nullptr ? 0u : definition->tileSide) << '|'
                << (definition == nullptr ? "" : definition->nameEs);
     }
     return output.str();
@@ -2816,6 +2817,59 @@ std::string Engine::QuickbarSnapshot() const {
 void Engine::AddProgressionXp(std::uint32_t amount) {
     if (amount == 0u) return;
     progressionXp_ = std::min(100000000u, progressionXp_ + std::min(amount, 100000000u));
+}
+
+std::string Engine::InventorySnapshot() const {
+    std::ostringstream output;
+    output << "v1|" << inventory_.selectedSlot;
+    for (std::size_t slot = 0; slot < Inventory::kSlotCount; ++slot) {
+        const std::uint32_t encoded = inventory_.counts[slot];
+        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+        const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+        const BlockDefinition* definition = itemId == 0u
+            ? nullptr : GetBlockDefinition(static_cast<BlockId>(itemId));
+        const std::uint16_t durability = inventory_.SlotItemDurability(slot);
+        const std::uint16_t maxDurability = inventory_.SlotItemMaxDurability(slot);
+        output << ';' << slot << '|' << itemId << '|' << amount << '|'
+               << durability << '|' << maxDurability << '|'
+               << (definition == nullptr ? 0u : definition->tileSide) << '|'
+               << (definition == nullptr ? "Vacío" : definition->nameEs);
+    }
+    return output.str();
+}
+
+std::string Engine::HudSnapshot() const {
+    const std::uint32_t boundedXp = progressionXp_;
+    std::uint32_t level = 1u;
+    std::uint32_t spent = 0u;
+    std::uint32_t required = 100u;
+    while (boundedXp - spent >= required && level < 100000u) {
+        spent += required;
+        ++level;
+        required = std::min(1000000u, required + 50u);
+    }
+    const std::uint32_t intoLevel = boundedXp - spent;
+    const int healthPercent = std::clamp(
+        static_cast<int>(std::lround(std::clamp(playerHealth_, 0.0f, 20.0f) * 5.0f)), 0, 100);
+    const int hungerPercent = std::clamp(
+        static_cast<int>(std::lround(std::clamp(playerHunger_, 0.0f, 20.0f) * 5.0f)), 0, 100);
+    const int xpPercent = std::clamp(static_cast<int>(
+        static_cast<std::uint64_t>(intoLevel) * 100u / std::max(required, 1u)), 0, 100);
+    const int targetPercent = std::clamp(
+        static_cast<int>(std::lround(targetBlockProgress_ * 100.0f)), 0, 100);
+    const int armorPieces = static_cast<int>(std::count_if(
+        inventory_.equippedArmor.begin(), inventory_.equippedArmor.end(),
+        [](std::uint16_t item) { return item != 0u; }));
+    std::ostringstream output;
+    output << "v1|" << healthPercent << '|' << hungerPercent << '|'
+           << armorPieces << '|' << level << '|' << xpPercent << '|'
+           << targetPercent << '|' << targetBlockName_;
+    return output.str();
+}
+
+void Engine::SelectInventorySlot(int slot) {
+    if (!ready_ || slot < 0 || slot >= static_cast<int>(Inventory::kSlotCount)) return;
+    HandleUiAction("inventory-slot-" + std::to_string(slot));
 }
 
 std::string Engine::ProgressionSnapshot() const {
@@ -3078,6 +3132,12 @@ void Engine::TakeStarterChestContents() {
     ui_.SetChatMessage("Has recogido " + std::to_string(taken) + " objetos del cofre.");
 }
 
+void Engine::SetTargetBlock(const std::string& name, float progress) {
+    targetBlockName_ = name;
+    targetBlockProgress_ = name.empty() ? 0.0f : std::clamp(progress, 0.0f, 1.0f);
+    ui_.SetTargetBlock(targetBlockName_, targetBlockProgress_);
+}
+
 void Engine::UpdateMining(float deltaSeconds) {
     auto active = std::find_if(touches_.begin(), touches_.end(), [](const auto& entry) {
         const TouchState& state = entry.second;
@@ -3093,9 +3153,9 @@ void Engine::UpdateMining(float deltaSeconds) {
         if (world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f,
                                      &target, &targetType)) {
             const BlockDefinition* definition = GetBlockDefinition(targetType);
-            ui_.SetTargetBlock(definition != nullptr ? definition->nameEs : "", 0.0f);
+            SetTargetBlock(definition != nullptr ? definition->nameEs : "", 0.0f);
         } else {
-            ui_.SetTargetBlock({}, 0.0f);
+            SetTargetBlock({}, 0.0f);
         }
         return;
     }
@@ -3109,13 +3169,13 @@ void Engine::UpdateMining(float deltaSeconds) {
         miningElapsed_ = 0.0f;
         miningRequired_ = 0.0f;
         miningBlockType_ = BlockId::Air;
-        ui_.SetTargetBlock({}, 0.0f);
+        SetTargetBlock({}, 0.0f);
         return;
     }
 
     const BlockDefinition* definition = GetBlockDefinition(targetType);
     if (definition == nullptr) {
-        ui_.SetTargetBlock({}, 0.0f);
+        SetTargetBlock({}, 0.0f);
         return;
     }
 
@@ -3133,12 +3193,12 @@ void Engine::UpdateMining(float deltaSeconds) {
     }
 
     if (definition->hardness < 0.0f) {
-        ui_.SetTargetBlock(definition->nameEs, 0.0f);
+        SetTargetBlock(definition->nameEs, 0.0f);
         return;
     }
 
     if (gameMode_ == 2) {
-        ui_.SetTargetBlock(definition->nameEs, 0.0f);
+        SetTargetBlock(definition->nameEs, 0.0f);
         return;
     }
     // Repeat the short first-person mining swing while the block is being
@@ -3178,7 +3238,7 @@ void Engine::UpdateMining(float deltaSeconds) {
                          std::clamp(modMiningSpeed_, 0.5f, 3.0f), 0.12f, 10.0f);
     miningElapsed_ += std::clamp(deltaSeconds, 0.0f, 0.05f);
     const float progress = std::clamp(miningElapsed_ / miningRequired_, 0.0f, 1.0f);
-    ui_.SetTargetBlock(definition->nameEs, progress);
+    SetTargetBlock(definition->nameEs, progress);
     if (progress < 1.0f) return;
 
     if (!protection_.CanBuild(playerIdentity_, static_cast<int>(target.x), static_cast<int>(target.z))) {
@@ -3187,7 +3247,7 @@ void Engine::UpdateMining(float deltaSeconds) {
         miningPointerId_ = -1;
         miningElapsed_ = 0.0f;
         miningRequired_ = 0.0f;
-        ui_.SetTargetBlock(definition->nameEs, 0.0f);
+        SetTargetBlock(definition->nameEs, 0.0f);
         return;
     }
     Vec3 broken{};
@@ -3231,7 +3291,7 @@ void Engine::UpdateMining(float deltaSeconds) {
     miningPointerId_ = -1;
     miningElapsed_ = 0.0f;
     miningRequired_ = 0.0f;
-    ui_.SetTargetBlock({}, 0.0f);
+    SetTargetBlock({}, 0.0f);
 }
 
 void Engine::RefreshInventoryUi() {
