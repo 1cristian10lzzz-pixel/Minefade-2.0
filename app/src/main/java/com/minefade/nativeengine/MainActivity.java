@@ -504,6 +504,22 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private String fallbackItemGlyph(String name) {
+        String key = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
+        if (key.contains("espada")) return "⚔";
+        if (key.contains("pico")) return "⛏";
+        if (key.contains("hacha")) return "🪓";
+        if (key.contains("pala") || key.contains("azada")) return "⚒";
+        if (key.contains("armadura") || key.contains("casco") || key.contains("botas")) return "◆";
+        if (key.contains("semilla") || key.contains("planta")) return "🌱";
+        if (key.contains("zanahoria")) return "🥕";
+        if (key.contains("patata")) return "🥔";
+        if (key.contains("manzana") || key.contains("carne") || key.contains("pan")) return "●";
+        if (key.contains("antorcha")) return "✦";
+        if (key.contains("palo")) return "╱";
+        return key.isEmpty() ? "—" : "▦";
+    }
+
     private void updateFallbackQuickbar(String snapshot) {
         if (snapshot == null || snapshot.isEmpty()) return;
         String[] tokens = snapshot.split(";", -1);
@@ -516,8 +532,8 @@ public final class MainActivity extends Activity {
             String[] item = tokens[i + 1].split("\\|", 3);
             String label = item.length >= 3 ? item[2] : "";
             String amount = item.length >= 2 ? item[1] : "0";
-            if (label.length() > 5) label = label.substring(0, 5);
-            slot.setText((i + 1) + "\n" + (label.isEmpty() ? "—" : label) + "\n"
+            String glyph = fallbackItemGlyph(label);
+            slot.setText((i + 1) + "\n" + ("0".equals(amount) ? "—" : glyph) + "\n"
                     + ("0".equals(amount) ? "" : amount));
             int stroke = i == selected ? 0xffa8ed75 : 0x887d9bad;
             int[] colors = i == selected ? new int[]{0xff3f634a, 0xff1c4339}
