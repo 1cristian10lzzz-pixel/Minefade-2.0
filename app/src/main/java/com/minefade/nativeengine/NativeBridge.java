@@ -28,6 +28,9 @@ public final class NativeBridge {
     public static native String nativeExecuteCommand(String command);
     public static native String nativeGetQuickbarSnapshot();
     public static native String nativeGetProgressionSnapshot();
+    public static native String nativeGetInventorySnapshot();
+    public static native String nativeGetHudSnapshot();
+    public static native void nativeSelectInventorySlot(int slot);
     public static native boolean nativeConsumeExitRequest();
     public static native int nativeConsumeSoundEvents();
     public static native void nativeSetMultiplayerMode(boolean enabled, int playerSlot);
