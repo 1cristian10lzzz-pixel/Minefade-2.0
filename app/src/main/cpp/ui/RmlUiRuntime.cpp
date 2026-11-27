@@ -265,7 +265,7 @@ button:active { background: #47789b; }
   </div>
 </div>
 <div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
-<div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div></div>
+<div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div><div id="crosshair-center"></div></div>
 <div id="movement-pad">
   <div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div>
   <div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div>
@@ -327,7 +327,7 @@ button:active { background: #47789b; }
 <div id="death-panel" class="panel">
   <div class="death-title">HAS MUERTO</div>
   <div class="death-subtitle">Tu aventura continúa. Puedes volver al mundo.</div>
-  <div class="actions"><button id="respawn">Reaparecer</button><button id="save-exit">Guardar y salir</button></div>
+  <div class="actions"><button id="respawn">Reaparecer</button><button id="death-exit">Guardar y salir</button></div>
 </div>
 <div id="chat-message"></div>
 </body>
@@ -476,11 +476,26 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #crosshair-h { position: absolute; left: 0dp; top: 7dp; width: 16dp; height: 2dp; background: #ffffffee; }
 #crosshair-center { position: absolute; left: 6dp; top: 6dp; width: 4dp; height: 4dp; background: #e7f6ad; border-radius: 2dp; }
 #target { position: absolute; top: 58%; left: 50%; margin-left: -70dp; width: 140dp; text-align: center; display: none; }
+#target-progress { width: 100dp; height: 4dp; margin: 4dp auto 0dp auto; background: #ffffff44; border-radius: 3dp; overflow: hidden; }
+#target-progress-fill { height: 4dp; width: 0%; background: #b9f27c; border-radius: 3dp; transition: width 0.10s linear; }
 #selected-item { position: absolute; left: 50%; bottom: 59dp; margin-left: -95dp; width: 190dp; max-width: 82%; padding: 4dp 8dp; text-align: center; background: #171c22d9; border: 1dp #aeb8c255; border-radius: 4dp; display: none; }
 #pickup { position: absolute; right: 12dp; bottom: 54dp; display: none; }
 .panel { position: absolute; left: 50%; top: 50%; width: 280dp; margin-left: -140dp; margin-top: -100dp; padding: 12dp; border: 1dp solid #ffffffaa; border-radius: 12dp; background-color: rgba(21, 41, 61, 0.96); display: none; }
 #pause-panel .actions { display: flex; }
 #pause-panel button { width: 128dp; margin-right: 6dp; }
+#death-panel { z-index: 20; width: 286dp; margin-left: -143dp; margin-top: -104dp; background: #251a25f5; border: 2dp solid #d46c70; }
+.death-title { color: #ff7e83; text-align: center; font-size: 23dp; font-weight: bold; margin-bottom: 8dp; }
+.death-subtitle { color: #e4d8dc; text-align: center; font-size: 11dp; margin-bottom: 16dp; }
+#death-panel .actions { display: flex; justify-content: center; }
+#death-panel button { width: 110dp; margin-right: 6dp; }
+.vital-bar { display: flex; flex-direction: row; align-items: center; gap: 3dp; width: 76dp; }
+.vital-track { width: 62dp; height: 8dp; background: #0b1420; border: 1dp solid #8ba0b2; border-radius: 3dp; overflow: hidden; }
+.vital-fill { width: 100%; height: 8dp; }
+#vitals-health-fill { background: #dd5964; }
+#vitals-hunger-fill { background: #e5a34e; }
+#vitals-level { color: #d5f38c; font-size: 10dp; }
+#vitals-xp { width: 62dp; height: 5dp; background: #243240; border: 1dp solid #8296a5; }
+#vitals-xp-fill { height: 5dp; background: #9fdf59; }
 </style>
 </head>
 <body>
@@ -493,6 +508,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 </div>
 <div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
 <div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div><div id="crosshair-center"></div></div>
+<div id="vitals"><div class="vital-bar"><span class="heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div class="vital-bar"><span class="food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div id="vitals-armor" class="vital-group"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
 <div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div><button id="crouch">▣</button></div>
 <div id="quickbar">
 <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
@@ -500,8 +516,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <button class="slot" id="slot-6">7</button><button class="slot" id="slot-7">8</button><button class="slot" id="slot-8">9</button>
 </div>
 <button id="jump">↑</button><button id="attack">⚔</button>
-<div id="crosshair"></div>
-<div id="target"><div id="target-name"></div><div id="target-progress-fill"></div></div>
+<div id="target"><div id="target-name"></div><div id="target-progress"><div id="target-progress-fill"></div></div></div>
 <div id="selected-item"></div><div id="pickup"></div>
 <div id="inventory-panel" class="panel">
 <button id="inventory-close">Cerrar</button><div id="equipment-items"></div><div id="inventory-items"></div>
@@ -511,7 +526,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <div id="pause-panel" class="panel"><div class="actions"><button id="resume">Continuar</button><button id="save-exit">Guardar y salir</button></div></div>
 <div id="starter-chest-panel" class="panel"><div id="starter-chest-items"></div>
 <button id="starter-chest-take">Recoger</button><button id="starter-chest-close">Cerrar</button></div>
-<div id="death-panel" class="panel"><div class="death-title">HAS MUERTO</div><div class="death-subtitle">Tu aventura continúa.</div><div class="actions"><button id="respawn">Reaparecer</button><button id="save-exit">Guardar y salir</button></div></div>
+<div id="death-panel" class="panel"><div class="death-title">HAS MUERTO</div><div class="death-subtitle">Tu aventura continúa.</div><div class="actions"><button id="respawn">Reaparecer</button><button id="death-exit">Guardar y salir</button></div></div>
 </body>
 </rml>
 )RML";
@@ -531,6 +546,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 
     AttachAction("chat", "chat");
     AttachAction("respawn", "respawn");
+    AttachAction("death-exit", "save-exit");
     AttachAction("inventory", "inventory");
     AttachAction("inventory-close", "inventory-close");
     AttachAction("crafting-open", "crafting-open");
