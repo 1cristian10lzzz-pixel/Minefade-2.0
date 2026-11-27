@@ -92,6 +92,8 @@ public final class MainActivity extends Activity {
         int clickTag = 0;
         View target;
         boolean camera;
+        float lastX;
+        float lastY;
     }
 
     private static final int FALLBACK_TAG_INVENTORY = -101;
@@ -591,7 +593,7 @@ public final class MainActivity extends Activity {
             for (int i = 0; i < group.getChildCount(); ++i)
                 setFallbackChildrenPassive(group.getChildAt(i));
         }
-        if (view != fallbackOverlay) {
+        if (view.getParent() != null) {
             view.setOnClickListener(null);
             view.setOnTouchListener(null);
             view.setClickable(false);
@@ -734,6 +736,38 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void updateFallbackHudSnapshot(String snapshot) {
+        if (snapshot == null || snapshot.isEmpty() || fallbackOverlay == null) return;
+        String[] values = snapshot.split("\\|", 8);
+        if (values.length < 8 || !"v1".equals(values[0])) return;
+        try {
+            int health = Math.max(0, Math.min(100, Integer.parseInt(values[1])));
+            int hunger = Math.max(0, Math.min(100, Integer.parseInt(values[2])));
+            int armor = Math.max(0, Integer.parseInt(values[3]));
+            int level = Math.max(1, Integer.parseInt(values[4]));
+            int xp = Math.max(0, Math.min(100, Integer.parseInt(values[5])));
+            int targetProgress = Math.max(0, Math.min(100, Integer.parseInt(values[6])));
+            String target = values[7] == null ? "" : values[7].trim();
+            if (fallbackHealthBar != null) fallbackHealthBar.setProgress(health);
+            if (fallbackHungerBar != null) fallbackHungerBar.setProgress(hunger);
+            if (fallbackXpBar != null) fallbackXpBar.setProgress(xp);
+            if (fallbackLevelLabel != null) fallbackLevelLabel.setText("NV " + level);
+            if (fallbackArmorLabel != null) fallbackArmorLabel.setText("⬟" + armor);
+            if (fallbackTargetLabel != null) {
+                if (target.isEmpty()) {
+                    fallbackTargetLabel.setText("");
+                    fallbackTargetLabel.setVisibility(View.GONE);
+                } else {
+                    fallbackTargetLabel.setText(target +
+                            (targetProgress > 0 ? " · " + targetProgress + "%" : ""));
+                    fallbackTargetLabel.setVisibility(View.VISIBLE);
+                }
+            }
+        } catch (NumberFormatException error) {
+            android.util.Log.w("Minefade", "Ignored malformed fallback HUD snapshot", error);
+        }
+    }
+
     private String fallbackItemGlyph(String name) {
         String key = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
         if (key.contains("espada")) return "⚔";
@@ -747,7 +781,9 @@ public final class MainActivity extends Activity {
         if (key.contains("manzana") || key.contains("carne") || key.contains("pan")) return "●";
         if (key.contains("antorcha")) return "✦";
         if (key.contains("palo")) return "╱";
-        return key.isEmpty() ? "—" : "▦";
+        if (key.contains("madera") || key.contains("tablón")) return "▤";
+        if (key.contains("piedra") || key.contains("adoquín")) return "▦";
+        return key.isEmpty() ? "—" : "◆";
     }
 
     private void updateFallbackQuickbar(String snapshot) {
@@ -759,12 +795,28 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < 9; i++) {
             TextView slot = fallbackQuickbarSlots[i];
             if (slot == null) continue;
-            String[] item = tokens[i + 1].split("\\|", 3);
-            String label = item.length >= 3 ? item[2] : "";
+            String[] item = tokens[i + 1].split("\\|", 4);
+            String id = item.length >= 1 ? item[0] : "0";
             String amount = item.length >= 2 ? item[1] : "0";
-            String glyph = fallbackItemGlyph(label);
-            slot.setText((i + 1) + "\n" + ("0".equals(amount) ? "—" : glyph) + "\n"
-                    + ("0".equals(amount) ? "" : amount));
+            int tile = -1;
+            try { if (item.length >= 3) tile = Integer.parseInt(item[2]); }
+            catch (NumberFormatException ignored) { }
+            String label = item.length >= 4 ? item[3] : "";
+            Bitmap bitmap = !"0".equals(id) && surfaceView != null
+                    ? surfaceView.createBlockIcon(tile) : null;
+            if (bitmap != null) {
+                BitmapDrawable drawable = new BitmapDrawable(getResources(), bitmap);
+                drawable.setBounds(0, 0, dp(24), dp(24));
+                slot.setCompoundDrawables(null, drawable, null, null);
+                slot.setCompoundDrawablePadding(0);
+                slot.setText((i + 1) + "\n" + (("0".equals(amount) || "1".equals(amount)) ? "" : amount));
+            } else {
+                slot.setCompoundDrawables(null, null, null, null);
+                slot.setText((i + 1) + "\n" + ("0".equals(amount) ? "—" : fallbackItemGlyph(label))
+                        + "\n" + ("0".equals(amount) ? "" : amount));
+            }
+            slot.setContentDescription("Espacio " + (i + 1) + ": " +
+                    ("0".equals(amount) ? "vacío" : label + ", " + amount));
             int stroke = i == selected ? 0xffa8ed75 : 0x887d9bad;
             int[] colors = i == selected ? new int[]{0xff3f634a, 0xff1c4339}
                     : new int[]{0xff294358, 0xff162c40};
@@ -777,26 +829,125 @@ public final class MainActivity extends Activity {
 
     private void showFallbackInventoryDialog() {
         if (surfaceView == null || !engineReady) return;
-        String inventory = surfaceView.executeCommand("inventario");
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(14), dp(12), dp(14), dp(12));
-        TextView contents = statusText(inventory, 10, 0xffe2edf3, false);
-        contents.setGravity(Gravity.TOP | Gravity.LEFT);
+        panel.setPadding(dp(10), dp(10), dp(10), dp(8));
+        TextView summary = statusText("36 espacios · toca un objeto para equiparlo o moverlo",
+                10, 0xffdce8f0, false);
+        panel.addView(summary, new LinearLayout.LayoutParams(-1, dp(34)));
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
         ScrollView scroll = new ScrollView(this);
-        scroll.addView(contents, new ScrollView.LayoutParams(-1, -2));
-        panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(240)));
+        scroll.setFillViewport(false);
+        scroll.addView(grid, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         Button craft = new Button(this);
         craft.setText("FABRICACIÓN");
         craft.setAllCaps(false);
-        panel.addView(craft, new LinearLayout.LayoutParams(-1, dp(44)));
+        panel.addView(craft, new LinearLayout.LayoutParams(-1, dp(42)));
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Inventario")
                 .setView(panel)
                 .setNegativeButton("Cerrar", null)
                 .create();
-        craft.setOnClickListener(v -> { dialog.dismiss(); showFallbackCraftingDialog(); });
+        dialog.setOnDismissListener(shown -> {
+            if (surfaceView != null && engineReady) surfaceView.dispatchFallbackAction(4, true);
+        });
+        craft.setOnClickListener(v -> {
+            dialog.dismiss();
+            showFallbackCraftingDialog();
+        });
         dialog.show();
+        surfaceView.dispatchFallbackAction(3, true);
+        surfaceView.requestInventorySnapshot(snapshot ->
+                renderFallbackInventoryGrid(grid, summary, snapshot));
+    }
+
+    private void renderFallbackInventoryGrid(LinearLayout grid, TextView summary, String snapshot) {
+        if (grid == null || snapshot == null || snapshot.isEmpty()) {
+            if (summary != null) summary.setText("No se pudo leer el inventario del motor.");
+            return;
+        }
+        String[] tokens = snapshot.split(";", -1);
+        if (tokens.length < 37 || !tokens[0].startsWith("v1|")) {
+            summary.setText("El motor devolvió un inventario incompleto.");
+            return;
+        }
+        int selected = 0;
+        try { selected = Integer.parseInt(tokens[0].substring(3)); }
+        catch (NumberFormatException ignored) { }
+        grid.removeAllViews();
+        summary.setText("36 espacios · seleccionado " + (selected + 1) +
+                " · toca para equipar, mover o seleccionar");
+        for (int rowIndex = 0; rowIndex < 9; rowIndex++) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(72));
+            rowParams.bottomMargin = dp(3);
+            grid.addView(row, rowParams);
+            for (int column = 0; column < 4; column++) {
+                final int slotIndex = rowIndex * 4 + column;
+                String[] value = tokens[slotIndex + 1].split("\\|", 7);
+                if (value.length < 7) continue;
+                int itemId = parseIntOr(value[1], 0);
+                int amount = parseIntOr(value[2], 0);
+                int durability = parseIntOr(value[3], 0);
+                int maxDurability = parseIntOr(value[4], 0);
+                int tile = parseIntOr(value[5], -1);
+                String name = value[6];
+                TextView cell = statusButton("", false);
+                cell.setGravity(Gravity.CENTER);
+                cell.setTextSize(8);
+                cell.setMaxLines(3);
+                cell.setIncludeFontPadding(false);
+                cell.setPadding(dp(2), dp(2), dp(2), dp(2));
+                cell.setClickable(true);
+                cell.setFocusable(true);
+                if (itemId > 0 && amount > 0) {
+                    Bitmap bitmap = surfaceView == null ? null : surfaceView.createBlockIcon(tile);
+                    if (bitmap != null) {
+                        BitmapDrawable drawable = new BitmapDrawable(getResources(), bitmap);
+                        drawable.setBounds(0, 0, dp(29), dp(29));
+                        cell.setCompoundDrawables(null, drawable, null, null);
+                        cell.setText(name + "\n×" + amount);
+                    } else {
+                        cell.setText(fallbackItemGlyph(name) + "\n" + name + "\n×" + amount);
+                    }
+                    if (maxDurability > 0)
+                        cell.setContentDescription(name + ", " + amount + ", durabilidad " +
+                                durability + " de " + maxDurability);
+                    else cell.setContentDescription(name + ", " + amount);
+                } else {
+                    cell.setText("—\nVacío");
+                    cell.setContentDescription("Espacio vacío " + (slotIndex + 1));
+                }
+                GradientDrawable background = new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        slotIndex == selected
+                                ? new int[]{0xff42664c, 0xff1e4436}
+                                : new int[]{0xff31485d, 0xff1a2b3b});
+                background.setCornerRadius(dp(6));
+                background.setStroke(dp(slotIndex == selected ? 2 : 1),
+                        slotIndex == selected ? 0xffa8ed75 : 0x887d9bad);
+                cell.setBackground(background);
+                LinearLayout.LayoutParams cellParams =
+                        new LinearLayout.LayoutParams(0, -1, 1f);
+                if (column > 0) cellParams.leftMargin = dp(3);
+                row.addView(cell, cellParams);
+                cell.setOnClickListener(v -> {
+                    if (surfaceView == null || !engineReady) return;
+                    surfaceView.selectInventorySlot(slotIndex);
+                    surfaceView.requestInventorySnapshot(next ->
+                            renderFallbackInventoryGrid(grid, summary, next));
+                    surfaceView.requestQuickbarSnapshot(MainActivity.this::updateFallbackQuickbar);
+                });
+            }
+        }
+    }
+
+    private int parseIntOr(String value, int fallback) {
+        try { return Integer.parseInt(value); }
+        catch (NumberFormatException ignored) { return fallback; }
     }
 
     private void showFallbackCraftingDialog() {
