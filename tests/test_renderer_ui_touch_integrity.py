@@ -322,3 +322,17 @@ def test_android_fallback_hud_and_inventory_are_bound_to_real_engine_state():
     assert "fallbackXpBar.setProgress(xp)" in ACTIVITY
     assert 'crosshair = statusText("+", 25' in ACTIVITY
     assert "fallbackTargetLabel" in ACTIVITY
+
+
+def test_safe_rml_document_routes_to_full_android_recovery_overlay():
+    header = (CPP / "ui/RmlUiRuntime.h").read_text(encoding="utf-8")
+    runtime = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
+    assert "bool usingSafeDocument_{false};" in header
+    assert "return ready_ && !usingSafeDocument_;" in header
+    assert "usingSafeDocument_ = true;" in runtime
+    assert "return !usingSafeDocument_;" in runtime
+    assert "if (!ready_ || context_ == nullptr || usingSafeDocument_) return;" in runtime
+    assert "if (!ready_ || context_ == nullptr || usingSafeDocument_) return true;" in runtime
+    assert "if (usingSafeDocument_) return false;" in runtime
+    assert "Se activaron los controles" not in ACTIVITY
+    assert "HUD Android completo activado." in ACTIVITY
