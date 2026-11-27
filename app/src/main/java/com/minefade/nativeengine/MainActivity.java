@@ -993,13 +993,18 @@ public final class MainActivity extends Activity {
                 "Espada de madera","Espada de piedra","Espada de hierro","Lingote de hierro (horno)","Lingote de oro (horno)",
                 "Lingote de cobre (horno)","Raíl propulsor","Raíl detector","Raíl activador"
         };
-        new AlertDialog.Builder(this).setTitle("Libro de fabricación")
-                .setItems(labels, (dialog, which) -> {
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Libro de fabricación")
+                .setItems(labels, (shown, which) -> {
                     if (surfaceView == null) return;
                     String result = surfaceView.executeCommand("/fabricar " + recipeIds[which]);
                     Toast.makeText(this, result, Toast.LENGTH_LONG).show();
                     mainHandler.post(fallbackQuickbarRefresh);
-                }).setNegativeButton("Cerrar", null).show();
+                }).setNegativeButton("Cerrar", null).create();
+        dialog.setOnDismissListener(shown -> {
+            if (surfaceView != null && engineReady) surfaceView.dispatchFallbackAction(4, true);
+        });
+        if (surfaceView != null) surfaceView.dispatchFallbackAction(3, true);
+        dialog.show();
     }
 
     private void appendChatMessage(String sender, String message) {
