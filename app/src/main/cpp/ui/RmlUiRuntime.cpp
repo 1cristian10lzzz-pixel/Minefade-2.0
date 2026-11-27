@@ -134,9 +134,10 @@ button, .slot, #minimap, .panel, #chat-message { transition: background-color 0.
 #pickup { transition: opacity 0.16s linear; }
 button:hover { background: #365a77; }
 button:active { background: #47789b; }
-#crosshair { display: none; position: absolute; left: 50%; top: 50%; width: 12dp; height: 12dp; margin-left: -6dp; margin-top: -6dp; pointer-events: none; }
-#crosshair-v { position: absolute; left: 5dp; top: 0dp; width: 2dp; height: 12dp; background: #ffffffcc; }
-#crosshair-h { position: absolute; left: 0dp; top: 5dp; width: 12dp; height: 2dp; background: #ffffffcc; }
+#crosshair { display: block; position: absolute; z-index: 5; left: 50%; top: 50%; width: 16dp; height: 16dp; margin-left: -8dp; margin-top: -8dp; pointer-events: none; }
+#crosshair-v { position: absolute; left: 7dp; top: 0dp; width: 2dp; height: 16dp; background: #ffffffee; border: 1dp #152331aa; }
+#crosshair-h { position: absolute; left: 0dp; top: 7dp; width: 16dp; height: 2dp; background: #ffffffee; border: 1dp #152331aa; }
+#crosshair-center { position: absolute; left: 6dp; top: 6dp; width: 4dp; height: 4dp; border-radius: 2dp; background: #e7f6ad; }
 #hint { display: none; }
 .panel { position: absolute; left: 50%; top: 50%; width: 310dp; margin-left: -155dp; margin-top: -112dp; padding: 16dp; background: #101d2bf5; border: 1dp #8ca9bd99; border-radius: 16dp; display: none; }
 .panel h1 { font-size: 20dp; margin: 0dp 0dp 10dp 0dp; color: #ffffff; }
@@ -201,14 +202,25 @@ button:active { background: #47789b; }
 #starter-chest-panel { z-index: 11; width: 280dp; margin-left: -140dp; max-height: 70%; }
 #starter-chest-panel .actions { justify-content: center; }
 #starter-chest-panel button { min-width: 104dp; }
+#death-panel { z-index: 20; width: 286dp; margin-left: -143dp; margin-top: -104dp; padding: 18dp; background: #251a25f5; border: 2dp #d46c70dd; border-radius: 14dp; }
+.death-title { color: #ff7e83; text-align: center; font-size: 23dp; font-weight: bold; margin-bottom: 8dp; }
+.death-subtitle { color: #e4d8dc; text-align: center; font-size: 11dp; margin-bottom: 16dp; }
+#death-panel .actions { justify-content: center; gap: 8dp; }
+#death-panel button { min-width: 110dp; }
 #chat-message { position: absolute; z-index: 12; left: 50%; bottom: 62dp; width: 78%; margin-left: -39%; padding: 7dp 10dp; border-radius: 10dp; border: 1dp #d9e9a466; background: #101d2be8; color: #f3f7f8; font-size: 10dp; text-align: center; display: none; pointer-events: none; }
 
-#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 22dp; padding: 3dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8dp; background: #101a27dc; border: 1dp #bdced9aa; border-radius: 5dp; }
+#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 4dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background: #101a27dc; border: 1dp #bdced9aa; border-radius: 6dp; }
+.vital-bar { display: flex; flex-direction: row; align-items: center; gap: 3dp; width: 76dp; }
+.vital-symbol { width: 10dp; text-align: center; font-size: 10dp; }
+.vital-track { width: 62dp; height: 8dp; background: #0b1420; border: 1dp #8ba0b2aa; border-radius: 3dp; overflow: hidden; }
+.vital-fill { width: 100%; height: 8dp; border-radius: 2dp; transition: width 0.12s linear; }
+#vitals-health-fill { background: #dd5964; }
+#vitals-hunger-fill { background: #e5a34e; }
 .vital-group { display: flex; flex-direction: row; align-items: center; gap: 1dp; white-space: nowrap; font-size: 10dp; }
 .heart-on { color: #ff5e63; } .heart-off { color: #713e4a; }
 .food-on { color: #f5a45b; } .food-off { color: #75533c; }
 .armor-on { color: #e3f2ff; } .armor-off { color: #566a7b; }
-#vitals-level { color: #d5f38c; font-size: 10dp; min-width: 25dp; text-align: right; }
+#vitals-level { color: #d5f38c; font-size: 10dp; min-width: 25dp; text-align: right; font-weight: bold; }
 #vitals-xp { width: 62dp; height: 5dp; background: #243240; border: 1dp #8296a5aa; border-radius: 4dp; overflow: hidden; }
 #vitals-xp-fill { width: 0%; height: 5dp; background: #9fdf59; border-radius: 4dp; }
 #quickbar { bottom: 12dp; gap: 3dp; padding: 5dp; background: #101a27ed; border: 2dp #c6d4e0dd; border-radius: 5dp; }
@@ -260,7 +272,7 @@ button:active { background: #47789b; }
   <button id="crouch">▣</button>
 </div>
 <div id="hint"></div>
-<div id="vitals"><div class="vital-group" id="vitals-armor"></div><div class="vital-group" id="vitals-health"></div><div class="vital-group" id="vitals-hunger"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
+<div id="vitals"><div class="vital-bar"><span class="vital-symbol heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div class="vital-bar"><span class="vital-symbol food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div class="vital-group" id="vitals-armor"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
 <div id="quickbar">
   <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
   <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
@@ -311,6 +323,11 @@ button:active { background: #47789b; }
     <button id="starter-chest-take">Recoger todo</button>
     <button id="starter-chest-close">Cerrar</button>
   </div>
+</div>
+<div id="death-panel" class="panel">
+  <div class="death-title">HAS MUERTO</div>
+  <div class="death-subtitle">Tu aventura continúa. Puedes volver al mundo.</div>
+  <div class="actions"><button id="respawn">Reaparecer</button><button id="save-exit">Guardar y salir</button></div>
 </div>
 <div id="chat-message"></div>
 </body>
@@ -454,6 +471,10 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 #attack { position: absolute; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; font-size: 17dp; }
 #movement-pad #crouch { position: absolute; left: 45dp; top: 45dp; right: auto; bottom: auto; width: 42dp; height: 42dp; font-size: 15dp; pointer-events: auto; }
 #minimap { position: absolute; top: 54dp; left: 10dp; width: 64dp; height: 64dp; border: 1dp solid #ffffff88; background-color: rgba(18, 43, 64, 0.70); }
+#crosshair { position: absolute; z-index: 5; display: block; left: 50%; top: 50%; width: 16dp; height: 16dp; margin-left: -8dp; margin-top: -8dp; pointer-events: none; }
+#crosshair-v { position: absolute; left: 7dp; top: 0dp; width: 2dp; height: 16dp; background: #ffffffee; }
+#crosshair-h { position: absolute; left: 0dp; top: 7dp; width: 16dp; height: 2dp; background: #ffffffee; }
+#crosshair-center { position: absolute; left: 6dp; top: 6dp; width: 4dp; height: 4dp; background: #e7f6ad; border-radius: 2dp; }
 #target { position: absolute; top: 58%; left: 50%; margin-left: -70dp; width: 140dp; text-align: center; display: none; }
 #selected-item { position: absolute; left: 50%; bottom: 59dp; margin-left: -95dp; width: 190dp; max-width: 82%; padding: 4dp 8dp; text-align: center; background: #171c22d9; border: 1dp #aeb8c255; border-radius: 4dp; display: none; }
 #pickup { position: absolute; right: 12dp; bottom: 54dp; display: none; }
@@ -471,6 +492,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <button id="pause">Ⅱ</button>
 </div>
 <div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
+<div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div><div id="crosshair-center"></div></div>
 <div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div><button id="crouch">▣</button></div>
 <div id="quickbar">
 <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
@@ -489,6 +511,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <div id="pause-panel" class="panel"><div class="actions"><button id="resume">Continuar</button><button id="save-exit">Guardar y salir</button></div></div>
 <div id="starter-chest-panel" class="panel"><div id="starter-chest-items"></div>
 <button id="starter-chest-take">Recoger</button><button id="starter-chest-close">Cerrar</button></div>
+<div id="death-panel" class="panel"><div class="death-title">HAS MUERTO</div><div class="death-subtitle">Tu aventura continúa.</div><div class="actions"><button id="respawn">Reaparecer</button><button id="save-exit">Guardar y salir</button></div></div>
 </body>
 </rml>
 )RML";
@@ -507,6 +530,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     }
 
     AttachAction("chat", "chat");
+    AttachAction("respawn", "respawn");
     AttachAction("inventory", "inventory");
     AttachAction("inventory-close", "inventory-close");
     AttachAction("crafting-open", "crafting-open");
@@ -661,6 +685,15 @@ bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
                 static_cast<float>(x), static_cast<float>(y)));
             return hit == nullptr || hit->Closest("button") == nullptr;
         }
+        const Rml::Vector2f point(static_cast<float>(x), static_cast<float>(y));
+        Rml::Element* hit = context_->GetElementAtPoint(point);
+        // Only real HUD buttons capture a finger. Decorative panels, bars and
+        // labels never swallow the camera-look pointer while another finger moves.
+        if (hit == nullptr || hit->Closest("button") == nullptr) {
+            mouseCaptured_ = false;
+            mousePointerId_ = -1;
+            return true;
+        }
         const int px = static_cast<int>(x);
         const int py = static_cast<int>(y);
         const bool outside = context_->ProcessMouseMove(px, py, 0);
@@ -701,17 +734,15 @@ void RmlUiRuntime::SetVitals(float health, float hunger, int armorPieces,
         }
         return markup;
     };
-    const int healthPips = std::clamp(static_cast<int>(std::ceil(
-        std::clamp(health, 0.0f, 20.0f) * 0.5f)), 0, 10);
-    const int hungerPips = std::clamp(static_cast<int>(std::ceil(
-        std::clamp(hunger, 0.0f, 20.0f) * 0.5f)), 0, 10);
     const int armorPips = std::clamp(armorPieces * 2, 0, 10);
+    const float healthPercent = std::clamp(health, 0.0f, 20.0f) * 5.0f;
+    const float hungerPercent = std::clamp(hunger, 0.0f, 20.0f) * 5.0f;
     if (Rml::Element* element = document_->GetElementById("vitals-armor"))
         element->SetInnerRML(makePips(armorPips, "armor-on", "armor-off", "⬟"));
-    if (Rml::Element* element = document_->GetElementById("vitals-health"))
-        element->SetInnerRML(makePips(healthPips, "heart-on", "heart-off", "♥"));
-    if (Rml::Element* element = document_->GetElementById("vitals-hunger"))
-        element->SetInnerRML(makePips(hungerPips, "food-on", "food-off", "◆"));
+    if (Rml::Element* element = document_->GetElementById("vitals-health-fill"))
+        element->SetProperty("width", std::to_string(healthPercent) + "%");
+    if (Rml::Element* element = document_->GetElementById("vitals-hunger-fill"))
+        element->SetProperty("width", std::to_string(hungerPercent) + "%");
     if (Rml::Element* element = document_->GetElementById("vitals-level"))
         element->SetInnerRML("NV " + std::to_string(level));
     if (Rml::Element* element = document_->GetElementById("vitals-xp")) {
