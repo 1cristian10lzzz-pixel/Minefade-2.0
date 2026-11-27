@@ -650,6 +650,7 @@ void RmlUiRuntime::Resize(int width, int height) {
 }
 
 bool RmlUiRuntime::IsInMovementPad(float x, float y) const {
+    if (usingSafeDocument_) return false;
     const float padSize = 132.0f * density_;
     const float padMargin = 14.0f * density_;
     const float padBottom = 54.0f * density_;
@@ -663,6 +664,7 @@ bool RmlUiRuntime::IsInMovementPad(float x, float y) const {
 bool RmlUiRuntime::MovementVectorAt(float x, float y, float& moveX, float& moveY) const {
     moveX = 0.0f;
     moveY = 0.0f;
+    if (usingSafeDocument_) return false;
     const float size = 132.0f * density_;
     const float margin = 14.0f * density_;
     const float bottom = 54.0f * density_;
@@ -684,6 +686,7 @@ bool RmlUiRuntime::MovementVectorAt(float x, float y, float& moveX, float& moveY
 }
 
 bool RmlUiRuntime::CrouchButtonAt(float x, float y) const {
+    if (usingSafeDocument_) return false;
     const float size = 132.0f * density_;
     const float margin = 14.0f * density_;
     const float bottom = 54.0f * density_;
