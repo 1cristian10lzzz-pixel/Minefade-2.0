@@ -179,6 +179,8 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(exitPoll);
         mainHandler.removeCallbacks(fallbackQuickbarRefresh);
+        mainHandler.removeCallbacks(fallbackHudRefresh);
+        clearFallbackPointerStates();
         if (surfaceView != null) {
             saveCurrentWorldPreview();
             try {
@@ -573,6 +575,19 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(fallbackHudRefresh);
         mainHandler.post(fallbackQuickbarRefresh);
         mainHandler.post(fallbackHudRefresh);
+    }
+
+    private void clearFallbackPointerStates() {
+        if (surfaceView != null) {
+            for (java.util.Map.Entry<Integer, FallbackPointerState> entry :
+                    new java.util.ArrayList<>(fallbackPointers.entrySet())) {
+                FallbackPointerState state = entry.getValue();
+                if (state.holdAction >= 0) surfaceView.dispatchFallbackAction(state.holdAction, false);
+                if (state.camera) surfaceView.dispatchFallbackTouch(3, entry.getKey(),
+                        state.lastX, state.lastY);
+            }
+        }
+        fallbackPointers.clear();
     }
 
     private ProgressBar fallbackProgressBar(int tint) {
@@ -1405,6 +1420,9 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(exitPoll);
         mainHandler.removeCallbacks(engineTimeout);
         mainHandler.removeCallbacks(progressionRefresh);
+        mainHandler.removeCallbacks(fallbackQuickbarRefresh);
+        mainHandler.removeCallbacks(fallbackHudRefresh);
+        clearFallbackPointerStates();
         if (surfaceView != null) {
             saveCurrentWorldPreview();
             surfaceView.pauseNativeEngine();
@@ -1424,6 +1442,10 @@ public final class MainActivity extends Activity {
             if (engineReady) {
                 mainHandler.post(exitPoll);
                 mainHandler.post(progressionRefresh);
+                if (fallbackOverlay != null) {
+                    mainHandler.post(fallbackQuickbarRefresh);
+                    mainHandler.post(fallbackHudRefresh);
+                }
             }
         }
     }
