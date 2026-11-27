@@ -210,6 +210,7 @@ button:active { background: #47789b; }
 #chat-message { position: absolute; z-index: 12; left: 50%; bottom: 62dp; width: 78%; margin-left: -39%; padding: 7dp 10dp; border-radius: 10dp; border: 1dp #d9e9a466; background: #101d2be8; color: #f3f7f8; font-size: 10dp; text-align: center; display: none; pointer-events: none; }
 
 #vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 4dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background: #101a27dc; border: 1dp #bdced9aa; border-radius: 6dp; }
+#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 4dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background-color: rgba(16, 26, 39, 0.86); border: 1dp solid #bdced9aa; border-radius: 6dp; }
 .vital-bar { display: flex; flex-direction: row; align-items: center; gap: 3dp; width: 76dp; }
 .vital-symbol { width: 10dp; text-align: center; font-size: 10dp; }
 .vital-track { width: 62dp; height: 8dp; background: #0b1420; border: 1dp #8ba0b2aa; border-radius: 3dp; overflow: hidden; }
@@ -272,7 +273,7 @@ button:active { background: #47789b; }
   <button id="crouch">▣</button>
 </div>
 <div id="hint"></div>
-<div id="vitals"><div class="vital-bar"><span class="vital-symbol heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div class="vital-bar"><span class="vital-symbol food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div class="vital-group" id="vitals-armor"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
+<div id="vitals"><div id="vitals-health" class="vital-bar"><span class="vital-symbol heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div id="vitals-hunger" class="vital-bar"><span class="vital-symbol food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div class="vital-group" id="vitals-armor"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
 <div id="quickbar">
   <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
   <button class="slot" id="slot-3">4</button><button class="slot" id="slot-4">5</button><button class="slot" id="slot-5">6</button>
@@ -508,7 +509,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 </div>
 <div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
 <div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div><div id="crosshair-center"></div></div>
-<div id="vitals"><div class="vital-bar"><span class="heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div class="vital-bar"><span class="food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div id="vitals-armor" class="vital-group"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
+<div id="vitals"><div id="vitals-health" class="vital-bar"><span class="heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div id="vitals-hunger" class="vital-bar"><span class="food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div id="vitals-armor" class="vital-group"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
 <div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div><button id="crouch">▣</button></div>
 <div id="quickbar">
 <button class="slot" id="slot-0">1</button><button class="slot" id="slot-1">2</button><button class="slot" id="slot-2">3</button>
