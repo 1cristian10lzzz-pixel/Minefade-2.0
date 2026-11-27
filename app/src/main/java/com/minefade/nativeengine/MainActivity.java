@@ -371,14 +371,70 @@ public final class MainActivity extends Activity {
         if (gameContainer == null || surfaceView == null || fallbackOverlay != null) return;
         boolean leftHanded = getSharedPreferences("minefade_ui", MODE_PRIVATE)
                 .getBoolean("left_handed_controls", false);
+        fallbackPointers.clear();
         FrameLayout overlay = new FrameLayout(this);
         overlay.setClipChildren(false);
         overlay.setClipToPadding(false);
         overlay.setBackgroundColor(Color.TRANSPARENT);
         overlay.setClickable(true);
-        overlay.setOnTouchListener((view, event) -> dispatchFallbackWorldTouch(event));
+        overlay.setFocusable(false);
 
-        // Minecraft-style D-pad: four separate directions and crouch in the centre.
+        // Centre reticle and targeted-block label are also present when RmlUi is unavailable.
+        TextView crosshair = statusText("+", 25, Color.WHITE, true);
+        crosshair.setGravity(Gravity.CENTER);
+        crosshair.setShadowLayer(dp(3), 0f, dp(1), Color.BLACK);
+        crosshair.setClickable(false);
+        FrameLayout.LayoutParams crosshairParams = new FrameLayout.LayoutParams(dp(28), dp(28),
+                Gravity.CENTER);
+        overlay.addView(crosshair, crosshairParams);
+        fallbackTargetLabel = statusText("", 11, Color.WHITE, true);
+        fallbackTargetLabel.setGravity(Gravity.CENTER);
+        fallbackTargetLabel.setPadding(dp(7), dp(4), dp(7), dp(4));
+        fallbackTargetLabel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xe51a2a38, 0xd9111b25}));
+        fallbackTargetLabel.setVisibility(View.GONE);
+        fallbackTargetLabel.setClickable(false);
+        FrameLayout.LayoutParams targetParams = new FrameLayout.LayoutParams(-2, dp(26),
+                Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL);
+        targetParams.topMargin = dp(56);
+        overlay.addView(fallbackTargetLabel, targetParams);
+
+        // Health, food, armour and XP are real engine values, not decorative labels.
+        LinearLayout vitals = new LinearLayout(this);
+        vitals.setOrientation(LinearLayout.HORIZONTAL);
+        vitals.setGravity(Gravity.CENTER_VERTICAL);
+        vitals.setPadding(dp(7), dp(4), dp(7), dp(4));
+        vitals.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xd91a2b3a, 0xc70d1824}));
+        vitals.setClickable(false);
+        TextView heart = statusText("♥", 12, 0xffff7780, true);
+        vitals.addView(heart, new LinearLayout.LayoutParams(dp(15), dp(18)));
+        fallbackHealthBar = fallbackProgressBar(0xffe45d69);
+        LinearLayout.LayoutParams healthParams = new LinearLayout.LayoutParams(dp(52), dp(8));
+        healthParams.rightMargin = dp(7);
+        vitals.addView(fallbackHealthBar, healthParams);
+        TextView food = statusText("◆", 11, 0xffffbd62, true);
+        vitals.addView(food, new LinearLayout.LayoutParams(dp(14), dp(18)));
+        fallbackHungerBar = fallbackProgressBar(0xffe5a34e);
+        LinearLayout.LayoutParams hungerParams = new LinearLayout.LayoutParams(dp(52), dp(8));
+        hungerParams.rightMargin = dp(7);
+        vitals.addView(fallbackHungerBar, hungerParams);
+        fallbackArmorLabel = statusText("⬟0", 8, 0xffd4e4f0, true);
+        vitals.addView(fallbackArmorLabel, new LinearLayout.LayoutParams(-2, dp(18)));
+        fallbackLevelLabel = statusText("NV 1", 8, 0xffd7f49a, true);
+        LinearLayout.LayoutParams levelParams = new LinearLayout.LayoutParams(-2, dp(18));
+        levelParams.leftMargin = dp(6);
+        levelParams.rightMargin = dp(4);
+        vitals.addView(fallbackLevelLabel, levelParams);
+        fallbackXpBar = fallbackProgressBar(0xffa9e65c);
+        vitals.addView(fallbackXpBar, new LinearLayout.LayoutParams(dp(38), dp(5)));
+        FrameLayout.LayoutParams vitalsParams = new FrameLayout.LayoutParams(-2, dp(27),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        vitalsParams.bottomMargin = dp(63);
+        overlay.addView(vitals, vitalsParams);
+
+        // Four-way D-pad; all touches are routed by the parent so multiple fingers
+        // can hold movement and turn the camera at the same time.
         FrameLayout pad = new FrameLayout(this);
         FrameLayout.LayoutParams padParams = new FrameLayout.LayoutParams(dp(144), dp(144),
                 Gravity.BOTTOM | (leftHanded ? Gravity.RIGHT : Gravity.LEFT));
@@ -393,40 +449,47 @@ public final class MainActivity extends Activity {
         for (TextView button : new TextView[]{up, down, left, right, crouch}) {
             button.setTextSize(19);
             button.setPadding(0, 0, 0, 0);
+            button.setClickable(false);
+            button.setFocusable(false);
         }
+        up.setTag(6); down.setTag(7); left.setTag(8); right.setTag(9); crouch.setTag(1);
+        fallbackMovementViews[0] = up;
+        fallbackMovementViews[1] = down;
+        fallbackMovementViews[2] = left;
+        fallbackMovementViews[3] = right;
+        fallbackCrouchView = crouch;
         pad.addView(up, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         pad.addView(down, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         pad.addView(left, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.LEFT | Gravity.CENTER_VERTICAL));
         pad.addView(right, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.RIGHT | Gravity.CENTER_VERTICAL));
         pad.addView(crouch, new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER));
-        attachFallbackHoldAction(up, 6);
-        attachFallbackHoldAction(down, 7);
-        attachFallbackHoldAction(left, 8);
-        attachFallbackHoldAction(right, 9);
-        attachFallbackHoldAction(crouch, 1);
         up.setContentDescription("Adelante"); down.setContentDescription("Atrás");
         left.setContentDescription("Mover a la izquierda"); right.setContentDescription("Mover a la derecha");
         crouch.setContentDescription("Agacharse");
 
         TextView jump = statusButton("↑", true);
         jump.setTextSize(22);
+        jump.setTag(0);
+        jump.setClickable(false);
         jump.setContentDescription("Saltar");
+        fallbackJumpView = jump;
         FrameLayout.LayoutParams jumpParams = new FrameLayout.LayoutParams(dp(58), dp(58),
                 Gravity.BOTTOM | (leftHanded ? Gravity.LEFT : Gravity.RIGHT));
         if (leftHanded) jumpParams.leftMargin = dp(18); else jumpParams.rightMargin = dp(18);
         jumpParams.bottomMargin = dp(62);
         overlay.addView(jump, jumpParams);
-        attachFallbackHoldAction(jump, 0);
 
         TextView attack = statusButton("⚔", false);
         attack.setTextSize(17);
+        attack.setTag(10);
+        attack.setClickable(false);
         attack.setContentDescription("Atacar");
+        fallbackAttackView = attack;
         FrameLayout.LayoutParams attackParams = new FrameLayout.LayoutParams(dp(48), dp(48),
                 Gravity.BOTTOM | (leftHanded ? Gravity.LEFT : Gravity.RIGHT));
         if (leftHanded) attackParams.leftMargin = dp(82); else attackParams.rightMargin = dp(82);
         attackParams.bottomMargin = dp(126);
         overlay.addView(attack, attackParams);
-        attachFallbackHoldAction(attack, 10);
 
         LinearLayout quickbar = new LinearLayout(this);
         quickbar.setOrientation(LinearLayout.HORIZONTAL);
@@ -437,6 +500,7 @@ public final class MainActivity extends Activity {
         quickbarBackground.setCornerRadius(dp(8));
         quickbarBackground.setStroke(dp(1), 0x446d8aa0);
         quickbar.setBackground(quickbarBackground);
+        quickbar.setClickable(false);
         FrameLayout.LayoutParams quickbarParams = new FrameLayout.LayoutParams(-2, dp(52),
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         quickbarParams.bottomMargin = dp(7);
@@ -445,27 +509,27 @@ public final class MainActivity extends Activity {
         final int screenWidthDp = Math.max(240, Math.round(getResources().getDisplayMetrics().widthPixels / density));
         final int slotWidthDp = Math.max(20, Math.min(36, (screenWidthDp - 30) / 9));
         for (int i = 0; i < 9; ++i) {
-            final int slot = i;
             TextView item = statusButton(Integer.toString(i + 1), false);
-            item.setTextSize(6);
+            item.setTextSize(7);
             item.setGravity(Gravity.CENTER);
-            item.setMaxLines(3);
+            item.setMaxLines(2);
             item.setIncludeFontPadding(false);
             item.setElevation(0f);
+            item.setClickable(false);
+            item.setFocusable(false);
+            item.setTag(FALLBACK_TAG_QUICKBAR_BASE - i);
             item.setContentDescription("Seleccionar espacio " + (i + 1));
             LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(dp(slotWidthDp), dp(43));
             if (i > 0) itemParams.leftMargin = dp(2);
             quickbar.addView(item, itemParams);
             fallbackQuickbarSlots[i] = item;
-            item.setOnClickListener(v -> {
-                surfaceView.dispatchFallbackAction(20 + slot, true);
-                surfaceView.requestQuickbarSnapshot(MainActivity.this::updateFallbackQuickbar);
-            });
+            fallbackQuickbarViews[i] = item;
         }
 
         LinearLayout topButtons = new LinearLayout(this);
         topButtons.setOrientation(LinearLayout.HORIZONTAL);
         topButtons.setGravity(Gravity.CENTER_VERTICAL);
+        topButtons.setClickable(false);
         FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(-2, dp(42),
                 Gravity.TOP | Gravity.RIGHT);
         topParams.topMargin = dp(8);
@@ -473,48 +537,177 @@ public final class MainActivity extends Activity {
         overlay.addView(topButtons, topParams);
         TextView perspective = statusButton("◉", false);
         perspective.setTextSize(17);
+        perspective.setTag(FALLBACK_TAG_PERSPECTIVE);
+        perspective.setClickable(false);
         perspective.setContentDescription("Cambiar perspectiva");
+        fallbackPerspectiveView = perspective;
         topButtons.addView(perspective, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        perspective.setOnClickListener(v -> surfaceView.dispatchFallbackAction(2, true));
         TextView inventory = statusButton("▦", false);
         inventory.setTextSize(17);
+        inventory.setTag(FALLBACK_TAG_INVENTORY);
+        inventory.setClickable(false);
         inventory.setContentDescription("Inventario");
+        fallbackInventoryView = inventory;
         LinearLayout.LayoutParams inventoryParams = new LinearLayout.LayoutParams(dp(40), dp(40));
         inventoryParams.leftMargin = dp(6);
         topButtons.addView(inventory, inventoryParams);
-        inventory.setOnClickListener(v -> showFallbackInventoryDialog());
         TextView pause = statusButton("Ⅱ", false);
         pause.setTextSize(17);
+        pause.setTag(FALLBACK_TAG_PAUSE);
+        pause.setClickable(false);
         pause.setContentDescription("Pausar");
+        fallbackPauseView = pause;
         LinearLayout.LayoutParams pauseParams = new LinearLayout.LayoutParams(dp(40), dp(40));
         pauseParams.leftMargin = dp(6);
         topButtons.addView(pause, pauseParams);
-        pause.setOnClickListener(v -> showFallbackPauseDialog());
 
+        // One parent dispatcher owns the full gesture stream; Android child touch
+        // listeners previously swallowed secondary fingers and blocked camera look.
+        setFallbackChildrenPassive(overlay);
+        overlay.setOnTouchListener((view, event) -> dispatchFallbackOverlayTouch(event, overlay));
         fallbackOverlay = overlay;
         gameContainer.addView(overlay, 1, new FrameLayout.LayoutParams(-1, -1));
         mainHandler.removeCallbacks(fallbackQuickbarRefresh);
+        mainHandler.removeCallbacks(fallbackHudRefresh);
         mainHandler.post(fallbackQuickbarRefresh);
+        mainHandler.post(fallbackHudRefresh);
     }
 
-    private void attachFallbackHoldAction(View button, int action) {
-        final int[] ownerPointer = {-1};
-        button.setOnTouchListener((view, event) -> {
-            final int state = event.getActionMasked();
-            final int index = event.getActionIndex();
-            if (state == MotionEvent.ACTION_DOWN) {
-                ownerPointer[0] = event.getPointerId(index);
-                surfaceView.dispatchFallbackAction(action, true);
-            } else if ((state == MotionEvent.ACTION_POINTER_UP || state == MotionEvent.ACTION_UP)
-                    && ownerPointer[0] == event.getPointerId(index)) {
-                surfaceView.dispatchFallbackAction(action, false);
-                ownerPointer[0] = -1;
-            } else if (state == MotionEvent.ACTION_CANCEL) {
-                if (ownerPointer[0] >= 0) surfaceView.dispatchFallbackAction(action, false);
-                ownerPointer[0] = -1;
+    private ProgressBar fallbackProgressBar(int tint) {
+        ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setIndeterminate(false);
+        bar.setMax(100);
+        bar.setProgress(100);
+        bar.setProgressTintList(ColorStateList.valueOf(tint));
+        bar.setProgressBackgroundTintList(ColorStateList.valueOf(0xff263747));
+        bar.setClickable(false);
+        bar.setFocusable(false);
+        return bar;
+    }
+
+    private void setFallbackChildrenPassive(View view) {
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); ++i)
+                setFallbackChildrenPassive(group.getChildAt(i));
+        }
+        if (view != fallbackOverlay) {
+            view.setOnClickListener(null);
+            view.setOnTouchListener(null);
+            view.setClickable(false);
+            view.setLongClickable(false);
+            view.setFocusable(false);
+        }
+    }
+
+    private View findFallbackTarget(View overlay, float x, float y) {
+        int[] origin = new int[2];
+        overlay.getLocationOnScreen(origin);
+        return findFallbackTargetRecursive((android.view.ViewGroup) overlay,
+                origin[0] + x, origin[1] + y);
+    }
+
+    private View findFallbackTargetRecursive(android.view.ViewGroup group, float screenX, float screenY) {
+        for (int i = group.getChildCount() - 1; i >= 0; --i) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() != View.VISIBLE) continue;
+            int[] location = new int[2];
+            child.getLocationOnScreen(location);
+            float right = location[0] + child.getWidth();
+            float bottom = location[1] + child.getHeight();
+            if (screenX < location[0] || screenX >= right ||
+                    screenY < location[1] || screenY >= bottom) continue;
+            if (child instanceof android.view.ViewGroup) {
+                View nested = findFallbackTargetRecursive(
+                        (android.view.ViewGroup) child, screenX, screenY);
+                if (nested != null) return nested;
+            }
+            if (child.getTag() instanceof Integer) return child;
+        }
+        return null;
+    }
+
+    private boolean dispatchFallbackOverlayTouch(MotionEvent event, View overlay) {
+        if (surfaceView == null || !engineReady) return true;
+        final int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_CANCEL) {
+            for (java.util.Map.Entry<Integer, FallbackPointerState> entry :
+                    new java.util.ArrayList<>(fallbackPointers.entrySet())) {
+                FallbackPointerState state = entry.getValue();
+                if (state.holdAction >= 0) surfaceView.dispatchFallbackAction(state.holdAction, false);
+                if (state.camera) surfaceView.dispatchFallbackTouch(3, entry.getKey(), 0f, 0f);
+            }
+            fallbackPointers.clear();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            for (int i = 0; i < event.getPointerCount(); ++i) {
+                int pointerId = event.getPointerId(i);
+                FallbackPointerState state = fallbackPointers.get(pointerId);
+                if (state == null) continue;
+                state.lastX = event.getX(i);
+                state.lastY = event.getY(i);
+                if (state.camera)
+                    surfaceView.dispatchFallbackTouch(2, pointerId, state.lastX, state.lastY);
             }
             return true;
-        });
+        }
+        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+            int index = event.getActionIndex();
+            int pointerId = event.getPointerId(index);
+            float x = event.getX(index);
+            float y = event.getY(index);
+            FallbackPointerState state = new FallbackPointerState();
+            state.lastX = x;
+            state.lastY = y;
+            state.target = findFallbackTarget(overlay, x, y);
+            if (state.target != null && state.target.getTag() instanceof Integer) {
+                int tag = (Integer) state.target.getTag();
+                if (tag >= 0) {
+                    state.holdAction = tag;
+                    surfaceView.dispatchFallbackAction(tag, true);
+                } else {
+                    state.clickTag = tag;
+                }
+            } else {
+                state.camera = true;
+                surfaceView.dispatchFallbackTouch(0, pointerId, x, y);
+            }
+            fallbackPointers.put(pointerId, state);
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
+            int index = event.getActionIndex();
+            int pointerId = event.getPointerId(index);
+            float x = event.getX(index);
+            float y = event.getY(index);
+            FallbackPointerState state = fallbackPointers.remove(pointerId);
+            if (state == null) return true;
+            if (state.holdAction >= 0) {
+                surfaceView.dispatchFallbackAction(state.holdAction, false);
+            } else if (state.camera) {
+                surfaceView.dispatchFallbackTouch(1, pointerId, x, y);
+            } else if (state.clickTag != 0 &&
+                    findFallbackTarget(overlay, x, y) == state.target) {
+                performFallbackClick(state.clickTag);
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private void performFallbackClick(int tag) {
+        if (surfaceView == null || !engineReady) return;
+        if (tag == FALLBACK_TAG_INVENTORY) showFallbackInventoryDialog();
+        else if (tag == FALLBACK_TAG_PAUSE) showFallbackPauseDialog();
+        else if (tag == FALLBACK_TAG_PERSPECTIVE)
+            surfaceView.dispatchFallbackAction(2, true);
+        else if (tag <= FALLBACK_TAG_QUICKBAR_BASE &&
+                tag > FALLBACK_TAG_QUICKBAR_BASE - 9) {
+            int slot = FALLBACK_TAG_QUICKBAR_BASE - tag;
+            surfaceView.dispatchFallbackAction(20 + slot, true);
+            surfaceView.requestQuickbarSnapshot(MainActivity.this::updateFallbackQuickbar);
+        }
     }
 
     private void updateProgressionPreferences(String snapshot) {
