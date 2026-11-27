@@ -38,7 +38,9 @@ def test_joystick_hit_box_is_shared_when_rmlui_is_unavailable():
     update = ENGINE.index("void Engine::HandleUiAction", touch)
     method = ENGINE[touch:update]
     movement = method.index("if (ui_.MovementVectorAt(x, y, moveX, moveY))")
-    ui_touch = method.index("ui_.Touch(action, pointerId, x, y)")
+    # Death-screen touches are handled first so movement cannot resume while
+    # dead; in the normal gameplay path movement still precedes the UI fallback.
+    ui_touch = method.index("ui_.Touch(action, pointerId, x, y)", movement)
     assert helper >= 0
     assert movement < ui_touch
     assert "state.movementPad = true;" in method
