@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.MotionEvent;
 
 import java.io.ByteArrayOutputStream;
@@ -33,6 +34,9 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
     private volatile boolean nativeReady;
     private final InitializationListener initializationListener;
     private final SharedPreferences preferences;
+    private final Object blockIconLock = new Object();
+    private final SparseArray<Bitmap> blockIconCache = new SparseArray<>();
+    private volatile byte[] cachedBlockAtlasRgba;
 
     public MinefadeSurfaceView(Context context, SoundEffects soundEffects, float displayDensity,
                                boolean multiplayerMode, int playerSlot, String storagePath,
@@ -308,6 +312,94 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         });
     }
 
+    /** Read the full 36-slot inventory while executing on the native GL thread. */
+    public void requestInventorySnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetInventorySnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "Inventory snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
+    /** Read compact live survival/HUD state on the simulation thread. */
+    public void requestHudSnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetHudSnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "HUD snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
+    /** Select or move a real inventory slot; all mutation stays on the GL thread. */
+    public void selectInventorySlot(int slot) {
+        if (!nativeReady || slot < 0 || slot >= 36) return;
+        queueEvent(() -> {
+            if (nativeReady) NativeBridge.nativeSelectInventorySlot(slot);
+        });
+    }
+
+    private void cacheBlockAtlas(byte[] atlas) {
+        synchronized (blockIconLock) {
+            cachedBlockAtlasRgba = atlas;
+            blockIconCache.clear();
+        }
+    }
+
+    /** Crop a true 16x16 RGBA block icon from the very atlas used by the 3D world. */
+    public Bitmap createBlockIcon(int tileIndex) {
+        if (tileIndex < 0 || tileIndex >= ATLAS_TILE_COUNT) return null;
+        synchronized (blockIconLock) {
+            Bitmap cached = blockIconCache.get(tileIndex);
+            if (cached != null && !cached.isRecycled()) return cached;
+            byte[] atlas = cachedBlockAtlasRgba;
+            if (atlas == null || atlas.length < ATLAS_WIDTH * ATLAS_HEIGHT * 4) return null;
+            final int tileSize = 16;
+            final int cellSize = 18;
+            final int columns = 32;
+            final int x0 = (tileIndex % columns) * cellSize + 1;
+            final int y0 = (tileIndex / columns) * cellSize + 1;
+            if (x0 + tileSize > ATLAS_WIDTH || y0 + tileSize > ATLAS_HEIGHT) return null;
+            int[] pixels = new int[tileSize * tileSize];
+            for (int y = 0; y < tileSize; ++y) {
+                for (int x = 0; x < tileSize; ++x) {
+                    int offset = ((y0 + y) * ATLAS_WIDTH + x0 + x) * 4;
+                    int red = atlas[offset] & 0xff;
+                    int green = atlas[offset + 1] & 0xff;
+                    int blue = atlas[offset + 2] & 0xff;
+                    int alpha = atlas[offset + 3] & 0xff;
+                    pixels[y * tileSize + x] = (alpha << 24) | (red << 16) | (green << 8) | blue;
+                }
+            }
+            Bitmap icon = Bitmap.createBitmap(pixels, tileSize, tileSize, Bitmap.Config.ARGB_8888);
+            blockIconCache.put(tileIndex, icon);
+            return icon;
+        }
+    }
+
     /** Read per-world XP and achievement counters without racing the native simulation. */
     public void requestProgressionSnapshot(java.util.function.Consumer<String> callback) {
         if (callback == null) return;
@@ -552,6 +644,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
             try {
                 byte[] atlas = readBlockAtlas(assetManager);
+                MinefadeSurfaceView.this.cacheBlockAtlas(atlas);
                 byte[] sheepModel = readOptionalSheepModel(assetManager);
                 byte[] sheepTexture = readOptionalSheepTexture(assetManager);
                 // The first EGL context configures gameplay. Later contexts only rebuild GL resources.
