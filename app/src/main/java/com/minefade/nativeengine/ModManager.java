@@ -490,7 +490,7 @@ public final class ModManager {
 
     private static boolean isSafeMod3Entry(String name) {
         if (name == null || name.isEmpty() || name.startsWith("/") ||
-                name.indexOf('\\\\') >= 0 || name.indexOf(':') >= 0) return false;
+                name.indexOf('\\') >= 0 || name.indexOf(':') >= 0) return false;
         String[] parts = name.split("/", -1);
         for (String part : parts)
             if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
