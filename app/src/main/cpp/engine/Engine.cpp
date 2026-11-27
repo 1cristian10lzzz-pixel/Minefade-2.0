@@ -3140,6 +3140,12 @@ void Engine::UpdateMining(float deltaSeconds) {
         ui_.SetTargetBlock(definition->nameEs, 0.0f);
         return;
     }
+    // Repeat the short first-person mining swing while the block is being
+    // damaged, instead of playing it only after the block has disappeared.
+    if (ElapsedSeconds() - firstPersonActionStarted_ >= 0.22) {
+        firstPersonActionStarted_ = ElapsedSeconds();
+        firstPersonActionKind_ = 1;
+    }
     // Wooden tools accelerate the material they are designed to harvest.
     float toolMultiplier = 1.0f;
     const BlockDefinition* heldDefinition =
