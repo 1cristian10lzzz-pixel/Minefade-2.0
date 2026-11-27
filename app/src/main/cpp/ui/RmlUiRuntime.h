@@ -50,7 +50,7 @@ public:
     void SetInventoryCatalogContents(const std::string& markup);
     void SetEquipmentContents(const std::string& markup);
     void SetPanelVisible(const char* elementId, bool visible);
-    bool IsReady() const { return ready_; }
+    bool IsReady() const { return ready_ && !usingSafeDocument_; }
     const std::string& LastError() const { return lastError_; }
 
 private:
@@ -101,6 +101,7 @@ private:
     int height_{1};
     float density_{1.0f};
     bool ready_{false};
+    bool usingSafeDocument_{false};
     bool rmlInitialised_{false};
     bool mouseCaptured_{false};
     int mousePointerId_{-1};
