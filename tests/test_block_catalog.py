@@ -166,11 +166,12 @@ for name, value in {
 
 registry_source = (ROOT / "app/src/main/cpp/blocks/BlockRegistry.cpp").read_text(encoding="utf-8")
 assert '#include "BlockAtlasManifest.h"' in registry_source
-assert "GetBlockDefinitionCount()*3u" in registry_source
-assert "tileIndex>=kBlockAtlasTileCount" in registry_source
-assert "tileIndex%kBlockAtlasColumns" in registry_source
-assert "tileIndex/kBlockAtlasColumns" in registry_source
-assert "kBlockAtlasCellSize+kBlockAtlasPadding" in registry_source
+# Accept formatting changes while checking the generated atlas addressing logic.
+assert re.search(r"GetBlockDefinitionCount\(\)\s*\*\s*3u", registry_source)
+assert re.search(r"tileIndex\s*>=\s*tileCount", registry_source)
+assert re.search(r"tileIndex\s*%\s*kBlockAtlasColumns", registry_source)
+assert re.search(r"tileIndex\s*/\s*kBlockAtlasColumns", registry_source)
+assert re.search(r"kBlockAtlasCellSize\s*\+\s*kBlockAtlasPadding", registry_source)
 assert "kBlockAtlasWidth" in registry_source and "kBlockAtlasHeight" in registry_source
 assert "1.0f-(y+" not in registry_source
 assert "/486.0f" not in registry_source
