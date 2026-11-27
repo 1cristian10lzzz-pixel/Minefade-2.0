@@ -637,7 +637,8 @@ public final class MainActivity extends Activity {
                     new java.util.ArrayList<>(fallbackPointers.entrySet())) {
                 FallbackPointerState state = entry.getValue();
                 if (state.holdAction >= 0) surfaceView.dispatchFallbackAction(state.holdAction, false);
-                if (state.camera) surfaceView.dispatchFallbackTouch(3, entry.getKey(), 0f, 0f);
+                if (state.camera) surfaceView.dispatchFallbackTouch(3, entry.getKey(),
+                        state.lastX, state.lastY);
             }
             fallbackPointers.clear();
             return true;
