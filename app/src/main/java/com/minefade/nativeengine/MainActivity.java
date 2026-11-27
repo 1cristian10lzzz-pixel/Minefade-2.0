@@ -328,8 +328,13 @@ public final class MainActivity extends Activity {
                                     + surfaceView.nativeHudDiagnostic());
                             if (commandButton != null) commandButton.setVisibility(View.VISIBLE);
                             showFallbackTouchControls();
+                            String hudDiagnostic = surfaceView.nativeHudDiagnostic();
+                            if (hudDiagnostic == null) hudDiagnostic = "";
+                            hudDiagnostic = hudDiagnostic.replace('\\n', ' ');
+                            if (hudDiagnostic.length() > 150)
+                                hudDiagnostic = hudDiagnostic.substring(0, 150) + "…";
                             Toast.makeText(MainActivity.this,
-                                    "Se activaron los controles de respaldo para poder jugar.",
+                                    "HUD Android completo activado. " + hudDiagnostic,
                                     Toast.LENGTH_LONG).show();
                         } else if (commandButton != null) {
                             commandButton.setVisibility(View.GONE);
