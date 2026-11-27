@@ -31,7 +31,7 @@ def test_survival_loop_covers_fall_damage_hunger_regeneration_and_starvation():
     assert "hungerExhaustion_ +=" in ENGINE
     assert "playerHunger_ >= 18.0f" in ENGINE
     assert "starvationTimer_ >= 8.0f" in ENGINE
-    assert 'entity.kind != 4 && entity.kind != 5' in ENGINE
+    assert 'if (!entity.hostile) return false;' in ENGINE
     assert "hostileDamageCooldown_ = 1.25f;" in ENGINE
 
 
@@ -46,7 +46,7 @@ def test_food_consumption_and_survival_hud_are_wired_to_real_inventory():
 
 def test_melee_combat_is_forward_limited_and_targets_hostiles_only():
     assert "bool EntitySystem::DamageNearest(" in PLAYER
-    assert "if (entity.kind != 4 && entity.kind != 5) continue;" in PLAYER
+    assert "if (!entity.hostile) continue;" in PLAYER
     assert "if (facing < 0.72f) continue;" in PLAYER
     assert "target.health = std::max(0.0f, target.health - damage);" in PLAYER
     assert "bool DamageNearest(" in PLAYER_H
