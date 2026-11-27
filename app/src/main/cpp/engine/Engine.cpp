@@ -860,8 +860,9 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         if (pathError || modelBytes == 0u || modelBytes > 8u * 1024u * 1024u) continue;
         std::ifstream modelStream(modelFile, std::ios::binary);
         if (!modelStream) continue;
-        std::vector<std::uint8_t> modelData(
-            std::istreambuf_iterator<char>(modelStream), std::istreambuf_iterator<char>());
+        const std::istreambuf_iterator<char> modelBegin(modelStream);
+        const std::istreambuf_iterator<char> modelEnd;
+        std::vector<std::uint8_t> modelData(modelBegin, modelEnd);
         if (modelData.size() != modelBytes) continue;
 
         EntityDefinition definition;
