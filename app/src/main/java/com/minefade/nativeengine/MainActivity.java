@@ -12,6 +12,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.graphics.Color;
+import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -44,6 +47,21 @@ public final class MainActivity extends Activity {
     private FrameLayout gameContainer;
     private FrameLayout fallbackOverlay;
     private final TextView[] fallbackQuickbarSlots = new TextView[9];
+    private final View[] fallbackQuickbarViews = new View[9];
+    private final View[] fallbackMovementViews = new View[4];
+    private final java.util.HashMap<Integer, FallbackPointerState> fallbackPointers = new java.util.HashMap<>();
+    private View fallbackCrouchView;
+    private View fallbackJumpView;
+    private View fallbackAttackView;
+    private View fallbackInventoryView;
+    private View fallbackPerspectiveView;
+    private View fallbackPauseView;
+    private TextView fallbackTargetLabel;
+    private TextView fallbackLevelLabel;
+    private TextView fallbackArmorLabel;
+    private ProgressBar fallbackHealthBar;
+    private ProgressBar fallbackHungerBar;
+    private ProgressBar fallbackXpBar;
     private final java.util.ArrayList<String> chatMessages = new java.util.ArrayList<>();
     private TextView activeChatHistory;
     private TextView commandButton;
@@ -62,6 +80,25 @@ public final class MainActivity extends Activity {
             mainHandler.postDelayed(this, 650L);
         }
     };
+    private final Runnable fallbackHudRefresh = new Runnable() {
+        @Override public void run() {
+            if (fallbackOverlay == null || surfaceView == null || !engineReady) return;
+            surfaceView.requestHudSnapshot(MainActivity.this::updateFallbackHudSnapshot);
+            mainHandler.postDelayed(this, 250L);
+        }
+    };
+    private static final class FallbackPointerState {
+        int holdAction = -1;
+        int clickTag = 0;
+        View target;
+        boolean camera;
+    }
+
+    private static final int FALLBACK_TAG_INVENTORY = -101;
+    private static final int FALLBACK_TAG_PAUSE = -102;
+    private static final int FALLBACK_TAG_PERSPECTIVE = -103;
+    private static final int FALLBACK_TAG_QUICKBAR_BASE = -200;
+
     private WorldManager.WorldInfo requestedWorld;
     private WorldManager worldManager;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
