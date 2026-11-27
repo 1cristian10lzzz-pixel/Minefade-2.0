@@ -56,17 +56,26 @@ def test_surface_action_cancel_releases_all_motion_event_pointers():
     assert "NativeBridge.nativeTouch(3, pointerIds[i], pointerXs[i], pointerYs[i]);" in cancel_body
 
 
-def test_fallback_world_camera_touch_and_discrete_dpad_cancel_release():
-    assert "overlay.setOnTouchListener((view, event) -> dispatchFallbackWorldTouch(event));" in ACTIVITY
-    assert "FrameLayout joystick" not in ACTIVITY
+def test_fallback_controls_route_multiple_pointers_through_one_parent_dispatcher():
+    assert "overlay.setOnTouchListener((view, event) -> dispatchFallbackOverlayTouch(event, overlay));" in ACTIVITY
+    assert "private boolean dispatchFallbackOverlayTouch(MotionEvent event, View overlay)" in ACTIVITY
+    assert "private View findFallbackTarget(View overlay, float x, float y)" in ACTIVITY
+    assert "child.getLocationOnScreen(location)" in ACTIVITY
+    assert "fallbackPointers.put(pointerId, state)" in ACTIVITY
+    assert "fallbackPointers.get(pointerId)" in ACTIVITY
+    assert "state.camera" in ACTIVITY
+    assert "surfaceView.dispatchFallbackTouch(0, pointerId, x, y)" in ACTIVITY
+    assert "surfaceView.dispatchFallbackTouch(2, pointerId, state.lastX, state.lastY)" in ACTIVITY
+    assert "surfaceView.dispatchFallbackTouch(1, pointerId, x, y)" in ACTIVITY
+    assert "surfaceView.dispatchFallbackTouch(3, entry.getKey()" in ACTIVITY
+    assert "surfaceView.dispatchFallbackAction(tag, true)" in ACTIVITY
+    assert "surfaceView.dispatchFallbackAction(state.holdAction, false)" in ACTIVITY
     for direction, action in (("up", 6), ("down", 7), ("left", 8), ("right", 9)):
-        assert f"attachFallbackHoldAction({direction}, {action});" in ACTIVITY
-    assert "attachFallbackHoldAction(crouch, 1);" in ACTIVITY
-    assert "state == MotionEvent.ACTION_POINTER_UP || state == MotionEvent.ACTION_UP" in ACTIVITY
-    assert "ownerPointer[0] == event.getPointerId(index)" in ACTIVITY
-    assert "state == MotionEvent.ACTION_CANCEL" in ACTIVITY
-    assert "surfaceView.dispatchFallbackAction(action, false);" in ACTIVITY
-    assert "surfaceView.dispatchFallbackTouch(mapped, event.getPointerId(index)" in ACTIVITY
+        assert f"{direction}.setTag({action})" in ACTIVITY
+    assert "crouch.setTag(1)" in ACTIVITY
+    assert "jump.setTag(0)" in ACTIVITY and "attack.setTag(10)" in ACTIVITY
+    assert "setFallbackChildrenPassive(overlay)" in ACTIVITY
+    assert "if (view.getParent() != null)" in ACTIVITY
 
 
 def test_rmlui_texture_upload_saves_resets_and_restores_all_unpack_state():
@@ -284,3 +293,32 @@ if __name__ == "__main__":
     for check in checks:
         check()
     print(f"Minefade HUD/touch/GLES regressions passed ({len(checks)} checks).")
+
+
+def test_android_fallback_hud_and_inventory_are_bound_to_real_engine_state():
+    engine_header = (CPP / "engine/Engine.h").read_text(encoding="utf-8")
+    native_bridge = (JAVA / "NativeBridge.java").read_text(encoding="utf-8")
+    native = (CPP / "NativeEngine.cpp").read_text(encoding="utf-8")
+    surface = (JAVA / "MinefadeSurfaceView.java").read_text(encoding="utf-8")
+    assert "std::string InventorySnapshot() const;" in engine_header
+    assert "std::string HudSnapshot() const;" in engine_header
+    assert "void SelectInventorySlot(int slot);" in engine_header
+    assert "Inventory::kSlotCount" in ENGINE and "nameEs" in ENGINE
+    assert "targetBlockProgress_" in engine_header and "SetTargetBlock(" in ENGINE
+    assert "nativeGetInventorySnapshot" in native_bridge and "nativeGetHudSnapshot" in native_bridge
+    assert "nativeSelectInventorySlot" in native_bridge
+    assert "NativeBridge_nativeGetInventorySnapshot" in native
+    assert "NativeBridge_nativeGetHudSnapshot" in native
+    assert "NativeBridge_nativeSelectInventorySlot" in native
+    assert "requestInventorySnapshot" in surface and "requestHudSnapshot" in surface
+    assert "createBlockIcon(int tileIndex)" in surface
+    assert "((y0 + y) * ATLAS_WIDTH + x0 + x) * 4" in surface
+    assert "FALLBACK_TAG_QUICKBAR_BASE" in ACTIVITY
+    assert "slot.setCompoundDrawables(null, drawable, null, null)" in ACTIVITY
+    assert "renderFallbackInventoryGrid" in ACTIVITY
+    assert "surfaceView.selectInventorySlot(slotIndex)" in ACTIVITY
+    assert "fallbackHealthBar.setProgress(health)" in ACTIVITY
+    assert "fallbackHungerBar.setProgress(hunger)" in ACTIVITY
+    assert "fallbackXpBar.setProgress(xp)" in ACTIVITY
+    assert 'crosshair = statusText("+", 25' in ACTIVITY
+    assert "fallbackTargetLabel" in ACTIVITY
