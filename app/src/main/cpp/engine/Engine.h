@@ -44,6 +44,9 @@ public:
     std::string ExecuteCommand(const std::string& command);
     std::string QuickbarSnapshot() const;
     std::string ProgressionSnapshot() const;
+    std::string InventorySnapshot() const;
+    std::string HudSnapshot() const;
+    void SelectInventorySlot(int slot);
     bool ConsumeExitRequest();
     bool ConsumeChatRequest() noexcept {
         return chatRequested_.exchange(false, std::memory_order_acq_rel);
@@ -110,6 +113,7 @@ private:
     bool HasNearbyStonecutter() const;
     bool CraftRecipe(const std::string& recipe);
     void UpdateMining(float deltaSeconds);
+    void SetTargetBlock(const std::string& name, float progress);
     Vec3 ViewPosition() const;
     Vec3 ViewTarget() const;
     Vec3 ViewDirection() const;
@@ -293,6 +297,8 @@ private:
     BlockId miningBlockType_{BlockId::Air};
     float miningElapsed_{0.0f};
     float miningRequired_{0.0f};
+    std::string targetBlockName_;
+    float targetBlockProgress_{0.0f};
     float footstepElapsed_{0.0f};
     float chunkMeshAccumulator_{0.0f};
     float entityMeshAccumulator_{0.0f};
