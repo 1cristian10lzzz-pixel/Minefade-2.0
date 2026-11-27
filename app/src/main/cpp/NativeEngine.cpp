@@ -290,6 +290,24 @@ Java_com_minefade_nativeengine_NativeBridge_nativeGetProgressionSnapshot(JNIEnv*
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeGetInventorySnapshot(JNIEnv* env, jclass) {
+    const std::string snapshot = minefade::GetEngine().InventorySnapshot();
+    return env->NewStringUTF(snapshot.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeGetHudSnapshot(JNIEnv* env, jclass) {
+    const std::string snapshot = minefade::GetEngine().HudSnapshot();
+    return env->NewStringUTF(snapshot.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_minefade_nativeengine_NativeBridge_nativeSelectInventorySlot(JNIEnv*, jclass, jint slot) {
+    minefade::GetEngine().SelectInventorySlot(static_cast<int>(slot));
+}
+
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_minefade_nativeengine_NativeBridge_nativeExecuteCommand(JNIEnv* env, jclass, jstring command) {
     if (command == nullptr) return env->NewStringUTF("Comando vacío.");
     const char* chars = env->GetStringUTFChars(command, nullptr);
