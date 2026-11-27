@@ -649,6 +649,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     // Without this reset, a failed/missing save could silently reuse stale chunks,
     // entities, drops, inventory and player state from the previous GL session.
     lastInitError_.clear();
+    dead_ = false;
+    paused_ = false;
     const auto glString = [](GLenum name) {
         const GLubyte* value = glGetString(name);
         return value != nullptr ? reinterpret_cast<const char*>(value) : "no disponible";
@@ -1587,18 +1589,19 @@ void Engine::Render() {
                 playerHealth_ = std::clamp(playerHealth_ - rawDamage * armorFactor, 0.0f, 20.0f);
                 ui_.SetChatMessage(std::string(source) + " · Vida " +
                     std::to_string(static_cast<int>(std::ceil(playerHealth_))) + "/20");
-                if (playerHealth_ <= 0.0f) {
-                    if (!player_.ResolveSafeSpawn(world_)) {
-                        const int spawnX = 8;
-                        const int spawnZ = 8;
-                        player_.position = {8.0f,
-                            static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f, 8.0f};
-                    }
-                    playerHealth_ = 10.0f;
-                    playerHunger_ = std::max(playerHunger_, 8.0f);
-                    hungerExhaustion_ = 0.0f;
-                    ui_.SetChatMessage("Has reaparecido. Conservas tu inventario.");
-                    SaveWorld();
+                if (playerHealth_ <= 0.0f && !dead_) {
+                    // Freeze the simulation and require an explicit respawn action.
+                    // The previous implementation teleported immediately, so the
+                    // player never saw a death state or had a chance to choose.
+                    dead_ = true;
+                    paused_ = true;
+                    player_.SetMovement(0.0f, 0.0f);
+                    touches_.clear();
+                    miningPointerId_ = -1;
+                    miningElapsed_ = 0.0f;
+                    miningRequired_ = 0.0f;
+                    ui_.SetTargetBlock({}, 0.0f);
+                    ui_.SetPanelVisible("death-panel", true);
                 }
             };
 
@@ -2097,6 +2100,12 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
     constexpr int kMove = 2;
     constexpr int kCancel = 3;
 
+    // While dead, only the death-screen controls may receive touch input.
+    if (dead_) {
+        ui_.Touch(action, pointerId, x, y);
+        return;
+    }
+
     if (action == kDown) {
         if (ui_.CrouchButtonAt(x, y)) {
             // The centre crouch button has its own pointer route. It must still
@@ -2248,7 +2257,26 @@ void Engine::CyclePerspective() {
 
 void Engine::HandleUiAction(const std::string& action) {
     soundEvents_.fetch_or(4u, std::memory_order_release);
-    if (action == "chat") {
+    if (action == "respawn") {
+        if (!dead_) return;
+        if (!player_.ResolveSafeSpawn(world_)) {
+            const int spawnX = 8;
+            const int spawnZ = 8;
+            player_.position = {8.0f,
+                static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f, 8.0f};
+        }
+        playerHealth_ = 20.0f;
+        playerHunger_ = std::max(playerHunger_, 8.0f);
+        hungerExhaustion_ = 0.0f;
+        starvationTimer_ = 0.0f;
+        regenerationTimer_ = 0.0f;
+        hostileDamageCooldown_ = 1.0f;
+        dead_ = false;
+        ui_.SetPanelVisible("death-panel", false);
+        paused_ = pauseVisible_ || inventoryVisible_ || craftingVisible_;
+        ui_.SetChatMessage("Has reaparecido. Conservas tu inventario.");
+        SaveWorld();
+    } else if (action == "chat") {
         chatRequested_.store(true, std::memory_order_release);
     } else if (action == "perspective") {
         CyclePerspective();
@@ -3581,7 +3609,7 @@ bool Engine::Pause() {
 
 void Engine::Resume() {
     if (!ready_) return;
-    paused_ = pauseVisible_ || inventoryVisible_;
+    paused_ = dead_ || pauseVisible_ || inventoryVisible_ || craftingVisible_;
 }
 
 void Engine::SetStoragePath(std::string path) {
