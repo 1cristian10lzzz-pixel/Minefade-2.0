@@ -150,6 +150,7 @@ private:
     int height_{1};
     bool ready_{false};
     bool paused_{false};
+    bool dead_{false};
     bool multiplayerMode_{false};
     int multiplayerSlot_{0};
     bool pendingMultiplayerMode_{false};
