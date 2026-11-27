@@ -74,7 +74,10 @@ def _safe_path(name: str) -> bool:
     parts = name.split("/")
     if any(part in {"", ".", ".."} for part in parts):
         return False
-    if name in ALLOWED_DATA:
+    # The package manifest is the single root-level metadata file. Keep this
+    # exact allowlist entry separate from the assets/ subtree to avoid allowing
+    # arbitrary root files or executable payloads.
+    if name == "manifest.json" or name in ALLOWED_DATA:
         return True
     if name.startswith("assets/"):
         suffix = Path(name).suffix.lower()
@@ -453,7 +456,7 @@ def create_package(root: Path, output: Path, engine_min: str, engine_max: str,
         values = parse_mod(copied)
     mod_id, name = values["id"], values["name"]
     if values["enabled"] != "false":
-        raise ValueError("desactiva enabled antes de crear el paquete")
+        raise ValueError("los mods heredados deben permanecer desactivados antes de crear el paquete")
 
     files: dict[str, bytes] = {}
     for path in sorted(root.rglob("*")):
