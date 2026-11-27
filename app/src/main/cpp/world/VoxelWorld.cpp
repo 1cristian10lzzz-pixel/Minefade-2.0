@@ -1,4 +1,5 @@
 #include "VoxelWorld.h"
+#include "../mods/ModContentRegistry.h"
 
 #include <algorithm>
 #include <array>
