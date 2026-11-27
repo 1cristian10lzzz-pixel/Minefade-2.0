@@ -532,6 +532,12 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 </rml>
 )RML";
         document_ = context_->LoadDocumentFromMemory(kFallbackHud, "minefade://hud-safe.rml");
+        if (document_ != nullptr) {
+            usingSafeDocument_ = true;
+            lastError_ = "El HUD principal no se pudo cargar; se solicita el HUD Android completo.";
+            if (!primaryError.empty()) lastError_ += " Diagnóstico del HUD principal: " + primaryError;
+            __android_log_print(ANDROID_LOG_WARN, kTag, "%s", lastError_.c_str());
+        }
         if (document_ == nullptr) {
             lastError_ = "RmlUi no pudo interpretar ni el HUD principal ni el HUD táctil seguro.";
             if (!gLastRmlLogMessage.empty()) lastError_ += " Detalle: " + gLastRmlLogMessage;
@@ -580,8 +586,9 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     ready_ = true;
     ApplyResponsiveLayout();
     SetMinimapShape(minimapShape_);
-    __android_log_print(ANDROID_LOG_INFO, kTag, "RmlUi %s initialised with OpenGL ES backend", Rml::GetVersion().c_str());
-    return true;
+    __android_log_print(ANDROID_LOG_INFO, kTag, "RmlUi %s initialised with OpenGL ES backend%s",
+                        Rml::GetVersion().c_str(), usingSafeDocument_ ? " (safe document; Android HUD required)" : "");
+    return !usingSafeDocument_;
 }
 
 void RmlUiRuntime::AttachAction(const char* elementId, const char* action) {
@@ -594,6 +601,7 @@ void RmlUiRuntime::AttachAction(const char* elementId, const char* action) {
 
 void RmlUiRuntime::Shutdown() {
     ready_ = false;
+    usingSafeDocument_ = false;
     // Context/document destruction invokes listener detach callbacks, so listeners must outlive it.
     document_ = nullptr;
     if (context_ != nullptr) {
@@ -688,7 +696,7 @@ bool RmlUiRuntime::CrouchButtonAt(float x, float y) const {
 }
 
 bool RmlUiRuntime::Touch(int action, int pointerId, float x, float y) {
-    if (!ready_ || context_ == nullptr) return true;
+    if (!ready_ || context_ == nullptr || usingSafeDocument_) return true;
 
     // RmlUi's mouse API represents one pointer. Reserve it for the finger that
     // actually pressed a HUD element; other fingers remain world/camera gestures.
@@ -839,7 +847,7 @@ void RmlUiRuntime::ApplyResponsiveLayout() {
 }
 
 void RmlUiRuntime::UpdateAndRender() {
-    if (!ready_ || context_ == nullptr) return;
+    if (!ready_ || context_ == nullptr || usingSafeDocument_) return;
     ScopedRmlUiGlState stateGuard;
     context_->Update();
     context_->Render();
