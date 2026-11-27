@@ -233,10 +233,13 @@ def test_fallback_ui_has_discrete_controls_real_quickbar_chat_and_crafting_comma
     lan = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
     engine = (CPP / "engine/Engine.cpp").read_text(encoding="utf-8")
     assert "FrameLayout joystick" not in activity
-    assert "attachFallbackHoldAction(up, 6);" in activity
-    assert "attachFallbackHoldAction(down, 7);" in activity
-    assert "attachFallbackHoldAction(left, 8);" in activity
-    assert "attachFallbackHoldAction(right, 9);" in activity
+    assert "dispatchFallbackOverlayTouch(event, overlay)" in activity
+    assert "findFallbackTarget(overlay, x, y)" in activity
+    assert "fallbackPointers.put(pointerId, state)" in activity
+    assert "surfaceView.dispatchFallbackAction(tag, true)" in activity
+    assert "surfaceView.dispatchFallbackAction(state.holdAction, false)" in activity
+    for direction, action in (("up", 6), ("down", 7), ("left", 8), ("right", 9)):
+        assert f"{direction}.setTag({action})" in activity
     assert "showFallbackInventoryDialog()" in activity
     assert "showFallbackCraftingDialog()" in activity
     assert "private void updateFallbackQuickbar(String snapshot)" in activity
