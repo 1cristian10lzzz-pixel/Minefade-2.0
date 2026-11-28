@@ -113,7 +113,11 @@ def test_tool_durability_is_material_based_and_persisted_outside_mfvox():
 
 
 def test_tool_durability_moves_with_inventory_slots_and_has_visual_bars():
-    assert "std::swap(inventory_.toolDurability[slot]" in ENGINE
+    # Slot swaps now live in Inventory so stack merge/split and durability
+    # preservation share one transaction-safe implementation.
+    assert "inventory_.MoveOrMergeSlot(source, slot)" in ENGINE
+    assert "std::swap(toolDurability[source], toolDurability[destination])" in PLAYER
+    assert "MoveOrMergeSlot(std::size_t source, std::size_t destination)" in PLAYER_H
     assert "SlotItemMaxDurability(std::size_t slot) const" in PLAYER_H
     assert "SlotItemDurability(std::size_t slot) const" in PLAYER_H
     assert "inventory-durability" in ENGINE
