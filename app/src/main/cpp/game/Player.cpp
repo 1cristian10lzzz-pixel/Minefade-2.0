@@ -539,6 +539,89 @@ bool Inventory::ConsumeItem(std::uint16_t itemId, std::uint16_t amount) {
     return remaining == 0u;
 }
 
+bool Inventory::MoveOrMergeSlot(std::size_t source, std::size_t destination) {
+    if (source >= counts.size() || destination >= counts.size() || source == destination)
+        return false;
+    const std::uint32_t sourceEncoded = counts[source];
+    const std::uint32_t destinationEncoded = counts[destination];
+    const std::uint16_t sourceId = static_cast<std::uint16_t>(sourceEncoded / 1000u);
+    const std::uint16_t sourceAmount = static_cast<std::uint16_t>(sourceEncoded % 1000u);
+    const std::uint16_t destinationId = static_cast<std::uint16_t>(destinationEncoded / 1000u);
+    const std::uint16_t destinationAmount = static_cast<std::uint16_t>(destinationEncoded % 1000u);
+
+    if (sourceId == 0u || sourceAmount == 0u) {
+        if (destinationId == 0u || destinationAmount == 0u) return false;
+        std::swap(counts[source], counts[destination]);
+        std::swap(toolDurability[source], toolDurability[destination]);
+        return true;
+    }
+    const BlockDefinition* sourceDefinition =
+        GetBlockDefinition(static_cast<BlockId>(sourceId));
+    if (sourceDefinition == nullptr) return false;
+
+    if (destinationId == sourceId && destinationAmount > 0u) {
+        const std::uint16_t maximum = sourceDefinition->stackLimit > 0u
+            ? sourceDefinition->stackLimit : 64u;
+        // Durable tools and equipment must never be merged: their individual
+        // wear state cannot be represented by a single stack counter.
+        if (SlotItemMaxDurability(source) > 0u ||
+            SlotItemMaxDurability(destination) > 0u ||
+            destinationAmount >= maximum) return false;
+        const std::uint16_t moved = std::min<std::uint16_t>(
+            sourceAmount, static_cast<std::uint16_t>(maximum - destinationAmount));
+        if (moved == 0u) return false;
+        const std::uint16_t remaining = static_cast<std::uint16_t>(sourceAmount - moved);
+        counts[destination] = static_cast<std::uint32_t>(sourceId) * 1000u +
+                              static_cast<std::uint32_t>(destinationAmount + moved);
+        counts[source] = remaining == 0u ? 0u :
+            static_cast<std::uint32_t>(sourceId) * 1000u + remaining;
+        if (remaining == 0u) toolDurability[source] = 0u;
+        return true;
+    }
+
+    std::swap(counts[source], counts[destination]);
+    std::swap(toolDurability[source], toolDurability[destination]);
+    return true;
+}
+
+bool Inventory::SplitStack(std::size_t source, std::size_t destination) {
+    if (source >= counts.size() || destination >= counts.size() || source == destination ||
+        counts[destination] != 0u) return false;
+    const std::uint32_t encoded = counts[source];
+    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+    const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+    if (itemId == 0u || amount < 2u || SlotItemMaxDurability(source) > 0u) return false;
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+    if (definition == nullptr) return false;
+    const std::uint16_t stackLimit = definition->stackLimit > 0u
+        ? definition->stackLimit : 64u;
+    if (stackLimit <= 1u) return false;
+    const std::uint16_t moved = static_cast<std::uint16_t>(amount / 2u);
+    if (moved == 0u) return false;
+    counts[source] = static_cast<std::uint32_t>(itemId) * 1000u +
+                     static_cast<std::uint32_t>(amount - moved);
+    counts[destination] = static_cast<std::uint32_t>(itemId) * 1000u +
+                          static_cast<std::uint32_t>(moved);
+    toolDurability[destination] = 0u;
+    return true;
+}
+
+bool Inventory::RemoveFromSlot(std::size_t slot, std::uint16_t amount,
+                               std::uint16_t* itemIdOutput) {
+    if (slot >= counts.size() || amount == 0u) return false;
+    const std::uint32_t encoded = counts[slot];
+    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+    const std::uint16_t current = static_cast<std::uint16_t>(encoded % 1000u);
+    if (itemId == 0u || current < amount ||
+        GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr) return false;
+    const std::uint16_t remaining = static_cast<std::uint16_t>(current - amount);
+    counts[slot] = remaining == 0u ? 0u :
+        static_cast<std::uint32_t>(itemId) * 1000u + remaining;
+    if (remaining == 0u) toolDurability[slot] = 0u;
+    if (itemIdOutput != nullptr) *itemIdOutput = itemId;
+    return true;
+}
+
 void DroppedItemSystem::SetModOptions(float pickupRadius, float lifetimeSeconds) {
     pickupRadius_ = std::clamp(pickupRadius, 0.8f, 4.0f);
     lifetimeSeconds_ = std::clamp(lifetimeSeconds, 30.0f, 900.0f);
