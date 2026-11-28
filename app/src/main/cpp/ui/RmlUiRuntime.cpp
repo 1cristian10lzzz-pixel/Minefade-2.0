@@ -116,16 +116,17 @@ body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-
 #topbar button { pointer-events: auto; }
 #brand { display: none; }
 #stats { color: #f3f8fb; font-size: 9dp; background: #1c344acb; padding: 7dp 10dp; border: 1dp #d7e8ef66; border-radius: 10dp; text-shadow: none; }
-#minimap { position: absolute; z-index: 5; top: 54dp; left: 10dp; width: 88dp; padding: 5dp; background: #1a344bc9; border: 1dp #d7e8ef88; border-radius: 10dp; }
-#minimap-grid { width: 78dp; height: 78dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1dp; border: 1dp #e2f0f4aa; border-radius: 5dp; overflow: hidden; background: #173047; }
+#minimap { position: absolute; z-index: 9; top: 54dp; left: 10dp; width: 98dp; padding: 5dp; display: flex; flex-direction: column; opacity: 1; visibility: visible; background: #10243aee; border: 1dp #d7e8efcc; border-radius: 8dp; box-shadow: none; }
+#minimap-grid { width: 88dp; height: 88dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1dp; border: 1dp #e2f0f4aa; border-radius: 5dp; overflow: hidden; background: #173047; }
 #minimap-north { position: absolute; right: 4dp; top: 3dp; width: 15dp; height: 15dp; text-align: center; color: #ffffff; font-size: 9dp; background: #142638cc; border-radius: 8dp; }
-.map-tile { width: 10dp; height: 10dp; border-radius: 1dp; }
+.map-tile { width: 11dp; height: 11dp; border-radius: 1dp; }
 .map-low { background: #6c8064; }
 .map-mid { background: #52805b; }
 .map-high { background: #8b9185; }
 .map-water { background: #326f9a; }
 .map-player { background: #d9ed94; border: 1dp #f8ffe8; border-radius: 5dp; }
-#minimap-coords { margin-top: 3dp; text-align: center; color: #d4e4e9; font-size: 7dp; }
+#minimap-title { color: #dcebf5; font-size: 8dp; font-weight: bold; text-align: center; margin-bottom: 3dp; }
+#minimap-coords { margin-top: 3dp; text-align: center; color: #d4e4e9; font-size: 8dp; }
 .actions { display: flex; flex-direction: row; align-items: center; gap: 6dp; }
 button { color: #f7fbff; background: #142638bb; border: 1dp #d7e8ef66; border-radius: 9dp; padding: 6dp 9dp; font-size: 11dp; }
 button, .slot, #minimap, .panel, #chat-message { transition: background-color 0.14s linear, border-color 0.14s linear, opacity 0.18s linear; }
@@ -143,7 +144,7 @@ button:active { background: #47789b; }
 .panel h1 { font-size: 20dp; margin: 0dp 0dp 10dp 0dp; color: #ffffff; }
 .panel p { font-size: 12dp; color: #c8d3db; margin: 3dp 0dp 12dp 0dp; }
 .panel .actions { flex-wrap: wrap; }
-#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: 0dp; display: flex; flex-direction: row; gap: 2.5dp; padding: 4dp; background: #20252bcc; border: 1dp #6c737acc; border-radius: 3dp; }
+#quickbar { position: absolute; z-index: 7; bottom: 10dp; left: 50%; margin-left: 0dp; display: flex; flex-direction: row; gap: 2.5dp; padding: 0dp; background: transparent; border: 0dp transparent; border-radius: 0dp; box-shadow: none; }
 .slot { position: relative; width: 34dp; min-width: 34dp; height: 36dp; text-align: center; padding: 0dp; display: flex; align-items: center; justify-content: center; background: #30363dcc; border: 1dp #7e878fbb; border-radius: 2dp; color: #ffffff; font-size: 9dp; }
 .slot:active { background: #59636b; }
 .slot img { width: 26dp; height: 26dp; display: block; margin: auto; }
@@ -217,12 +218,13 @@ button:active { background: #47789b; }
 #death-panel button { min-width: 110dp; }
 #chat-message { position: absolute; z-index: 12; left: 50%; bottom: 62dp; width: 78%; margin-left: -39%; padding: 7dp 10dp; border-radius: 10dp; border: 1dp #d9e9a466; background: #101d2be8; color: #f3f7f8; font-size: 10dp; text-align: center; display: none; pointer-events: none; }
 
-#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 4dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background: #101a27dc; border: 1dp #bdced9aa; border-radius: 6dp; }
-#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 4dp 7dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background-color: rgba(16, 26, 39, 0.86); border: 1dp solid #bdced9aa; border-radius: 6dp; }
+#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 0dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background: transparent; border: 0dp transparent; border-radius: 0dp; box-shadow: none; }
+#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; margin-left: -42%; width: 84%; min-height: 24dp; padding: 0dp; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; background: transparent; border: 0dp transparent; border-radius: 0dp; box-shadow: none; }
 .vital-bar { display: flex; flex-direction: row; align-items: center; gap: 3dp; width: 76dp; }
 .vital-symbol { width: 10dp; text-align: center; font-size: 10dp; }
 .vital-track { width: 62dp; height: 8dp; background: #0b1420; border: 1dp #8ba0b2aa; border-radius: 3dp; overflow: hidden; }
 .vital-fill { width: 100%; height: 8dp; border-radius: 2dp; transition: width 0.12s linear; }
+#vitals { position: absolute; z-index: 6; left: 50%; bottom: 72dp; width: 84%; margin-left: -42%; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7dp; padding: 0dp; background: transparent; border: 0dp transparent; box-shadow: none; }
 #vitals-health-fill { background: #dd5964; }
 #vitals-hunger-fill { background: #e5a34e; }
 .vital-group { display: flex; flex-direction: row; align-items: center; gap: 1dp; white-space: nowrap; font-size: 10dp; }
@@ -232,7 +234,7 @@ button:active { background: #47789b; }
 #vitals-level { color: #d5f38c; font-size: 10dp; min-width: 25dp; text-align: right; font-weight: bold; }
 #vitals-xp { width: 62dp; height: 5dp; background: #243240; border: 1dp #8296a5aa; border-radius: 4dp; overflow: hidden; }
 #vitals-xp-fill { width: 0%; height: 5dp; background: #9fdf59; border-radius: 4dp; }
-#quickbar { bottom: 12dp; gap: 3dp; padding: 5dp; background: #101a27ed; border: 2dp #c6d4e0dd; border-radius: 5dp; }
+#quickbar { bottom: 12dp; gap: 3dp; padding: 0dp; background: transparent; border: 0dp transparent; border-radius: 0dp; box-shadow: none; }
 .slot { height: 42dp; background: #101923e8; border: 1dp #98a8b7bb; border-radius: 3dp; font-size: 11dp; }
 .slot img { width: 31dp; height: 31dp; }
 .slot .slot-count { right: 2dp; bottom: 0dp; font-size: 10dp; text-shadow: 0dp 1dp 2dp #000000; }
@@ -273,7 +275,7 @@ button:active { background: #47789b; }
     <button id="pause">Ⅱ</button>
   </div>
 </div>
-<div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
+<div id="minimap"><div id="minimap-title">MAPA</div><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
 <div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div><div id="crosshair-center"></div></div>
 <div id="movement-pad">
   <div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div>
@@ -472,18 +474,25 @@ body { margin: 0dp; padding: 0dp; width: 100%; height: 100%; color: #ffffff; fon
 button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 238, 249, 0.65); border-radius: 9dp; color: #ffffff; padding: 5dp; font-size: 12dp; }
 #topbar { position: absolute; top: 8dp; right: 8dp; display: flex; }
 #topbar button { width: 38dp; height: 38dp; margin-left: 4dp; }
-#stats { position: absolute; left: 10dp; top: 10dp; display: block; font-size: 10dp; color: #ffffff; }
+#stats { position: absolute; right: 112dp; top: 12dp; display: block; padding: 6dp 8dp; color: #f3f8fb; font-size: 10dp; border: 1dp solid #d7e8ef77; border-radius: 5dp; background: #1c344acb; }
 #movement-pad { position: absolute; left: 14dp; bottom: 54dp; width: 132dp; height: 132dp; border-radius: 18dp; pointer-events: none; }
 .pad-arrow { position: absolute; width: 42dp; height: 42dp; text-align: center; background: rgba(25, 50, 73, 0.88); border: 1dp solid #e1efb8; border-radius: 11dp; font-size: 20dp; }
 #move-up { left: 45dp; top: 2dp; } #move-down { left: 45dp; bottom: 2dp; }
 #move-left { left: 2dp; top: 45dp; } #move-right { right: 2dp; top: 45dp; }
-#quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: 0dp; display: flex; gap: 2.5dp; padding: 4dp; background: #20252bcc; border: 1dp #6c737acc; border-radius: 3dp; }
+#quickbar { position: absolute; bottom: 10dp; left: 50%; margin-left: 0dp; display: flex; gap: 2.5dp; padding: 0dp; background: transparent; border: 0dp transparent; border-radius: 0dp; box-shadow: none; }
 .slot { width: 34dp; min-width: 34dp; height: 36dp; margin-right: 0dp; padding: 0dp; background: #30363dcc; border: 1dp #7e878fbb; border-radius: 2dp; }
 .slot img { width: 26dp; height: 26dp; }
 #jump { position: absolute; right: 22dp; bottom: 60dp; width: 56dp; height: 56dp; font-size: 20dp; }
 #attack { position: absolute; right: 24dp; bottom: 126dp; width: 50dp; height: 50dp; font-size: 17dp; }
 #movement-pad #crouch { position: absolute; left: 45dp; top: 45dp; right: auto; bottom: auto; width: 42dp; height: 42dp; font-size: 15dp; pointer-events: auto; }
-#minimap { position: absolute; top: 54dp; left: 10dp; width: 64dp; height: 64dp; border: 1dp solid #ffffff88; background-color: rgba(18, 43, 64, 0.70); }
+#minimap { position: absolute; z-index: 9; top: 54dp; left: 10dp; width: 98dp; padding: 5dp; display: flex; flex-direction: column; opacity: 1; visibility: visible; border: 1dp solid #d7e8efcc; border-radius: 8dp; background-color: #10243aee; }
+#minimap-title { color: #dcebf5; font-size: 8dp; font-weight: bold; text-align: center; margin-bottom: 3dp; }
+#minimap-grid { display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 1dp; width: 88dp; height: 88dp; border: 1dp solid #e2f0f4aa; border-radius: 5dp; overflow: hidden; background: #173047; }
+.map-tile { width: 11dp; height: 11dp; border-radius: 1dp; }
+.map-low { background: #6c8064; } .map-mid { background: #52805b; } .map-high { background: #8b9185; } .map-water { background: #326f9a; }
+.map-player { background: #d9ed94; border: 1dp solid #f8ffe8; border-radius: 5dp; }
+#minimap-north { position: absolute; right: 6dp; top: 18dp; width: 14dp; height: 14dp; background: #142638cc; color: #ffffff; border-radius: 7dp; text-align: center; font-size: 9dp; }
+#minimap-coords { margin-top: 3dp; text-align: center; color: #d4e4e9; font-size: 8dp; }
 #crosshair { position: absolute; z-index: 5; display: block; left: 50%; top: 50%; width: 16dp; height: 16dp; margin-left: -8dp; margin-top: -8dp; pointer-events: none; }
 #crosshair-v { position: absolute; left: 7dp; top: 0dp; width: 2dp; height: 16dp; background: #ffffffee; }
 #crosshair-h { position: absolute; left: 0dp; top: 7dp; width: 16dp; height: 2dp; background: #ffffffee; }
@@ -519,7 +528,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 <button id="perspective">◉</button>
 <button id="pause">Ⅱ</button>
 </div>
-<div id="minimap"><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
+<div id="minimap"><div id="minimap-title">MAPA</div><div id="minimap-grid"></div><div id="minimap-north">N</div><div id="minimap-coords">X 0 · Z 0</div></div>
 <div id="crosshair"><div id="crosshair-v"></div><div id="crosshair-h"></div><div id="crosshair-center"></div></div>
 <div id="vitals"><div id="vitals-health" class="vital-bar"><span class="heart-on">♥</span><div class="vital-track"><div id="vitals-health-fill" class="vital-fill"></div></div></div><div id="vitals-hunger" class="vital-bar"><span class="food-on">◆</span><div class="vital-track"><div id="vitals-hunger-fill" class="vital-fill"></div></div></div><div id="vitals-armor" class="vital-group"></div><div id="vitals-level">NV 1</div><div id="vitals-xp"><div id="vitals-xp-fill"></div></div></div>
 <div id="movement-pad"><div id="move-up" class="pad-arrow">↑</div><div id="move-down" class="pad-arrow">↓</div><div id="move-left" class="pad-arrow">←</div><div id="move-right" class="pad-arrow">→</div><button id="crouch">▣</button></div>
@@ -959,6 +968,11 @@ void RmlUiRuntime::SetChestContents(const std::string& markup) {
 
 void RmlUiRuntime::SetMinimap(const std::string& gridMarkup, const std::string& coordinates) {
     if (document_ == nullptr) return;
+    if (Rml::Element* minimap = document_->GetElementById("minimap")) {
+        minimap->SetProperty("display", "flex");
+        minimap->SetProperty("visibility", "visible");
+        minimap->SetProperty("opacity", "1");
+    }
     if (Rml::Element* grid = document_->GetElementById("minimap-grid"))
         grid->SetInnerRML(gridMarkup);
     if (Rml::Element* label = document_->GetElementById("minimap-coords"))
