@@ -157,6 +157,11 @@ bool EntityVisualSystem::LoadModEntityModel(int kind, const EntityDefinition& de
     return true;
 }
 
+void EntityVisualSystem::SetAnimationOptions(std::uint8_t quality, bool enabled) {
+    animationQuality_ = quality > 2u ? 2u : quality;
+    animationsEnabled_ = enabled;
+}
+
 void EntityVisualSystem::Clear() {
     sheepModel_={};
     modModels_.clear();
@@ -177,6 +182,18 @@ void EntityVisualSystem::AppendMesh(const std::vector<Entity>& entities,
         animation.condition=entity.visualState;
         animation.previousCondition=entity.previousVisualState;
         animation.transitionSeconds=entity.visualTransitionSeconds;
+        if (!animationsEnabled_) {
+            animation.time = 0.0f;
+            animation.condition = 0u;
+            animation.previousCondition = 0u;
+            animation.transitionSeconds = 1.0f;
+        } else if (animationQuality_ == 0u) {
+            animation.time *= 0.60f;
+            animation.transitionSeconds *= 0.60f;
+        } else if (animationQuality_ == 1u) {
+            animation.time *= 0.82f;
+            animation.transitionSeconds *= 0.82f;
+        }
 
         std::vector<AnimatedBonePose> pose;
         if(!AnimationController::Evaluate(model,animation,pose)) return;

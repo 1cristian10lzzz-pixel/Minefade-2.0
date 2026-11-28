@@ -23,6 +23,7 @@ public:
                             const std::uint8_t* bytes, std::size_t size,
                             std::string& error);
     void Clear();
+    void SetAnimationOptions(std::uint8_t quality, bool enabled);
     bool IsSheepReady() const { return sheepValidated_; }
     bool IsModEntityReady(int kind) const { return modModels_.find(kind) != modModels_.end(); }
     const std::string& SheepDiagnostic() const { return sheepDiagnostic_; }
@@ -39,6 +40,8 @@ private:
     LegacyModelAdapter legacyAdapter_{LegacyModelMode::Auto};
     std::map<int, ModelData> modModels_;
     bool sheepValidated_{false};
+    std::uint8_t animationQuality_{2};
+    bool animationsEnabled_{true};
     std::string sheepDiagnostic_;
 };
 
