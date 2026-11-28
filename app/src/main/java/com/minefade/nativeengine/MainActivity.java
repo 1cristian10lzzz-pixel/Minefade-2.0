@@ -330,7 +330,7 @@ public final class MainActivity extends Activity {
                             showFallbackTouchControls();
                             String hudDiagnostic = surfaceView.nativeHudDiagnostic();
                             if (hudDiagnostic == null) hudDiagnostic = "";
-                            hudDiagnostic = hudDiagnostic.replace('\\n', ' ');
+                            hudDiagnostic = hudDiagnostic.replace('\n', ' ');
                             if (hudDiagnostic.length() > 150)
                                 hudDiagnostic = hudDiagnostic.substring(0, 150) + "…";
                             Toast.makeText(MainActivity.this,
