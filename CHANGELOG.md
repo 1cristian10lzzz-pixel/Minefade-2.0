@@ -1,5 +1,15 @@
 # Registro de cambios — Minefade 2.0
 
+## Actualización 2.4.0 — inventario jugable
+- Los 36 espacios del inventario pueden seleccionarse y transferirse entre sí; el movimiento no queda limitado a intercambiar con la casilla activa.
+- Las pilas del mismo objeto se combinan hasta el límite definido en el registro de bloques.
+- Se pueden dividir pilas en un espacio vacío y soltar unidades al mundo.
+- La durabilidad de las herramientas acompaña al objeto al intercambiar espacios; las herramientas dañadas no se pueden dividir ni soltar todavía, para evitar perder el desgaste.
+- El espacio seleccionado queda resaltado y el panel incorpora acciones directas para dividir y soltar.
+- Se añaden pruebas nativas para fusión, división, extracción, límites y conservación de durabilidad, además de una prueba de integración de interfaz.
+- Android versionCode 31 / versionName 2.4.0. Esta entrega requiere CI y validación táctil en Android físico.
+
+
 ## Candidata 2.3.1 — recuperación gráfica y rediseño de interfaz
 - El chunk inicial se malla sincrónicamente antes de mostrar el mundo para evitar el primer fotograma vacío mientras arranca el trabajador de mallas.
 - Se separa la restauración de OpenGL de la carga del mundo: al recrearse EGL se reconstruyen shaders, atlas, buffers, renderer de chunks, entidades y HUD sin reiniciar la sesión en memoria.
