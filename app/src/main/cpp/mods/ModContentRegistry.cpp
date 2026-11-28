@@ -11,6 +11,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <system_error>
 #include <unordered_map>
 
 namespace minefade {
