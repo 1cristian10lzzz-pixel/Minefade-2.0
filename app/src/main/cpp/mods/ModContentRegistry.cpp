@@ -37,6 +37,36 @@ bool ReadJson(const std::filesystem::path& path, JsonValue& json) {
                      json, error);
 }
 
+bool ReadOptionalJson(const std::filesystem::path& path, std::string_view label,
+                      JsonValue& json, std::string& error) {
+    std::error_code statusError;
+    const std::filesystem::file_status status =
+        std::filesystem::symlink_status(path, statusError);
+    if (statusError == std::errc::no_such_file_or_directory) {
+        // Optional sections may be omitted. A present but invalid section must
+        // never be treated as if the mod author had intentionally omitted it.
+        json.value = JsonValue::Array{};
+        return true;
+    }
+    if (statusError) {
+        error = "no se pudo comprobar " + std::string(label);
+        return false;
+    }
+    if (status.type() == std::filesystem::file_type::not_found) {
+        json.value = JsonValue::Array{};
+        return true;
+    }
+    if (std::filesystem::is_symlink(status) || !std::filesystem::is_regular_file(status)) {
+        error = std::string(label) + ": se esperaba un archivo regular";
+        return false;
+    }
+    if (!ReadJson(path, json)) {
+        error = std::string(label) + ": JSON vacío, demasiado grande o mal formado";
+        return false;
+    }
+    return true;
+}
+
 std::string GetString(const JsonValue& value, std::string_view key,
                       std::string fallback = {}) {
     const JsonValue* child = value.Find(key);
@@ -371,7 +401,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
                                      int& atlasHeight, std::uint16_t& nextTile,
                                      std::string_view expectedModId, std::string& error) {
     JsonValue blocksJson;
-    if (ReadJson(packageRoot / "data" / "blocks.json", blocksJson)) {
+    if (!ReadOptionalJson(packageRoot / "data" / "blocks.json", "data/blocks.json", blocksJson, error)) return false;
+    {
+
         const auto* blocks = blocksJson.Items();
         if (blocks == nullptr || blocks->size() > 256u) {
             error = "data/blocks.json inválido";
@@ -485,7 +517,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
     }
 
     JsonValue itemsJson;
-    if (ReadJson(packageRoot / "data" / "items.json", itemsJson)) {
+    if (!ReadOptionalJson(packageRoot / "data" / "items.json", "data/items.json", itemsJson, error)) return false;
+    {
+
         const auto* items = itemsJson.Items();
         if (items == nullptr || items->size() > 256u) { error = "data/items.json inválido"; return false; }
         std::vector<const JsonValue*> sorted;
@@ -549,7 +583,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
     }
 
     JsonValue recipesJson;
-    if (ReadJson(packageRoot / "data" / "recipes.json", recipesJson)) {
+    if (!ReadOptionalJson(packageRoot / "data" / "recipes.json", "data/recipes.json", recipesJson, error)) return false;
+    {
+
         const auto* recipes = recipesJson.Items();
         if (recipes == nullptr || recipes->size() > 512u) { error = "data/recipes.json inválido"; return false; }
         for (const auto& value : *recipes) {
@@ -600,7 +636,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
     }
 
     JsonValue biomesJson;
-    if (ReadJson(packageRoot / "data" / "biomes.json", biomesJson)) {
+    if (!ReadOptionalJson(packageRoot / "data" / "biomes.json", "data/biomes.json", biomesJson, error)) return false;
+    {
+
         const auto* biomes = biomesJson.Items();
         if (biomes == nullptr || biomes->size() > 64u) { error = "data/biomes.json inválido"; return false; }
         for (const auto& value : *biomes) {
@@ -632,7 +670,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
     }
 
     JsonValue structuresJson;
-    if (ReadJson(packageRoot / "data" / "structures.json", structuresJson)) {
+    if (!ReadOptionalJson(packageRoot / "data" / "structures.json", "data/structures.json", structuresJson, error)) return false;
+    {
+
         const auto* structures = structuresJson.Items();
         if (structures == nullptr || structures->size() > 64u) {
             error = "data/structures.json inválido"; return false;
@@ -673,7 +713,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
     }
 
     JsonValue entitiesJson;
-    if (ReadJson(packageRoot / "data" / "entities.json", entitiesJson)) {
+    if (!ReadOptionalJson(packageRoot / "data" / "entities.json", "data/entities.json", entitiesJson, error)) return false;
+    {
+
         const auto* entities = entitiesJson.Items();
         if (entities == nullptr || entities->size() > 128u) { error = "data/entities.json inválido"; return false; }
         for (const auto& value : *entities) {
