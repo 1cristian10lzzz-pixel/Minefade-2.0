@@ -1,5 +1,16 @@
 # Registro de cambios — Minefade 2.0
 
+## Minefade 2.4.1 — ampliación de jugabilidad y herramientas
+
+- Interacción con mesas de fabricación; carrera mediante doble toque hacia delante y mantener pulsado para comer.
+- Animaciones de acción en tercera persona, pose de muerte y partículas de impacto.
+- Pérdida de experiencia al morir, caída de un objeto seleccionado y punto de reaparición configurable con `/setspawn`.
+- Búsqueda de recetas mediante `/buscarreceta`, filtros por categoría y ajustes rápidos en pausa.
+- Exportación de mundos completos a ZIP desde el selector de documentos Android, incluidos sus sidecars.
+- Controles de ondas de agua, sombras de contacto, animaciones y lluvia visual de bajo coste; se conserva la arquitectura MFMod v3 de modelos y texturas.
+- Validación automatizada: Python, Rust y C++; requiere además compilar APK ARM64/ARMv7 y probar tacto, renderizado, guardado y exportación en teléfonos Android.
+- Firma de distribución persistente no configurada: el APK CI es debug y no garantiza actualización in-place con otra clave.
+
 ## Mantenimiento MFMod para Minefade 2.4.0
 - El generador y validador MFMod v3 usan 2.4.0 como versión actual del motor; los paquetes de prueba declaran compatibilidad 2.4.x.
 - El runtime nativo permite omitir módulos de contenido opcionales, pero rechaza módulos JSON presentes que estén vacíos, dañados, sean enlaces simbólicos o no sean archivos regulares.

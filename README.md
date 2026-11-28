@@ -1,5 +1,7 @@
 # Minefade 2.0
 
+**Candidata Android actual:** Minefade 2.4.1 · versionCode 32. CI valida las suites automatizadas y compila APK de depuración; la aceptación visual/táctil requiere pruebas en Android físico.
+
 Juego voxel nativo para Android. Este es el repositorio principal de desarrollo.
 
 > **Estado:** fuente y recursos importados; el APK se compila ahora en GitHub Actions. Ninguna compilación se considera Release estable hasta superar las pruebas en Android real.
