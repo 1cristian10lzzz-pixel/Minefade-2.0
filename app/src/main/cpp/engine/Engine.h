@@ -116,6 +116,7 @@ private:
     bool HasNearbyCraftingTable() const;
     bool HasNearbyFurnace() const;
     bool HasNearbyStonecutter() const;
+    bool HasNearbyAnvil() const;
     bool CraftRecipe(const std::string& recipe);
     void UpdateMining(float deltaSeconds);
     void SetTargetBlock(const std::string& name, float progress);
