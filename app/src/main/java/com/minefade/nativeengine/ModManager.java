@@ -677,10 +677,11 @@ public final class ModManager {
                     String id = entity.getString("id");
                     String model = entity.getString("model");
                     String texture = entity.getString("texture");
+                    byte[] textureBytes = files.get(texture);
                     if (!validMod3Id(id, modId) || !ids.add(id) ||
                             !model.endsWith(".mfmodel") || !files.containsKey(model) ||
-                            !files.containsKey(texture) ||
-                            !(texture.endsWith(".rgba") || texture.endsWith(".png") || texture.endsWith(".webp")) ||
+                            textureBytes == null || !texture.toLowerCase(Locale.ROOT).endsWith(".rgba") ||
+                            textureBytes.length != 1024 ||
                             !isFiniteInRange(entity.optString("width", "0.8"), 0.1f, 16.0f) ||
                             !isFiniteInRange(entity.optString("height", "1.0"), 0.1f, 32.0f) ||
                             !isFiniteInRange(entity.optString("eye_height", "0.7"), 0.1f, 32.0f) ||
