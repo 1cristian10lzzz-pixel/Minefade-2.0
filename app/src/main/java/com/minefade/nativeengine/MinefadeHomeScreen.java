@@ -1698,7 +1698,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
                         "minimap_shape", new String[]{"Cuadrado", "Circular"}, 0));
                 settingsCards.add(settingSwitch("Animaciones de interfaz", "Entradas y transiciones suaves.",
                         "menu_animations", true));
-                settingsCards.add(settingSwitch("Mostrar información superior", "FPS, chunks y datos de estado en el HUD.",
+                settingsCards.add(settingSwitch("Mostrar contador de FPS", "Muestra los FPS actuales y los datos de rendimiento durante la partida.",
                         "show_hud_stats", true));
                 settingsCards.add(settingSlider("Escala del HUD", "Tamaño de elementos durante la partida.",
                         "hud_scale", 80, 120, 100, "%"));
