@@ -4031,75 +4031,149 @@ bool Engine::SaveWorld() {
         } else {
             ENGINE_LOGI("World saved to private app storage");
             {
-                std::map<std::uint16_t, std::string> usedModIds;
-                for (const UsedModBlockId& entry : world_.UsedModBlocks())
-                    usedModIds.emplace(entry.runtimeId, entry.namespacedId);
-                const auto addInventoryModId = [&usedModIds](std::uint32_t encoded) {
-                    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
-                    if (itemId == 0u) return;
-                    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
-                    if (definition != nullptr && definition->key != nullptr &&
-                        std::string_view(definition->key).find(':') != std::string_view::npos)
-                        usedModIds.emplace(itemId, definition->key);
-                };
-                for (std::uint32_t encoded : inventory_.counts) addInventoryModId(encoded);
-                for (std::uint16_t itemId : inventory_.equippedArmor)
-                    addInventoryModId(static_cast<std::uint32_t>(itemId) * 1000u + 1u);
-
                 const std::string idsPath = storagePath_ + ".modids";
                 const std::string idsTemp = idsPath + ".tmp";
-                std::ofstream idsFile(idsTemp, std::ios::binary | std::ios::trunc);
-                const char idsMagic[8] = {'M','F','M','O','D','I','D','1'};
-                const std::uint32_t idsVersion = 1u;
-                const std::uint32_t idsCount = static_cast<std::uint32_t>(usedModIds.size());
-                if (idsFile) {
-                    idsFile.write(idsMagic, sizeof(idsMagic));
-                    idsFile.write(reinterpret_cast<const char*>(&idsVersion), sizeof(idsVersion));
-                    idsFile.write(reinterpret_cast<const char*>(&idsCount), sizeof(idsCount));
-                    for (const auto& entry : usedModIds) {
-                        const std::uint16_t keyLength = static_cast<std::uint16_t>(
-                            std::min<std::size_t>(entry.second.size(), 129u));
-                        idsFile.write(reinterpret_cast<const char*>(&entry.first), sizeof(entry.first));
-                        idsFile.write(reinterpret_cast<const char*>(&keyLength), sizeof(keyLength));
-                        idsFile.write(entry.second.data(), keyLength);
+                const auto validNamespacedKey = [](const std::string& key) {
+                    const std::size_t split = key.find(':');
+                    if (split == std::string::npos || split == 0u ||
+                        split + 1u >= key.size() || key.size() > 129u ||
+                        key.find(':', split + 1u) != std::string::npos) return false;
+                    for (const unsigned char value : key) {
+                        const bool allowed = (value >= 'a' && value <= 'z') ||
+                            (value >= '0' && value <= '9') ||
+                            value == '_' || value == '-' || value == '.' || value == ':';
+                        if (!allowed) return false;
                     }
-                    idsFile.flush();
-                    idsFile.close();
-                    if (!idsFile) {
-                        ENGINE_LOGE("Could not write world mod ID registry");
-                        std::filesystem::remove(idsTemp);
+                    return true;
+                };
+
+                // Keep old mappings too: blocks belonging to an absent mod are still
+                // stored as their original numeric IDs in the world file.
+                std::map<std::uint16_t, std::string> usedModIds;
+                bool idsValid = true;
+                std::error_code readError;
+                const bool idsExist = std::filesystem::exists(idsPath, readError);
+                if (readError || std::filesystem::is_symlink(idsPath, readError) || readError)
+                    idsValid = false;
+                if (idsValid && idsExist) {
+                    std::ifstream existingIds(idsPath, std::ios::binary);
+                    char oldMagic[8]{};
+                    std::uint32_t oldVersion = 0u;
+                    std::uint32_t oldCount = 0u;
+                    if (!existingIds ||
+                        !existingIds.read(oldMagic, sizeof(oldMagic)) ||
+                        std::memcmp(oldMagic, "MFMODID1", sizeof(oldMagic)) != 0 ||
+                        !existingIds.read(reinterpret_cast<char*>(&oldVersion), sizeof(oldVersion)) ||
+                        !existingIds.read(reinterpret_cast<char*>(&oldCount), sizeof(oldCount)) ||
+                        oldVersion != 1u || oldCount > 4096u) {
+                        idsValid = false;
                     } else {
-                        std::error_code idsError;
-                        std::filesystem::rename(idsTemp, idsPath, idsError);
-                        if (idsError) {
-                            const std::string idsBackup = idsPath + ".bak";
-                            std::error_code backupError;
-                            std::filesystem::remove(idsBackup, backupError);
-                            backupError.clear();
-                            const bool hadIds = std::filesystem::exists(idsPath, backupError) && !backupError;
-                            if (!backupError && hadIds)
-                                std::filesystem::rename(idsPath, idsBackup, backupError);
-                            if (!backupError) {
-                                idsError.clear();
-                                std::filesystem::rename(idsTemp, idsPath, idsError);
-                            } else {
-                                idsError = backupError;
+                        std::set<std::string> existingKeys;
+                        for (std::uint32_t index = 0u; index < oldCount && idsValid; ++index) {
+                            std::uint16_t runtimeId = 0u;
+                            std::uint16_t keyLength = 0u;
+                            if (!existingIds.read(reinterpret_cast<char*>(&runtimeId), sizeof(runtimeId)) ||
+                                !existingIds.read(reinterpret_cast<char*>(&keyLength), sizeof(keyLength)) ||
+                                runtimeId < static_cast<std::uint16_t>(BlockId::Count) ||
+                                keyLength < 3u || keyLength > 129u) {
+                                idsValid = false;
+                                break;
                             }
+                            std::string key(keyLength, '\0');
+                            if (!existingIds.read(key.data(), static_cast<std::streamsize>(keyLength)) ||
+                                !validNamespacedKey(key) || !existingKeys.insert(key).second) {
+                                idsValid = false;
+                                break;
+                            }
+                            const auto inserted = usedModIds.emplace(runtimeId, key);
+                            if (!inserted.second && inserted.first->second != key) idsValid = false;
+                        }
+                        if (idsValid && existingIds.peek() != std::char_traits<char>::eof())
+                            idsValid = false;
+                    }
+                }
+
+                const auto keepMapping = [&usedModIds, &validNamespacedKey, &idsValid](
+                                             std::uint16_t runtimeId, const std::string& key) {
+                    if (!validNamespacedKey(key) ||
+                        runtimeId < static_cast<std::uint16_t>(BlockId::Count)) {
+                        idsValid = false;
+                        return;
+                    }
+                    const auto inserted = usedModIds.emplace(runtimeId, key);
+                    if (!inserted.second && inserted.first->second != key) idsValid = false;
+                };
+                if (idsValid) {
+                    for (const UsedModBlockId& entry : world_.UsedModBlocks())
+                        keepMapping(entry.runtimeId, entry.namespacedId);
+                    const auto addInventoryModId = [&keepMapping](std::uint32_t encoded) {
+                        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+                        if (itemId == 0u) return;
+                        const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+                        if (definition != nullptr && definition->key != nullptr &&
+                            std::string_view(definition->key).find(':') != std::string_view::npos)
+                            keepMapping(itemId, definition->key);
+                    };
+                    for (std::uint32_t encoded : inventory_.counts) addInventoryModId(encoded);
+                    for (std::uint16_t itemId : inventory_.equippedArmor)
+                        addInventoryModId(static_cast<std::uint32_t>(itemId) * 1000u + 1u);
+                }
+
+                if (!idsValid || usedModIds.size() > 4096u) {
+                    ENGINE_LOGE("World mod ID registry is invalid; preserving previous mapping file");
+                } else {
+                    std::ofstream idsFile(idsTemp, std::ios::binary | std::ios::trunc);
+                    const char idsMagic[8] = {'M','F','M','O','D','I','D','1'};
+                    const std::uint32_t idsVersion = 1u;
+                    const std::uint32_t idsCount = static_cast<std::uint32_t>(usedModIds.size());
+                    if (idsFile) {
+                        idsFile.write(idsMagic, sizeof(idsMagic));
+                        idsFile.write(reinterpret_cast<const char*>(&idsVersion), sizeof(idsVersion));
+                        idsFile.write(reinterpret_cast<const char*>(&idsCount), sizeof(idsCount));
+                        for (const auto& entry : usedModIds) {
+                            const std::uint16_t keyLength = static_cast<std::uint16_t>(entry.second.size());
+                            idsFile.write(reinterpret_cast<const char*>(&entry.first), sizeof(entry.first));
+                            idsFile.write(reinterpret_cast<const char*>(&keyLength), sizeof(keyLength));
+                            idsFile.write(entry.second.data(), keyLength);
+                        }
+                        idsFile.flush();
+                        idsFile.close();
+                        if (!idsFile) {
+                            ENGINE_LOGE("Could not write world mod ID registry");
+                            std::filesystem::remove(idsTemp);
+                        } else {
+                            std::error_code idsError;
+                            std::filesystem::rename(idsTemp, idsPath, idsError);
                             if (idsError) {
-                                if (hadIds) {
-                                    std::error_code restoreError;
-                                    std::filesystem::rename(idsBackup, idsPath, restoreError);
+                                const std::string idsBackup = idsPath + ".bak";
+                                std::error_code backupError;
+                                std::filesystem::remove(idsBackup, backupError);
+                                backupError.clear();
+                                const bool hadIds = std::filesystem::exists(idsPath, backupError) && !backupError;
+                                if (!backupError && hadIds)
+                                    std::filesystem::rename(idsPath, idsBackup, backupError);
+                                if (!backupError) {
+                                    idsError.clear();
+                                    std::filesystem::rename(idsTemp, idsPath, idsError);
+                                } else {
+                                    idsError = backupError;
                                 }
-                                std::filesystem::remove(idsTemp);
-                                ENGINE_LOGE("Could not atomically replace world mod ID registry");
-                            } else if (hadIds) {
-                                std::error_code cleanupError;
-                                std::filesystem::remove(idsBackup, cleanupError);
+                                if (idsError) {
+                                    if (hadIds) {
+                                        std::error_code restoreError;
+                                        std::filesystem::rename(idsBackup, idsPath, restoreError);
+                                    }
+                                    std::filesystem::remove(idsTemp);
+                                    ENGINE_LOGE("Could not atomically replace world mod ID registry");
+                                } else if (hadIds) {
+                                    std::error_code cleanupError;
+                                    std::filesystem::remove(idsBackup, cleanupError);
+                                }
                             }
                         }
+                    } else {
+                        ENGINE_LOGE("Could not create world mod ID registry");
                     }
-                } else {
-                    ENGINE_LOGE("Could not create world mod ID registry");
                 }
             }
             if (!protection_.Save())
