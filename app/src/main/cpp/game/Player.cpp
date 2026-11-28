@@ -13,25 +13,59 @@ static_assert(sizeof(MfEnvironmentState) == 8u, "Rust/C environment ABI mismatch
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace minefade {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
+constexpr std::array<std::array<float,3>,6> kPlayerSkinPalette{{
+    {{0.91f,0.75f,0.61f}},{{0.75f,0.51f,0.37f}},{{0.58f,0.36f,0.25f}},
+    {{0.95f,0.80f,0.68f}},{{0.68f,0.43f,0.31f}},{{0.43f,0.28f,0.21f}}
+}};
+constexpr std::array<std::array<float,3>,6> kPlayerOutfitPalette{{
+    {{0.18f,0.55f,0.39f}},{{0.25f,0.41f,0.76f}},{{0.66f,0.35f,0.54f}},
+    {{0.70f,0.47f,0.19f}},{{0.34f,0.42f,0.50f}},{{0.27f,0.48f,0.36f}}
+}};
+constexpr std::array<std::array<float,3>,6> kPlayerArmourPalette{{
+    {{0.0f,0.0f,0.0f}},{{0.48f,0.34f,0.24f}},{{0.61f,0.69f,0.74f}},
+    {{0.26f,0.52f,0.66f}},{{0.61f,0.46f,0.78f}},{{0.82f,0.88f,0.91f}}
+}};
 int FloorToInt(float value) { return static_cast<int>(std::floor(value)); }
+
+std::uint16_t MaxToolDurability(const BlockDefinition* definition) {
+    if (definition == nullptr) return 0u;
+    if (definition->durability > 0u &&
+        (definition->attackDamage > 0.0f || definition->preferredTool != BlockTool::None))
+        return definition->durability;
+    const std::string_view key(definition->key);
+    if (key.find("_pickaxe") == std::string_view::npos &&
+        key.find("_axe") == std::string_view::npos &&
+        key.find("_shovel") == std::string_view::npos &&
+        key.find("_sword") == std::string_view::npos &&
+        key.find("_hoe") == std::string_view::npos) return 0u;
+    if (key.find("_wooden_") != std::string_view::npos) return 60u;
+    if (key.find("_stone_") != std::string_view::npos) return 132u;
+    if (key.find("_copper_") != std::string_view::npos) return 181u;
+    if (key.find("_iron_") != std::string_view::npos) return 251u;
+    if (key.find("_gold_") != std::string_view::npos) return 33u;
+    if (key.find("_diamond_") != std::string_view::npos) return 1562u;
+    if (key.find("_emerald_") != std::string_view::npos) return 1900u;
+    return 60u;
+}
 
 Vec3 CrossPlayer(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
 Vec3 PlayerLocalPoint(const Vec3& anchor, float yaw, float x, float y, float z) {
-    // x-right, y-up, z-back is a right-handed basis. Keeping this winding is
-    // essential because the world renderer back-face culls OpenGL triangles.
-    const Vec3 right{-std::sin(yaw), 0.0f, std::cos(yaw)};
-    const Vec3 backward{-std::cos(yaw), 0.0f, -std::sin(yaw)};
+    // Rotate the model's positive local-Z front onto Player::Forward while
+    // retaining a right-handed basis for OpenGL back-face culling.
+    const Vec3 right{std::sin(yaw), 0.0f, -std::cos(yaw)};
+    const Vec3 forward{std::cos(yaw), 0.0f, std::sin(yaw)};
     return {
-        anchor.x + right.x * x + backward.x * z,
+        anchor.x + right.x * x + forward.x * z,
         anchor.y + y,
-        anchor.z + right.z * x + backward.z * z
+        anchor.z + right.z * x + forward.z * z
     };
 }
 
@@ -190,6 +224,14 @@ void Player::SetAppearance(const std::array<int, 6>& values) {
         appearance[i] = std::clamp(values[i], 0, 5);
 }
 
+std::array<float, 3> Player::FirstPersonSkinColor() const {
+    return kPlayerSkinPalette[static_cast<std::size_t>(std::clamp(appearance[0], 0, 5))];
+}
+
+std::array<float, 3> Player::FirstPersonSleeveColor() const {
+    return kPlayerOutfitPalette[static_cast<std::size_t>(std::clamp(appearance[3], 0, 5))];
+}
+
 bool Player::ResolveSafeSpawn(const VoxelWorld& world) {
     constexpr float bodyRadius = 0.29f;
     constexpr float bodyHeight = 1.80f;
@@ -248,29 +290,30 @@ void Player::AppendMesh(std::vector<WorldVertex>& output) const {
     MfPlayerPose pose{};
     const MfPlayerState state = ToRustPlayerState(*this);
     minefade_player_compute_pose(&state, animationQuality, animationsEnabled ? 1u : 0u, &pose);
+    const float death = std::clamp(deathProgress, 0.0f, 1.0f);
+    const float action = std::clamp(actionAmount, 0.0f, 1.0f);
+    if (death > 0.0f) {
+        pose.torso_pitch += 0.48f * death;
+        pose.head_pitch += 0.62f * death;
+        pose.left_arm_pitch = -0.95f * death;
+        pose.right_arm_pitch = -0.95f * death;
+        pose.left_leg_pitch *= 1.0f - death;
+        pose.right_leg_pitch *= 1.0f - death;
+    } else if (action > 0.0f && actionKind != 0u) {
+        pose.right_arm_pitch += action * (actionKind == 3u ? -0.95f : -1.35f);
+        if (actionKind == 3u) pose.head_pitch -= 0.22f * action;
+    }
     const float stride = pose.left_leg_pitch * 0.45f;
     // Original Minefade adventurer silhouette: boots, trousers, tunic, arms, hands,
     // face and hair. Every part is transformed by the player's yaw, not world axes.
-    static constexpr std::array<std::array<float,3>,6> skinPalette{{
-        {{0.91f,0.75f,0.61f}},{{0.75f,0.51f,0.37f}},{{0.58f,0.36f,0.25f}},
-        {{0.95f,0.80f,0.68f}},{{0.68f,0.43f,0.31f}},{{0.43f,0.28f,0.21f}}
-    }};
     static constexpr std::array<std::array<float,3>,6> hairPalette{{
         {{0.48f,0.29f,0.17f}},{{0.19f,0.16f,0.18f}},{{0.72f,0.50f,0.24f}},
         {{0.25f,0.39f,0.50f}},{{0.42f,0.30f,0.23f}},{{0.78f,0.70f,0.55f}}
     }};
-    static constexpr std::array<std::array<float,3>,6> outfitPalette{{
-        {{0.18f,0.55f,0.39f}},{{0.25f,0.41f,0.76f}},{{0.66f,0.35f,0.54f}},
-        {{0.70f,0.47f,0.19f}},{{0.34f,0.42f,0.50f}},{{0.27f,0.48f,0.36f}}
-    }};
-    static constexpr std::array<std::array<float,3>,6> armourPalette{{
-        {{0.0f,0.0f,0.0f}},{{0.48f,0.34f,0.24f}},{{0.61f,0.69f,0.74f}},
-        {{0.26f,0.52f,0.66f}},{{0.61f,0.46f,0.78f}},{{0.82f,0.88f,0.91f}}
-    }};
-    const auto& skin=skinPalette[static_cast<std::size_t>(appearance[0])];
+    const auto& skin=kPlayerSkinPalette[static_cast<std::size_t>(appearance[0])];
     const auto& hair=hairPalette[static_cast<std::size_t>(appearance[1])];
-    const auto& tunic=outfitPalette[static_cast<std::size_t>(appearance[3])];
-    const auto& armour=armourPalette[static_cast<std::size_t>(appearance[4])];
+    const auto& tunic=kPlayerOutfitPalette[static_cast<std::size_t>(appearance[3])];
+    const auto& armour=kPlayerArmourPalette[static_cast<std::size_t>(appearance[4])];
     const int hairstyle=appearance[1];
     const int accessory=appearance[5];
     const std::array<float, 3> trim{{0.88f, 0.66f, 0.28f}};
@@ -382,7 +425,9 @@ bool Inventory::EquipArmorFromSlot(std::size_t slot) {
     if (definition == nullptr) return false;
     const std::string_view key(definition->key);
     std::size_t armorSlot = 4u;
-    if (key.find("_helmet") != std::string_view::npos) armorSlot = 0u;
+    if (definition->armorSlot < equippedArmor.size()) {
+        armorSlot = definition->armorSlot;
+    } else if (key.find("_helmet") != std::string_view::npos) armorSlot = 0u;
     else if (key.find("_chestplate") != std::string_view::npos) armorSlot = 1u;
     else if (key.find("_leggings") != std::string_view::npos) armorSlot = 2u;
     else if (key.find("_boots") != std::string_view::npos) armorSlot = 3u;
@@ -390,6 +435,7 @@ bool Inventory::EquipArmorFromSlot(std::size_t slot) {
     const std::uint16_t previous = equippedArmor[armorSlot];
     if (previous != 0u && !CanAdd(previous, 1u)) return false;
     counts[slot] = 0u;
+    toolDurability[slot] = 0u;
     if (previous != 0u && !Add(previous, 1u)) return false;
     equippedArmor[armorSlot] = itemId;
     return true;
@@ -414,10 +460,18 @@ bool Inventory::CanAdd(std::uint16_t itemId, std::uint16_t amount) const {
 bool Inventory::Add(std::uint16_t itemId, std::uint16_t amount) {
     const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
     if (definition == nullptr) return false;
-    // Rust preflights the whole insertion before touching the nine encoded slots.
-    return minefade_inventory_add(
-        counts.data(), static_cast<std::uint32_t>(counts.size()),
-        itemId, amount, definition->stackLimit) != 0;
+    // Rust preflights the whole insertion before touching the encoded slots.
+    if (minefade_inventory_add(
+            counts.data(), static_cast<std::uint32_t>(counts.size()),
+            itemId, amount, definition->stackLimit) == 0) return false;
+    const std::uint16_t maximum = MaxToolDurability(definition);
+    if (maximum > 0u) {
+        for (std::size_t slot = 0; slot < counts.size(); ++slot) {
+            if (counts[slot] / 1000u == itemId && toolDurability[slot] == 0u)
+                toolDurability[slot] = maximum;
+        }
+    }
+    return true;
 }
 
 std::uint16_t Inventory::SelectedItemId() const {
@@ -427,9 +481,50 @@ std::uint16_t Inventory::SelectedItemId() const {
 }
 
 bool Inventory::ConsumeSelected(std::uint16_t amount) {
-    return minefade_inventory_consume_selected(
+    const bool consumed = minefade_inventory_consume_selected(
         counts.data(), static_cast<std::uint32_t>(counts.size()),
         static_cast<std::uint32_t>(selectedSlot), amount) != 0;
+    if (consumed && selectedSlot < counts.size() && counts[selectedSlot] == 0u)
+        toolDurability[selectedSlot] = 0u;
+    return consumed;
+}
+
+std::uint16_t Inventory::SlotItemMaxDurability(std::size_t slot) const {
+    if (slot >= counts.size() || counts[slot] == 0u) return 0u;
+    const std::uint16_t itemId = static_cast<std::uint16_t>(counts[slot] / 1000u);
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+    return MaxToolDurability(definition);
+}
+
+std::uint16_t Inventory::SlotItemDurability(std::size_t slot) const {
+    const std::uint16_t maximum = SlotItemMaxDurability(slot);
+    if (maximum == 0u) return 0u;
+    return toolDurability[slot] == 0u ? maximum
+        : std::min(toolDurability[slot], maximum);
+}
+
+std::uint16_t Inventory::SelectedItemMaxDurability() const {
+    return SlotItemMaxDurability(selectedSlot);
+}
+
+std::uint16_t Inventory::SelectedItemDurability() const {
+    return SlotItemDurability(selectedSlot);
+}
+
+bool Inventory::DamageSelectedItem(std::uint16_t amount) {
+    if (amount == 0u || selectedSlot >= counts.size() || counts[selectedSlot] == 0u) return false;
+    const std::uint16_t maximum = SelectedItemMaxDurability();
+    if (maximum == 0u) return false;
+    std::uint16_t& remaining = toolDurability[selectedSlot];
+    if (remaining == 0u) remaining = maximum;
+    else remaining = std::min(remaining, maximum);
+    if (amount >= remaining) {
+        counts[selectedSlot] = 0u;
+        remaining = 0u;
+    } else {
+        remaining = static_cast<std::uint16_t>(remaining - amount);
+    }
+    return true;
 }
 
 std::uint16_t Inventory::CountItem(std::uint16_t itemId) const {
@@ -443,16 +538,101 @@ std::uint16_t Inventory::CountItem(std::uint16_t itemId) const {
 bool Inventory::ConsumeItem(std::uint16_t itemId, std::uint16_t amount) {
     if (itemId == 0u || amount == 0u || CountItem(itemId) < amount) return false;
     std::uint16_t remaining = amount;
-    for (std::uint32_t& encoded : counts) {
+    for (std::size_t slot = 0; slot < counts.size(); ++slot) {
+        std::uint32_t& encoded = counts[slot];
         if (encoded / 1000u != itemId) continue;
         const std::uint16_t current = static_cast<std::uint16_t>(encoded % 1000u);
         const std::uint16_t take = std::min(current, remaining);
         const std::uint16_t after = static_cast<std::uint16_t>(current - take);
         encoded = after == 0u ? 0u : static_cast<std::uint32_t>(itemId) * 1000u + after;
+        if (after == 0u) toolDurability[slot] = 0u;
         remaining = static_cast<std::uint16_t>(remaining - take);
         if (remaining == 0u) return true;
     }
     return remaining == 0u;
+}
+
+bool Inventory::MoveOrMergeSlot(std::size_t source, std::size_t destination) {
+    if (source >= counts.size() || destination >= counts.size() || source == destination)
+        return false;
+    const std::uint32_t sourceEncoded = counts[source];
+    const std::uint32_t destinationEncoded = counts[destination];
+    const std::uint16_t sourceId = static_cast<std::uint16_t>(sourceEncoded / 1000u);
+    const std::uint16_t sourceAmount = static_cast<std::uint16_t>(sourceEncoded % 1000u);
+    const std::uint16_t destinationId = static_cast<std::uint16_t>(destinationEncoded / 1000u);
+    const std::uint16_t destinationAmount = static_cast<std::uint16_t>(destinationEncoded % 1000u);
+
+    if (sourceId == 0u || sourceAmount == 0u) {
+        if (destinationId == 0u || destinationAmount == 0u) return false;
+        std::swap(counts[source], counts[destination]);
+        std::swap(toolDurability[source], toolDurability[destination]);
+        return true;
+    }
+    const BlockDefinition* sourceDefinition =
+        GetBlockDefinition(static_cast<BlockId>(sourceId));
+    if (sourceDefinition == nullptr) return false;
+
+    if (destinationId == sourceId && destinationAmount > 0u) {
+        const std::uint16_t maximum = sourceDefinition->stackLimit > 0u
+            ? sourceDefinition->stackLimit : 64u;
+        // Durable tools and equipment must never be merged: their individual
+        // wear state cannot be represented by a single stack counter.
+        if (SlotItemMaxDurability(source) > 0u ||
+            SlotItemMaxDurability(destination) > 0u ||
+            destinationAmount >= maximum) return false;
+        const std::uint16_t moved = std::min<std::uint16_t>(
+            sourceAmount, static_cast<std::uint16_t>(maximum - destinationAmount));
+        if (moved == 0u) return false;
+        const std::uint16_t remaining = static_cast<std::uint16_t>(sourceAmount - moved);
+        counts[destination] = static_cast<std::uint32_t>(sourceId) * 1000u +
+                              static_cast<std::uint32_t>(destinationAmount + moved);
+        counts[source] = remaining == 0u ? 0u :
+            static_cast<std::uint32_t>(sourceId) * 1000u + remaining;
+        if (remaining == 0u) toolDurability[source] = 0u;
+        return true;
+    }
+
+    std::swap(counts[source], counts[destination]);
+    std::swap(toolDurability[source], toolDurability[destination]);
+    return true;
+}
+
+bool Inventory::SplitStack(std::size_t source, std::size_t destination) {
+    if (source >= counts.size() || destination >= counts.size() || source == destination ||
+        counts[destination] != 0u) return false;
+    const std::uint32_t encoded = counts[source];
+    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+    const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+    if (itemId == 0u || amount < 2u || SlotItemMaxDurability(source) > 0u) return false;
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+    if (definition == nullptr) return false;
+    const std::uint16_t stackLimit = definition->stackLimit > 0u
+        ? definition->stackLimit : 64u;
+    if (stackLimit <= 1u) return false;
+    const std::uint16_t moved = static_cast<std::uint16_t>(amount / 2u);
+    if (moved == 0u) return false;
+    counts[source] = static_cast<std::uint32_t>(itemId) * 1000u +
+                     static_cast<std::uint32_t>(amount - moved);
+    counts[destination] = static_cast<std::uint32_t>(itemId) * 1000u +
+                          static_cast<std::uint32_t>(moved);
+    toolDurability[destination] = 0u;
+    return true;
+}
+
+bool Inventory::RemoveFromSlot(std::size_t slot, std::uint16_t amount,
+                               std::uint16_t* itemIdOutput) {
+    if (slot >= counts.size() || amount == 0u) return false;
+    const std::uint32_t encoded = counts[slot];
+    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+    const std::uint16_t current = static_cast<std::uint16_t>(encoded % 1000u);
+    if (itemId == 0u || current < amount ||
+        GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr) return false;
+    const std::uint16_t remaining = static_cast<std::uint16_t>(current - amount);
+    counts[slot] = remaining == 0u ? 0u :
+        static_cast<std::uint32_t>(itemId) * 1000u + remaining;
+    if (remaining == 0u) toolDurability[slot] = 0u;
+    if (itemIdOutput != nullptr) *itemIdOutput = itemId;
+    return true;
 }
 
 void DroppedItemSystem::SetModOptions(float pickupRadius, float lifetimeSeconds) {
@@ -553,8 +733,93 @@ bool EntitySystem::SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWo
     entity.phase = animationTime_ + index * 0.73f;
     entity.speed = 0.12f + std::fmod(index, 4.0f) * 0.025f;
     entity.kind = kind;
+    entity.health = kind == 5 ? 10.0f : (kind == 4 ? 8.0f : 5.0f);
+    entity.hostile = kind == 4 || kind == 5;
+    entity.attackDamage = kind == 5 ? 3.0f : 2.0f;
     entity.behaviorTimer = 2.5f + std::fmod(index * 0.87f, 4.0f);
     entities_.push_back(entity);
+    return true;
+}
+
+bool EntitySystem::SpawnModEntity(const Vec3& nearPosition, int kind, float health,
+                                  float damage, bool hostile, const VoxelWorld& world) {
+    if (entities_.size() >= maxEntities_ || kind < 64 ||
+        !std::isfinite(health) || !std::isfinite(damage) ||
+        health < 1.0f || health > 10000.0f || damage < 0.0f || damage > 100.0f)
+        return false;
+    const float index = static_cast<float>(entities_.size());
+    const float angle = index * 2.39996323f;
+    const float radius = spawnRadius_ + std::fmod(index, 3.0f) * 0.35f;
+    Entity entity;
+    entity.position.x = nearPosition.x + std::cos(angle) * radius;
+    entity.position.z = nearPosition.z + std::sin(angle) * radius;
+    entity.position.y = static_cast<float>(world.GetSurfaceHeight(
+        FloorToInt(entity.position.x), FloorToInt(entity.position.z))) + 1.0f;
+    entity.phase = animationTime_ + index * 0.73f;
+    entity.speed = 0.16f;
+    entity.kind = kind;
+    entity.health = health;
+    entity.attackDamage = damage;
+    entity.hostile = hostile;
+    entity.modded = true;
+    entity.behaviorTimer = 2.0f + std::fmod(index * 0.87f, 3.0f);
+    entities_.push_back(entity);
+    return true;
+}
+
+bool EntitySystem::DamageNearest(const Vec3& origin, const Vec3& direction,
+                                 float maxDistance, float damage,
+                                 bool* defeated, int* defeatedKind,
+                                 Vec3* defeatedPosition) {
+    if (defeated != nullptr) *defeated = false;
+    if (defeatedKind != nullptr) *defeatedKind = -1;
+    if (!std::isfinite(maxDistance) || !std::isfinite(damage) ||
+        maxDistance <= 0.0f || damage <= 0.0f) return false;
+
+    const float directionLength = std::sqrt(std::max(
+        direction.x * direction.x + direction.y * direction.y + direction.z * direction.z,
+        0.000001f));
+    const Vec3 forward{direction.x / directionLength,
+                       direction.y / directionLength,
+                       direction.z / directionLength};
+    const float maximumDistanceSquared = maxDistance * maxDistance;
+    std::size_t bestIndex = entities_.size();
+    float bestDistanceSquared = maximumDistanceSquared;
+    for (std::size_t index = 0; index < entities_.size(); ++index) {
+        const Entity& entity = entities_[index];
+        if (!entity.hostile) continue;
+        const Vec3 delta{entity.position.x - origin.x,
+                         entity.position.y + 0.7f - origin.y,
+                         entity.position.z - origin.z};
+        const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+        if (!std::isfinite(distanceSquared) || distanceSquared > bestDistanceSquared ||
+            distanceSquared < 0.01f) continue;
+        const float distance = std::sqrt(distanceSquared);
+        const float facing = (delta.x * forward.x + delta.y * forward.y + delta.z * forward.z) / distance;
+        if (facing < 0.72f) continue;
+        bestDistanceSquared = distanceSquared;
+        bestIndex = index;
+    }
+    if (bestIndex == entities_.size()) return false;
+
+    Entity& target = entities_[bestIndex];
+    target.health = std::max(0.0f, target.health - damage);
+    const Vec3 impact = target.position;
+    for (int particle = 0; particle < 7; ++particle) {
+        const float angle = static_cast<float>(particle) * 0.8975979f;
+        hitParticles_.push_back({{impact.x, impact.y + 0.62f, impact.z},
+            {std::cos(angle) * 1.35f, 1.0f + static_cast<float>(particle % 3) * 0.18f,
+             std::sin(angle) * 1.35f}, 0.0f});
+    }
+    target.visualState = 1u;
+    target.behavior = 3;
+    target.behaviorTimer = 1.0f;
+    if (target.health <= 0.0f) {
+        if (defeated != nullptr) *defeated = true;
+        if (defeatedKind != nullptr) *defeatedKind = target.kind;
+        if (defeatedPosition != nullptr) *defeatedPosition = target.position;
+        entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(bestIndex));
+    }
     return true;
 }
 
@@ -583,11 +848,22 @@ void EntitySystem::SetModOptions(float passiveSpeed, float hostileSpeed, float f
 void EntitySystem::Update(const VoxelWorld& world, const Player& player, float deltaSeconds) {
     const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
     animationTime_ = std::fmod(animationTime_ + dt, 4096.0f);
+    for (HitParticle& particle : hitParticles_) {
+        particle.age += dt; particle.velocity.y -= 2.2f * dt;
+        particle.position.x += particle.velocity.x * dt;
+        particle.position.y += particle.velocity.y * dt;
+        particle.position.z += particle.velocity.z * dt;
+    }
+    hitParticles_.erase(std::remove_if(hitParticles_.begin(), hitParticles_.end(),
+        [](const HitParticle& particle) { return particle.age >= 0.32f; }), hitParticles_.end());
     for (Entity& entity : entities_) {
+        const Vec3 previousPosition = entity.position;
+        const std::uint8_t previousVisualState = entity.visualState;
+        entity.animationClock = std::fmod(entity.animationClock + dt, 4096.0f);
         const float towardX = player.position.x - entity.position.x;
         const float towardZ = player.position.z - entity.position.z;
         const float distanceSquared = towardX * towardX + towardZ * towardZ;
-        const bool passive = entity.kind != 4 && entity.kind != 5;
+        const bool passive = !entity.hostile;
         const float fleeDistanceSquared = fleeRadius_ * fleeRadius_;
         const float alertDistanceSquared = alertRadius_ * alertRadius_;
         const bool closeForFlee = passive && distanceSquared < fleeDistanceSquared;
@@ -661,6 +937,22 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
         } else if (entity.behavior == 2) {
             // Eating animals hold position and keep a slow animation clock.
             entity.phase = std::fmod(entity.phase + dt * 0.55f, 4096.0f);
+        } else if (entity.modded) {
+            entity.behaviorTimer -= dt;
+            if (entity.behaviorTimer <= 0.0f) {
+                entity.phase = std::fmod(entity.phase + 1.1f, 4096.0f);
+                entity.behaviorTimer = 2.0f + std::abs(std::sin(entity.phase)) * 2.5f;
+            }
+            const float step = entity.speed * speedMultiplier_ * passiveSpeedMultiplier_ * dt * 0.45f;
+            const float nextX = entity.position.x + std::cos(entity.phase) * step;
+            const float nextZ = entity.position.z + std::sin(entity.phase) * step;
+            if (!world.IsSolid(FloorToInt(nextX), FloorToInt(entity.position.y + 0.25f),
+                               FloorToInt(nextZ))) {
+                entity.position.x = nextX;
+                entity.position.z = nextZ;
+                entity.position.y = static_cast<float>(world.GetSurfaceHeight(
+                    FloorToInt(nextX), FloorToInt(nextZ))) + 1.0f;
+            }
         } else {
             MfEntityState state{entity.position.x, entity.position.y, entity.position.z,
                                 entity.phase, std::clamp(entity.speed * speedMultiplier_ *
@@ -670,6 +962,23 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             entity.position = {state.x, state.y, state.z};
             entity.phase = state.phase;
         }
+
+        const float movedX = entity.position.x - previousPosition.x;
+        const float movedZ = entity.position.z - previousPosition.z;
+        const float movedDistance = std::sqrt(movedX*movedX + movedZ*movedZ);
+        entity.movementAmount = movedDistance / std::max(dt, 0.001f);
+        if (movedDistance > 0.0005f)
+            entity.yaw = std::atan2(movedX, movedZ);
+        const std::uint8_t nextVisualState = entity.behavior == 2 ? 2u
+            : (entity.movementAmount > 0.035f ? 1u : 0u);
+        if (nextVisualState != previousVisualState) {
+            entity.previousVisualState = previousVisualState;
+            entity.visualState = nextVisualState;
+            entity.visualTransitionSeconds = 0.0f;
+        } else {
+            entity.visualState = nextVisualState;
+            entity.visualTransitionSeconds = std::min(2.0f, entity.visualTransitionSeconds + dt);
+        }
     }
     if (ambientSpawnInterval_ > 0.0f && entities_.size() < maxEntities_) {
         ambientSpawnElapsed_ += dt;
@@ -677,7 +986,7 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
             ambientSpawnElapsed_ = std::fmod(ambientSpawnElapsed_, ambientSpawnInterval_);
             const std::size_t passiveCount = static_cast<std::size_t>(std::count_if(
                 entities_.begin(), entities_.end(), [](const Entity& entity) {
-                    return entity.kind != 4 && entity.kind != 5;
+                    return !entity.hostile;
                 }));
             if (passiveCount < static_cast<std::size_t>(passiveEntityCap_)) {
                 static constexpr std::array<int, 5> passiveKinds{{0, 1, 2, 3, 6}};
@@ -696,7 +1005,21 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
 }
 
 void EntitySystem::AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum) const {
+    for (const HitParticle& particle : hitParticles_) {
+        const float fade = std::clamp(1.0f - particle.age / 0.32f, 0.0f, 1.0f);
+        const std::array<float,3> color{{0.90f,0.20f+0.30f*fade,0.12f}};
+        AppendEntityBoxAnimated(output,particle.position,{0.0f,0.0f,0.0f},
+            {0.035f,0.035f,0.035f},color,{0.0f,0.0f,0.0f},
+            {particle.age*7.0f,particle.age*9.0f,particle.age*5.0f});
+    }
+    AppendLegacyMesh(output, frustum, -1);
+}
+
+void EntitySystem::AppendLegacyMesh(std::vector<WorldVertex>& output,
+                                    const CameraFrustum* frustum,
+                                    int excludedKind) const {
     for (const Entity& entity : entities_) {
+        if (excludedKind >= 0 && entity.kind == excludedKind) continue;
         if (frustum != nullptr && !frustum->IntersectsAabb(
                 entity.position.x-0.85f,entity.position.y-0.10f,entity.position.z-0.85f,
                 entity.position.x+0.85f,entity.position.y+2.15f,entity.position.z+0.85f)) continue;

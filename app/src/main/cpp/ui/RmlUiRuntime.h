@@ -24,13 +24,22 @@ public:
     void Shutdown();
     void Resize(int width, int height);
     void SetBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int width, int height);
-    bool Touch(int action, float x, float y);
+    bool Touch(int action, int pointerId, float x, float y);
     bool IsInMovementPad(float x, float y) const;
+    bool MovementVectorAt(float x, float y, float& moveX, float& moveY) const;
+    bool CrouchButtonAt(float x, float y) const;
     void UpdateAndRender();
     void SetStatus(const std::string& status);
-    void SetLeftHanded(bool enabled) { leftHanded_ = enabled; }
+    void SetVitals(float health, float hunger, int armorPieces, std::uint32_t level, float xpProgress);
+    void SetLeftHanded(bool enabled);
     void SetControlMode(int mode);
-    void SetStatusVisible(bool visible) { showStats_ = visible; }
+    void SetStatusVisible(bool visible) {
+        showStats_ = visible;
+        if (document_ != nullptr) {
+            if (Rml::Element* element = document_->GetElementById("stats"))
+                element->SetProperty("display", visible ? "block" : "none");
+        }
+    }
     void SetTargetBlock(const std::string& name, float progress);
     void SetPickupToast(const std::string& text);
     void SetSelectedItem(const std::string& markup);
@@ -39,6 +48,7 @@ public:
     void SetChestContents(const std::string& markup);
     void SetChatMessage(const std::string& message);
     void SetMinimap(const std::string& gridMarkup, const std::string& coordinates);
+    void SetMinimapShape(int shape);
     void SetChestButtonVisible(bool visible);
     void SetQuickbarSlot(int slot, const std::string& label, bool selected);
     void SetInventoryContents(const std::string& markup);
@@ -46,7 +56,7 @@ public:
     void SetInventoryCatalogContents(const std::string& markup);
     void SetEquipmentContents(const std::string& markup);
     void SetPanelVisible(const char* elementId, bool visible);
-    bool IsReady() const { return ready_; }
+    bool IsReady() const { return ready_ && !usingSafeDocument_; }
     const std::string& LastError() const { return lastError_; }
 
 private:
@@ -78,6 +88,8 @@ private:
     };
 
     void AttachAction(const char* elementId, const char* action);
+    void AttachHoldAction(const char* elementId, const char* beginAction, const char* endAction);
+    void ApplyResponsiveLayout();
 
     RmlUiOpenGLES renderer_;
     AndroidSystemInterface system_;
@@ -86,8 +98,10 @@ private:
     Rml::ElementDocument* document_{nullptr};
     ActionCallback callback_;
     std::vector<std::unique_ptr<ActionListener>> listeners_;
+    std::vector<std::unique_ptr<ActionListener>> holdListeners_;
     std::vector<std::unique_ptr<ActionListener>> inventoryListeners_;
     std::vector<std::unique_ptr<ActionListener>> craftingListeners_;
+    std::vector<std::unique_ptr<ActionListener>> containerListeners_;
     std::vector<Rml::byte> fontData_;
     std::vector<std::uint8_t> blockAtlasPixels_;
     int blockAtlasWidth_{0};
@@ -96,10 +110,13 @@ private:
     int height_{1};
     float density_{1.0f};
     bool ready_{false};
+    bool usingSafeDocument_{false};
     bool rmlInitialised_{false};
     bool mouseCaptured_{false};
+    int mousePointerId_{-1};
     bool leftHanded_{false};
     int controlMode_{0};
+    int minimapShape_{0};
     bool showStats_{true};
     std::string lastError_;
 };

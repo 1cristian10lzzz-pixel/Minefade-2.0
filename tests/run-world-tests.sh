@@ -11,6 +11,9 @@ command -v cargo >/dev/null 2>&1 || {
   exit 1
 }
 
+echo "[0/4] Compiling and validating MAES sheep resource"
+python3 "$ROOT/tools/mfmodelc.py"
+
 echo "[1/3] Running Rust simulation and animation unit tests"
 CARGO_TARGET_DIR="$RUST_TARGET_DIR" cargo test --manifest-path "$ROOT/rust-core/Cargo.toml"
 
@@ -25,6 +28,15 @@ c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
   "$ROOT/app/src/main/cpp/world/VoxelWorld.cpp" \
   "$ROOT/app/src/main/cpp/blocks/BlockRegistry.cpp" \
   "$ROOT/app/src/main/cpp/game/Player.cpp" \
+  "$ROOT/app/src/main/cpp/entity/ModelLoader.cpp" \
+  "$ROOT/app/src/main/cpp/entity/ModelValidator.cpp" \
+  "$ROOT/app/src/main/cpp/entity/EntityDefinition.cpp" \
+  "$ROOT/app/src/main/cpp/entity/LegacyModelAdapter.cpp" \
+  "$ROOT/app/src/main/cpp/entity/Skeleton.cpp" \
+  "$ROOT/app/src/main/cpp/entity/AnimationController.cpp" \
+  "$ROOT/app/src/main/cpp/entity/EntityVisualSystem.cpp" \
+  "$ROOT/app/src/main/cpp/mods/JsonLite.cpp" \
+  "$ROOT/app/src/main/cpp/mods/ModContentRegistry.cpp" \
   "$RUST_LIB" -ldl -lpthread -lm \
   -o "$BIN"
 "$BIN"

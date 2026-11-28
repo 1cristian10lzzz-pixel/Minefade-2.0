@@ -26,15 +26,28 @@ def test_write_permission_is_isolated_to_tag_prerelease_job():
     assert "contents: write" not in build_job
 
 
+def test_release_uses_persistent_signing_key_and_tags_build_production():
+    assert 'signingConfig = signingConfigs.getByName("release")' in GRADLE
+    assert "MINEFADE_RELEASE_KEYSTORE_PATH" in GRADLE
+    assert "assembleRelease" in WORKFLOW
+    assert "MINEFADE_RELEASE_KEYSTORE_BASE64" in WORKFLOW
+    assert "MINEFADE_RELEASE_KEY_ALIAS" in WORKFLOW
+    assert "application-debuggable" in WORKFLOW
+    assert "refs/tags/v" in WORKFLOW
+
+
 def test_android_version_and_release_documentation_match():
-    assert "versionCode = 25" in GRADLE
-    assert 'versionName = "2.2.0"' in GRADLE
-    assert "versionCode = 25" in BUILD_DOC
-    assert "versionName = 2.2.0" in BUILD_DOC
+    assert "versionCode = 32" in GRADLE
+    assert 'versionName = "2.4.1"' in GRADLE
+    assert "versionCode = 32" in BUILD_DOC
+    assert "versionName = 2.4.1" in BUILD_DOC
+    assert "versionCode 32" in WORKFLOW
+    assert "versionName 2.4.1" in WORKFLOW
 
 
 if __name__ == "__main__":
     test_pull_requests_build_and_generated_assets_are_verified()
     test_write_permission_is_isolated_to_tag_prerelease_job()
+    test_release_uses_persistent_signing_key_and_tags_build_production()
     test_android_version_and_release_documentation_match()
     print("Minefade repository workflow checks passed.")
