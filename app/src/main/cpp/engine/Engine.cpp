@@ -3727,7 +3727,8 @@ void Engine::UpdateMining(float deltaSeconds) {
         if (progressionBlocksMined_ < 10000000u) ++progressionBlocksMined_;
         if (gameMode_ != 1) AddProgressionXp(2u);
         const BlockDefinition* brokenDefinition = GetBlockDefinition(brokenType);
-        if (brokenDefinition != nullptr && brokenDefinition->dropCount > 0u) {
+        const auto* customDrops = ModContentRegistry::Instance().DropsForBlock(brokenType);
+        if (customDrops != nullptr && !customDrops->empty()) {
             const auto mixDropSeed = [](std::uint32_t value) {
                 value ^= value >> 16u;
                 value *= 0x7feb352du;
@@ -3741,8 +3742,8 @@ void Engine::UpdateMining(float deltaSeconds) {
                 static_cast<std::uint32_t>(static_cast<std::int32_t>(broken.y)) * 0x119de1f3u ^
                 static_cast<std::uint32_t>(static_cast<std::int32_t>(broken.z)) * 0x27d4eb2du ^
                 progressionBlocksMined_;
-            for (std::size_t index = 0; index < brokenDefinition->dropCount; ++index) {
-                const BlockDropRule& rule = brokenDefinition->drops[index];
+            for (std::size_t index = 0; index < customDrops->size(); ++index) {
+                const ModBlockDropRule& rule = (*customDrops)[index];
                 const std::uint32_t roll = mixDropSeed(
                     positionSeed ^ static_cast<std::uint32_t>(index + 1u) * 0x9e3779b9u);
                 const float probability = (static_cast<float>(roll) + 0.5f) / 4294967296.0f;

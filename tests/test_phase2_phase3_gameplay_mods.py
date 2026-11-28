@@ -215,14 +215,13 @@ def test_inventory_and_mobile_hud_labels_match_real_slot_counts():
 
 
 def test_mod_blocks_support_multiple_custom_drops_with_chance_and_quantity():
-    assert "struct BlockDropRule" in BLOCK_REGISTRY_H
-    assert "std::array<BlockDropRule, 4> drops{};" in BLOCK_REGISTRY_H
-    assert "SetModBlockDrops" in BLOCK_REGISTRY
+    assert "struct ModBlockDropRule" in MOD_REGISTRY_H
+    assert "DropsForBlock(BlockId block)" in MOD_REGISTRY_H
+    assert "blockDrops_" in MOD_REGISTRY_H
     assert "pendingBlockDrops_" in MOD_REGISTRY
     assert "dropArray->size() > 4u" in MOD_REGISTRY
     assert "rule.chance" in ENGINE
-    assert "brokenDefinition->dropCount" in ENGINE
-
+    assert "DropsForBlock(brokenType)" in ENGINE
 
 def test_native_mod_recipes_validate_stations_and_references():
     assert "validStations" in MOD_REGISTRY

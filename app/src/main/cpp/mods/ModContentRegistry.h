@@ -12,6 +12,13 @@
 
 namespace minefade {
 
+struct ModBlockDropRule {
+    std::uint16_t itemId{0u};
+    std::uint16_t minimumCount{1u};
+    std::uint16_t maximumCount{1u};
+    float chance{1.0f};
+};
+
 struct ModRecipeIngredient {
     std::string itemId;
     std::uint16_t count{1u};
@@ -82,6 +89,7 @@ public:
     const std::vector<ModBiomeDefinition>& Biomes() const noexcept { return biomes_; }
     const std::vector<ModStructureDefinition>& Structures() const noexcept { return structures_; }
     const std::vector<ModEntityDefinition>& Entities() const noexcept { return entities_; }
+    const std::vector<ModBlockDropRule>* DropsForBlock(BlockId block) const noexcept;
     const ModRecipeDefinition* FindRecipe(std::string_view id) const noexcept;
 
 private:
@@ -109,6 +117,7 @@ private:
     std::vector<ModStructureDefinition> structures_;
     std::vector<ModEntityDefinition> entities_;
     std::vector<PendingBlockDrops> pendingBlockDrops_;
+    std::map<std::uint16_t, std::vector<ModBlockDropRule>> blockDrops_;
     std::map<std::string, std::uint16_t> textureTiles_;
 };
 

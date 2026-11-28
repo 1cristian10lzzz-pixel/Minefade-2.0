@@ -171,6 +171,7 @@ void ModContentRegistry::Clear() noexcept {
     structures_.clear();
     entities_.clear();
     pendingBlockDrops_.clear();
+    blockDrops_.clear();
     textureTiles_.clear();
 }
 
@@ -240,27 +241,29 @@ bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
     }
     // Resolve drops only after all enabled packs have registered their item IDs.
     for (const PendingBlockDrops& pending : pendingBlockDrops_) {
-        std::array<BlockDropRule, 4> rules{};
-        if (pending.entries.empty() || pending.entries.size() > rules.size()) {
+        std::vector<ModBlockDropRule> rules;
+        if (pending.entries.empty() || pending.entries.size() > 4u) {
             error = "tabla de drops vacía o demasiado grande";
             Clear();
             return false;
         }
-        for (std::size_t index = 0; index < pending.entries.size(); ++index) {
-            const PendingBlockDrop& source = pending.entries[index];
+        rules.reserve(pending.entries.size());
+        for (const PendingBlockDrop& source : pending.entries) {
             const BlockId item = ResolveModBlockId(source.itemId);
             if (item == BlockId::Air) {
                 error = "el drop " + source.itemId + " no existe o no está registrado";
                 Clear();
                 return false;
             }
-            rules[index] = BlockDropRule{
+            rules.push_back(ModBlockDropRule{
                 static_cast<std::uint16_t>(item), source.minimumCount,
                 source.maximumCount, source.chance
-            };
+            });
         }
-        if (!SetModBlockDrops(pending.blockId, rules,
-                              static_cast<std::uint8_t>(pending.entries.size()), &error)) {
+        const BlockId block = ResolveModBlockId(pending.blockId);
+        if (block == BlockId::Air ||
+            !blockDrops_.emplace(static_cast<std::uint16_t>(block), std::move(rules)).second) {
+            error = "bloque de drops mod inexistente o duplicado: " + pending.blockId;
             Clear();
             return false;
         }
@@ -703,6 +706,11 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
         }
     }
     return true;
+}
+
+const std::vector<ModBlockDropRule>* ModContentRegistry::DropsForBlock(BlockId block) const noexcept {
+    const auto found = blockDrops_.find(static_cast<std::uint16_t>(block));
+    return found == blockDrops_.end() ? nullptr : &found->second;
 }
 
 const ModRecipeDefinition* ModContentRegistry::FindRecipe(std::string_view id) const noexcept {

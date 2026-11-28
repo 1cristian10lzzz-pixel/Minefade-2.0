@@ -527,38 +527,9 @@ bool RegisterModBlock(ModBlockRegistration source, BlockId* registeredId, std::s
         source.shape, source.preferredTool, source.attackDamage, source.durability,
         source.armorProtection, source.armorSlot
     };
-    storage->definition.drops = source.drops;
-    storage->definition.dropCount = source.dropCount;
     gDynamicKeys.emplace(storage->key, numericId);
     gDynamicBlocks.emplace(numericId, std::move(storage));
     if (registeredId != nullptr) *registeredId = static_cast<BlockId>(numericId);
-    return true;
-}
-
-bool SetModBlockDrops(std::string_view blockKey,
-                      const std::array<BlockDropRule, 4>& drops,
-                      std::uint8_t dropCount, std::string* error) {
-    if (error != nullptr) error->clear();
-    const auto fail = [error](const char* message) {
-        if (error != nullptr) *error = message;
-        return false;
-    };
-    if (dropCount == 0u || dropCount > drops.size()) return fail("invalid custom drop count");
-    const auto block = gDynamicKeys.find(std::string(blockKey));
-    if (block == gDynamicKeys.end()) return fail("custom drop target block is not registered");
-    const auto storage = gDynamicBlocks.find(block->second);
-    if (storage == gDynamicBlocks.end()) return fail("custom drop target block is unavailable");
-    for (std::size_t i = 0; i < dropCount; ++i) {
-        const BlockDropRule& rule = drops[i];
-        if (rule.itemId == 0u || GetBlockDefinition(static_cast<BlockId>(rule.itemId)) == nullptr ||
-            rule.minimumCount == 0u || rule.minimumCount > rule.maximumCount ||
-            rule.maximumCount > 99u || !std::isfinite(rule.chance) ||
-            rule.chance < 0.0f || rule.chance > 1.0f)
-            return fail("invalid custom drop item or properties");
-    }
-    storage->second->definition.drops = drops;
-    storage->second->definition.dropCount = dropCount;
-    storage->second->definition.dropId = drops[0].itemId;
     return true;
 }
 
