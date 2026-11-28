@@ -2370,8 +2370,8 @@ void Engine::HandleUiAction(const std::string& action) {
     if (action == "eat-hold-start") {
         eatHeld_ = true; eatHoldConsumed_ = false; eatHoldElapsed_ = 0.0f;
     } else if (action == "eat-hold-end") {
-        // A short tap is handled by the legacy click callback below; a long press
-        // has already consumed one or more portions during the hold timer.
+        // Ignore the trailing click only when the hold timer already consumed food.
+        ignoreEatClick_ = eatHoldConsumed_;
         eatHeld_ = false; eatHoldElapsed_ = 0.0f;
     } else if (action == "respawn") {
         if (!dead_) return;
@@ -2440,7 +2440,8 @@ void Engine::HandleUiAction(const std::string& action) {
         RefreshInventoryUi();
         ui_.SetPanelVisible("inventory-panel", true);
     } else if (action == "eat") {
-        TryEatSelectedFood();
+        if (ignoreEatClick_) ignoreEatClick_ = false;
+        else TryEatSelectedFood();
     } else if (action == "attack") {
         if (gameMode_ == 1) {
             ui_.SetChatMessage("El combate no está disponible en este modo.");

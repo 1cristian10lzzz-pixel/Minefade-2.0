@@ -228,6 +228,7 @@ private:
     double lastForwardTapAt_{-1.0};
     bool eatHeld_{false};
     bool eatHoldConsumed_{false};
+    bool ignoreEatClick_{false};
     float eatHoldElapsed_{0.0f};
     float deathAnimationElapsed_{0.0f};
     Vec3 spawnPoint_{};
