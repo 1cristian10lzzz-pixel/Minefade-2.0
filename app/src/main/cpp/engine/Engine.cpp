@@ -1453,6 +1453,31 @@ void Engine::RebuildEntityMesh() {
         remote.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
         remote.AppendMesh(entityMesh_);
     }
+    if (rainEnabled_ && graphicsQuality_ > 0) {
+        const Vec3 facing = ViewDirection();
+        Vec3 side{-facing.z, 0.0f, facing.x};
+        const float sideLength = std::sqrt(side.x * side.x + side.z * side.z);
+        if (sideLength > 0.001f) { side.x /= sideLength; side.z /= sideLength; }
+        else side = {1.0f, 0.0f, 0.0f};
+        const int count = graphicsQuality_ >= 2 ? 72 : 32;
+        const auto addRainVertex = [this](const Vec3& p) {
+            entityMesh_.push_back({p.x,p.y,p.z,0.0f,1.0f,0.0f,
+                                   0.58f,0.72f,0.91f,0.5f,0.5f,0.0f});
+        };
+        for (int i = 0; i < count; ++i) {
+            const float seed = static_cast<float>(i);
+            const float phase = std::fmod(seed * 1.618f + rainClock_ * (7.0f + (i % 5)), 16.0f);
+            const float x = player_.position.x + std::fmod(seed * 3.17f, 16.0f) - 8.0f;
+            const float z = player_.position.z + std::fmod(seed * 5.31f, 16.0f) - 8.0f;
+            const float y = player_.position.y + 1.0f + phase;
+            const Vec3 a{x-side.x*0.012f,y,z-side.z*0.012f};
+            const Vec3 b{x+side.x*0.012f,y,z+side.z*0.012f};
+            const Vec3 c{a.x-side.x*0.055f,y-0.42f,a.z-side.z*0.055f};
+            const Vec3 d{b.x-side.x*0.055f,y-0.42f,b.z-side.z*0.055f};
+            addRainVertex(a); addRainVertex(c); addRainVertex(d);
+            addRainVertex(a); addRainVertex(d); addRainVertex(b);
+        }
+    }
     // Block items use their own atlas-backed draw pass; entity models remain
     // vertex-coloured and therefore do not sample an arbitrary texture pixel.
     droppedItems_.AppendMesh(itemMesh_, &frustum);
@@ -1600,6 +1625,7 @@ void Engine::Render() {
     }
     if (!paused_) {
         const float safeDelta = std::clamp(delta, 0.0f, 0.05f);
+        if (rainEnabled_) rainClock_ = std::fmod(rainClock_ + safeDelta * 2.8f, 32.0f);
         environment_.Update(safeDelta * modDaySpeed_);
         const bool wasGrounded = player_.grounded;
         const float incomingVerticalVelocity = player_.verticalVelocity;
@@ -2470,7 +2496,44 @@ void Engine::HandleUiAction(const std::string& action) {
         CraftRecipe("wooden_sword");
     } else if (action.rfind("craft-", 0) == 0) {
         CraftRecipe(action.substr(6));
+    } else if (action.rfind("craft-filter-", 0) == 0) {
+        const std::string filter = action.substr(13);
+        craftingFilter_ = filter == "basic" ? 1 : filter == "building" ? 2 :
+            filter == "mechanisms" ? 3 : filter == "minerals" ? 4 :
+            filter == "tools" ? 5 : filter == "mods" ? 6 : 0;
+        RefreshCraftingUi();
+    } else if (action == "pause-settings") {
+        pauseSettingsVisible_ = true;
+        ui_.SetPanelVisible("pause-panel", false);
+        ui_.SetPanelVisible("pause-settings-panel", true);
+    } else if (action == "pause-settings-close") {
+        pauseSettingsVisible_ = false;
+        ui_.SetPanelVisible("pause-settings-panel", false);
+        ui_.SetPanelVisible("pause-panel", pauseVisible_);
+    } else if (action == "toggle-water") {
+        waterWaves_ = !waterWaves_;
+        ui_.SetChatMessage(waterWaves_ ? "Ondas de agua activadas." : "Ondas de agua desactivadas.");
+    } else if (action == "toggle-shadows") {
+        contactShadows_ = !contactShadows_;
+        player_.SetContactShadows(contactShadows_);
+        entities_.SetContactShadows(contactShadows_);
+        ui_.SetChatMessage(contactShadows_ ? "Sombras de contacto activadas." : "Sombras de contacto desactivadas.");
+        RebuildEntityMesh(); UploadEntityMesh();
+    } else if (action == "toggle-rain") {
+        rainEnabled_ = !rainEnabled_;
+        rainClock_ = 0.0f;
+        ui_.SetChatMessage(rainEnabled_ ? "Lluvia visual activada." : "Lluvia visual desactivada.");
+        RebuildEntityMesh(); UploadEntityMesh();
+    } else if (action == "toggle-animations") {
+        animationsEnabled_ = !animationsEnabled_;
+        player_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
+        entities_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
+        entityVisuals_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
+        ui_.SetChatMessage(animationsEnabled_ ? "Animaciones activadas." : "Animaciones desactivadas.");
+        RebuildEntityMesh(); UploadEntityMesh();
     } else if (action == "pause") {
+        pauseSettingsVisible_ = false;
+        ui_.SetPanelVisible("pause-settings-panel", false);
         pauseVisible_ = !pauseVisible_;
         paused_ = pauseVisible_;
         if (pauseVisible_) {
@@ -2483,8 +2546,10 @@ void Engine::HandleUiAction(const std::string& action) {
         paused_ = pauseVisible_ || inventoryVisible_;
     } else if (action == "resume") {
         pauseVisible_ = false;
+        pauseSettingsVisible_ = false;
         paused_ = inventoryVisible_;
         ui_.SetPanelVisible("pause-panel", false);
+        ui_.SetPanelVisible("pause-settings-panel", false);
     } else if (action == "save") {
         SaveWorld();
         ui_.SetStatus("Mundo guardado");
@@ -3975,6 +4040,7 @@ void Engine::RefreshCraftingUi() {
     std::string markup;
     markup.reserve(9000u);
     int index = 0;
+    int recipeCategory = 1;
     const auto escapeMarkup = [](std::string_view value) {
         std::string escaped;
         escaped.reserve(value.size());
@@ -4009,8 +4075,9 @@ void Engine::RefreshCraftingUi() {
         if (id == 0u) id = findId("minefade_" + recipe);
         return id;
     };
-    const auto addRecipe = [&markup, &index, &escapeMarkup, &recipeOutputId](
-            const std::string& recipe, const std::string& label) {
+    const auto addRecipe = [&markup, &index, &escapeMarkup, &recipeOutputId, &recipeCategory,
+                            filter = craftingFilter_](const std::string& recipe, const std::string& label) {
+        if (filter != 0 && filter != recipeCategory) return;
         const std::uint16_t outputId = recipeOutputId(recipe);
         markup += "<button class='craft-recipe-card' id='crafting-recipe-" +
             std::to_string(index++) + "' data-action='craft-" +
@@ -4024,11 +4091,13 @@ void Engine::RefreshCraftingUi() {
         }
         markup += "<span>" + escapeMarkup(label) + "</span></button>";
     };
-    markup += "<div class='recipe-category'>BÁSICOS</div>";
+    if (craftingFilter_ == 0 || craftingFilter_ == 1) markup += "<div class='recipe-category'>BÁSICOS</div>";
+    recipeCategory = 1;
     addRecipe("planks", "Tronco → 4 tablones");
     addRecipe("sticks", "2 tablones → 4 palos");
     addRecipe("table", "4 tablones → mesa");
-    markup += "<div class='recipe-category'>SUPERVIVENCIA Y CONSTRUCCIÓN</div>";
+    recipeCategory = 2;
+    if (craftingFilter_ == 0 || craftingFilter_ == 2) markup += "<div class='recipe-category'>SUPERVIVENCIA Y CONSTRUCCIÓN</div>";
     addRecipe("torch", "Mena de carbón + palo → 4 antorchas");
     addRecipe("chest", "8 tablones → cofre");
     addRecipe("furnace", "8 adoquines → horno");
@@ -4039,7 +4108,8 @@ void Engine::RefreshCraftingUi() {
     addRecipe("wooden_slab", "3 tablones → 6 losas");
     addRecipe("oak_stairs", "6 tablones → 4 escaleras de madera");
     addRecipe("stone_stairs", "6 adoquines → 4 escaleras de piedra");
-    markup += "<div class='recipe-category'>MECANISMOS</div>";
+    recipeCategory = 3;
+    if (craftingFilter_ == 0 || craftingFilter_ == 3) markup += "<div class='recipe-category'>MECANISMOS</div>";
     addRecipe("lever", "Adoquín + palo → palanca");
     addRecipe("wooden_pressure_plate", "2 tablones → placa de madera");
     addRecipe("stone_pressure_plate", "2 adoquines → placa de piedra");
@@ -4047,7 +4117,8 @@ void Engine::RefreshCraftingUi() {
     addRecipe("stone_button", "1 adoquín → botón de piedra");
     addRecipe("standing_sign", "6 tablones + palo → 3 señales");
     addRecipe("rail", "6 lingotes de hierro + palo → 16 raíles");
-    markup += "<div class='recipe-category'>PROCESAR MINERALES</div>";
+    recipeCategory = 4;
+    if (craftingFilter_ == 0 || craftingFilter_ == 4) markup += "<div class='recipe-category'>PROCESAR MINERALES</div>";
     addRecipe("copper_ingot", "Mena de cobre + carbón → lingote");
     addRecipe("iron_ingot", "Mena de hierro + carbón → lingote");
     addRecipe("gold_ingot", "Mena de oro + carbón → lingote");
@@ -4061,16 +4132,20 @@ void Engine::RefreshCraftingUi() {
         {"pickaxe","Pico"},{"axe","Hacha"},{"shovel","Pala"},{"sword","Espada"},{"hoe","Azada"},
         {"helmet","Casco"},{"chestplate","Pechera"},{"leggings","Grebas"},{"boots","Botas"}
     }};
+    recipeCategory = 5;
     for (const auto& tier : tiers) {
-        markup += "<div class='recipe-category'>" + std::string(tier.second) + " · HERRAMIENTAS Y ARMADURA</div>";
+        if (craftingFilter_ == 0 || craftingFilter_ == 5)
+            markup += "<div class='recipe-category'>" + std::string(tier.second) + " · HERRAMIENTAS Y ARMADURA</div>";
         for (const auto& item : gear) {
             std::string label = std::string(item.second) + " de " + tier.second;
             addRecipe(std::string(tier.first) + "_" + item.first, label);
         }
     }
+    recipeCategory = 6;
     const auto& modRecipes = ModContentRegistry::Instance().Recipes();
     if (!modRecipes.empty()) {
-        markup += "<div class='recipe-category'>RECETAS DE MODS</div>";
+        if (craftingFilter_ == 0 || craftingFilter_ == 6)
+            markup += "<div class='recipe-category'>RECETAS DE MODS</div>";
         for (const ModRecipeDefinition& recipe : modRecipes) {
             const BlockId outputId = ResolveModBlockId(recipe.outputId);
             const BlockDefinition* output = GetBlockDefinition(outputId);

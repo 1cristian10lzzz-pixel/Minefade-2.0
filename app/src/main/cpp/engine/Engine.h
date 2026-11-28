@@ -223,6 +223,10 @@ private:
     bool thirdPersonFront_{false};
     std::array<bool, 4> fallbackMovementButtons_{{false, false, false, false}};
     bool crouching_{false};
+    int craftingFilter_{0};
+    bool pauseSettingsVisible_{false};
+    bool rainEnabled_{false};
+    float rainClock_{0.0f};
     bool sprintEnabled_{false};
     double lastForwardTapAt_{-1.0};
     bool eatHeld_{false};
