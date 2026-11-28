@@ -33,7 +33,13 @@ public:
     void SetVitals(float health, float hunger, int armorPieces, std::uint32_t level, float xpProgress);
     void SetLeftHanded(bool enabled);
     void SetControlMode(int mode);
-    void SetStatusVisible(bool visible) { showStats_ = visible; }
+    void SetStatusVisible(bool visible) {
+        showStats_ = visible;
+        if (document_ != nullptr) {
+            if (Rml::Element* element = document_->GetElementById("stats"))
+                element->SetProperty("display", visible ? "block" : "none");
+        }
+    }
     void SetTargetBlock(const std::string& name, float progress);
     void SetPickupToast(const std::string& text);
     void SetSelectedItem(const std::string& markup);
