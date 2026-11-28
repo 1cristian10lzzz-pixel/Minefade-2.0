@@ -44,7 +44,23 @@ public final class ModManager {
             this.file = file;
             this.id = values.getOrDefault("id", file.getName());
             this.name = values.getOrDefault("name", id);
-            this.version = values.getOrDefault("version", "1");
+            String resolvedVersion = values.getOrDefault("version", "1");
+            File packageManifest = packageManifestFor(file);
+            if (packageManifest != null && packageManifest.length() > 0L && packageManifest.length() <= 65536L) {
+                try (InputStream input = new FileInputStream(packageManifest);
+                     ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[2048];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        if (bytes.size() + count > 65536) throw new IOException("Manifiesto demasiado grande.");
+                        bytes.write(buffer, 0, count);
+                    }
+                    String packageVersion = new JSONObject(
+                            new String(bytes.toByteArray(), StandardCharsets.UTF_8)).optString("version", "");
+                    if (isSemanticVersion(packageVersion)) resolvedVersion = packageVersion;
+                } catch (Exception ignored) { }
+            }
+            this.version = resolvedVersion;
             this.description = values.getOrDefault("description", "Paquete de datos");
             this.enabled = Boolean.parseBoolean(values.getOrDefault("enabled", "false"));
             this.settings = values;
@@ -536,6 +552,31 @@ public final class ModManager {
         return value.substring(modId.length() + 1).matches("[a-z0-9][a-z0-9_.-]{1,63}");
     }
 
+    private static boolean validMod3DropEntry(Object raw, String modId) throws Exception {
+        if (raw instanceof String) return validMod3Reference((String)raw, modId);
+        if (!(raw instanceof JSONObject)) return false;
+        JSONObject drop = (JSONObject)raw;
+        if (!validMod3Reference(drop.optString("id", ""), modId)) return false;
+        String minimum = drop.optString("min", "1");
+        String maximum = drop.optString("max", minimum);
+        double chance = drop.has("chance") ? drop.getDouble("chance") : 1.0;
+        return isIntegerInRange(minimum, 1, 99) &&
+                isIntegerInRange(maximum, 1, 99) &&
+                Integer.parseInt(maximum) >= Integer.parseInt(minimum) &&
+                Double.isFinite(chance) && chance >= 0.0 && chance <= 1.0;
+    }
+
+    private static boolean validMod3Drop(Object raw, String modId) throws Exception {
+        if (raw instanceof String || raw instanceof JSONObject)
+            return validMod3DropEntry(raw, modId);
+        if (!(raw instanceof JSONArray)) return false;
+        JSONArray drops = (JSONArray)raw;
+        if (drops.length() < 1 || drops.length() > 4) return false;
+        for (int i = 0; i < drops.length(); i++)
+            if (!validMod3DropEntry(drops.get(i), modId)) return false;
+        return true;
+    }
+
     private static boolean validateMod3Definitions(Map<String, byte[]> files, String modId,
                                                     Set<String> capabilities) {
         try {
@@ -552,7 +593,8 @@ public final class ModManager {
                             block.getString("name").trim().isEmpty() ||
                             block.getString("name").length() > 96 ||
                             !isFiniteInRange(block.optString("hardness", "1"), 0.0f, 100.0f) ||
-                            !isIntegerInRange(block.optString("stack_limit", "64"), 1, 99)) return false;
+                            !isIntegerInRange(block.optString("stack_limit", "64"), 1, 99) ||
+                            (block.has("drop") && !validMod3Drop(block.get("drop"), modId))) return false;
                     String shape = block.optString("shape", "cube");
                     if (!("cube".equals(shape) || "slab".equals(shape) || "stairs".equals(shape) ||
                             "cross_plant".equals(shape) || "thin".equals(shape) || "pane".equals(shape) ||
@@ -607,7 +649,11 @@ public final class ModManager {
                 for (int i = 0; i < recipes.length(); i++) {
                     JSONObject recipe = recipes.getJSONObject(i);
                     String id = recipe.getString("id");
-                    if (!validMod3Id(id, modId) || !ids.add(id)) return false;
+                    String station = recipe.optString("station", "inventory");
+                    if (!validMod3Id(id, modId) || !ids.add(id) ||
+                            !("inventory".equals(station) || "crafting_table".equals(station) ||
+                              "furnace".equals(station) || "anvil".equals(station) ||
+                              "stonecutter".equals(station))) return false;
                     JSONObject output = recipe.getJSONObject("output");
                     if (!validMod3Reference(output.getString("id"), modId) ||
                             !isIntegerInRange(output.optString("count", "1"), 1, 999)) return false;
@@ -858,7 +904,108 @@ public final class ModManager {
         return hex.toString();
     }
 
-    /** Stable digest of the enabled settings mods, shared by world and LAN checks. */
+    private static void updateDigestFile(MessageDigest digest, File file, int maximum) throws Exception {
+        if (file == null || !file.isFile() || file.length() < 0L || file.length() > maximum)
+            throw new IOException("Recurso de mod ausente o fuera de tamaño.");
+        try (InputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+        }
+    }
+
+    private static byte[] readBoundedFile(File file, int maximum) throws Exception {
+        if (file == null || !file.isFile() || file.length() <= 0L || file.length() > maximum)
+            throw new IOException("Archivo de mod inválido.");
+        try (InputStream input = new FileInputStream(file);
+             ByteArrayOutputStream bytes = new ByteArrayOutputStream((int)file.length())) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (bytes.size() + read > maximum) throw new IOException("Archivo de mod demasiado grande.");
+                bytes.write(buffer, 0, read);
+            }
+            return bytes.toByteArray();
+        }
+    }
+
+    private static String sha256File(File file, int maximum) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        updateDigestFile(digest, file, maximum);
+        byte[] result = digest.digest();
+        StringBuilder hex = new StringBuilder(result.length * 2);
+        for (byte value : result) hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return hex.toString();
+    }
+
+    private String calculateModHash(ModInfo info) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        digest.update(info.id.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte)0);
+        digest.update(info.version.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte)0);
+        File packageManifest = packageManifestFor(info.file);
+        if (packageManifest == null) {
+            updateDigestFile(digest, info.file, 1024 * 1024);
+        } else {
+            byte[] manifestBytes = readBoundedFile(packageManifest, 65536);
+            digest.update(manifestBytes);
+            JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
+            if (manifest.optInt("format", -1) == 3) {
+                JSONObject index = manifest.getJSONObject("files");
+                if (index.length() > 256) throw new IOException("Índice de archivos de mod inválido.");
+                ArrayList<String> names = new ArrayList<>();
+                Iterator<String> iterator = index.keys();
+                while (iterator.hasNext()) names.add(iterator.next());
+                Collections.sort(names);
+                File root = packageManifest.getParentFile();
+                String rootPath = root.getCanonicalPath() + File.separator;
+                for (String relative : names) {
+                    if (!isSafeMod3Entry(relative)) throw new IOException("Ruta de recurso de mod inválida.");
+                    File asset = new File(root, relative.replace("/", File.separator));
+                    if (!asset.getCanonicalPath().startsWith(rootPath) || !asset.isFile())
+                        throw new IOException("Falta un recurso instalado del mod.");
+                    JSONObject record = index.getJSONObject(relative);
+                    int maximum = maxMod3EntryBytes(relative);
+                    if (maximum <= 0 || asset.length() != record.getLong("size") ||
+                            !sha256File(asset, maximum).equals(record.getString("sha256")))
+                        throw new IOException("Un recurso instalado no coincide con su hash.");
+                    digest.update(relative.getBytes(StandardCharsets.UTF_8));
+                    digest.update((byte)0);
+                    updateDigestFile(digest, asset, maximum);
+                }
+            } else {
+                updateDigestFile(digest, info.file, 1024 * 1024);
+            }
+        }
+        byte[] result = digest.digest();
+        StringBuilder hex = new StringBuilder(result.length * 2);
+        for (byte value : result) hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return hex.toString();
+    }
+
+    private String buildWorldModsManifest(String fingerprint) throws Exception {
+        ArrayList<ModInfo> enabled = new ArrayList<>();
+        for (ModInfo info : listMods()) if (info.enabled) enabled.add(info);
+        enabled.sort(Comparator.comparing(info -> info.id));
+        JSONArray mods = new JSONArray();
+        for (ModInfo info : enabled) {
+            JSONObject item = new JSONObject();
+            item.put("id", info.id);
+            item.put("name", info.name);
+            item.put("version", info.version);
+            item.put("sha256", calculateModHash(info));
+            mods.put(item);
+        }
+        JSONObject manifest = new JSONObject();
+        manifest.put("format", 1);
+        manifest.put("fingerprint", fingerprint);
+        manifest.put("id_mapping", "stable-fnv1a16-v1");
+        manifest.put("mods", mods);
+        return manifest.toString();
+    }
+
+    /** Fingerprints active mods and verifies every resource listed in MFMod v3 manifests. */
     public synchronized String enabledModsFingerprint() {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -867,23 +1014,11 @@ public final class ModManager {
             enabled.sort(Comparator.comparing(info -> info.id));
             for (ModInfo info : enabled) {
                 digest.update(info.id.getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) 0);
+                digest.update((byte)0);
                 digest.update(info.version.getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) 0);
-                try (InputStream input = new FileInputStream(info.file)) {
-                    byte[] buffer = new byte[4096];
-                    int read;
-                    while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
-                }
-                File packageManifest = packageManifestFor(info.file);
-                if (packageManifest != null) {
-                    try (InputStream input = new FileInputStream(packageManifest)) {
-                        byte[] buffer = new byte[4096];
-                        int read;
-                        while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
-                    }
-                }
-                digest.update((byte) 0xff);
+                digest.update((byte)0);
+                digest.update(calculateModHash(info).getBytes(StandardCharsets.UTF_8));
+                digest.update((byte)0xff);
             }
             byte[] result = digest.digest();
             StringBuilder hex = new StringBuilder(result.length * 2);
@@ -895,35 +1030,50 @@ public final class ModManager {
     }
 
     /**
-     * Pins the enabled settings-mod set for an existing world. A mismatch is
-     * reported but never silently overwrites the saved fingerprint.
+     * Pins exact mod IDs, versions, resource hashes and the stable runtime ID mapping to a world.
+     * Legacy fingerprint-only sidecars remain readable and are upgraded if they match.
      */
     public synchronized String pinOrCompareWorldMods(String worldPath) {
         if (worldPath == null || worldPath.trim().isEmpty()) return "";
         String fingerprint = enabledModsFingerprint();
-        if (fingerprint.isEmpty()) return "No se pudo calcular la huella de los mods activos.";
+        if (fingerprint.isEmpty()) return "No se pudo verificar la integridad de los mods activos.";
         File sidecar = new File(worldPath + ".mods");
         try {
+            String currentManifest = buildWorldModsManifest(fingerprint);
             if (sidecar.isFile()) {
-                byte[] bytes = new byte[(int) Math.min(sidecar.length(), 256L)];
-                try (InputStream input = new FileInputStream(sidecar)) {
-                    int count = input.read(bytes);
-                    if (count <= 0) return "El manifiesto de mods del mundo está dañado.";
-                    String pinned = new String(bytes, 0, count, StandardCharsets.UTF_8).trim();
-                    if (!pinned.equals(fingerprint)) {
-                        return "Este mundo fue guardado con otro conjunto de mods. Restaura esos mods antes de seguir jugando.";
+                if (sidecar.length() <= 0L || sidecar.length() > 262144L)
+                    return "El manifiesto de mods del mundo está dañado.";
+                String pinned = new String(readBoundedFile(sidecar, 262144), StandardCharsets.UTF_8).trim();
+                if (pinned.endsWith("\\n")) pinned = pinned.substring(0, pinned.length() - 2).trim();
+                if (pinned.startsWith("{")) {
+                    JSONObject saved = new JSONObject(pinned);
+                    if (saved.optInt("format", -1) != 1 ||
+                            !fingerprint.equals(saved.optString("fingerprint", "")))
+                        return "Este mundo necesita exactamente las mismas versiones y recursos de mods con que fue guardado.";
+                    JSONArray savedMods = saved.getJSONArray("mods");
+                    JSONArray currentMods = new JSONObject(currentManifest).getJSONArray("mods");
+                    if (savedMods.length() != currentMods.length())
+                        return "La lista de mods de este mundo no coincide con la instalación actual.";
+                    for (int i = 0; i < savedMods.length(); i++) {
+                        JSONObject oldMod = savedMods.getJSONObject(i);
+                        JSONObject newMod = currentMods.getJSONObject(i);
+                        if (!oldMod.getString("id").equals(newMod.getString("id")) ||
+                                !oldMod.getString("version").equals(newMod.getString("version")) ||
+                                !oldMod.getString("sha256").equals(newMod.getString("sha256")))
+                            return "Falta una versión exacta de los mods utilizados por este mundo.";
                     }
                     return "";
                 }
+                // Compatibility with the previous plain SHA-256 sidecar.
+                if (!pinned.equals(fingerprint))
+                    return "Este mundo fue guardado con otro conjunto de mods. Restaura esos mods antes de seguir jugando.";
             }
-            return writeAtomically(sidecar, (fingerprint + "\\n").getBytes(StandardCharsets.UTF_8))
-                    ? "" : "No se pudo guardar el manifiesto de mods del mundo.";
+            return writeAtomically(sidecar, currentManifest.getBytes(StandardCharsets.UTF_8))
+                    ? "" : "No se pudo guardar el manifiesto exacto de mods del mundo.";
         } catch (Exception error) {
             return "No se pudo comprobar el manifiesto de mods del mundo.";
         }
     }
-
-
 
     private boolean isValidInstalledV2Package(File gameplayFile,
                                                        Map<String,String> gameplayValues) {
