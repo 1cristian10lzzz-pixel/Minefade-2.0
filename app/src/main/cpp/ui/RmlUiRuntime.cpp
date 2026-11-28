@@ -151,6 +151,8 @@ button:active { background: #47789b; }
 .slot-durability { position: absolute; left: 3dp; right: 3dp; bottom: 2dp; height: 3dp; background: #000000aa; border-radius: 2dp; overflow: hidden; }
 .slot-durability span { display: block; height: 3dp; background: #9ad27d; }
 .inventory-row { position: relative; flex-wrap: wrap; }
+.inventory-row.inventory-cursor { border: 2dp #d9e9a4; background: #627d4f; }
+.inventory-hint { color: #d3e1eb; font-size: 8dp; padding: 4dp 2dp; }
 .inventory-durability { display: block; flex-basis: 100%; height: 3dp; margin-left: 26dp; margin-top: -2dp; background: #000000aa; border-radius: 2dp; overflow: hidden; }
 .inventory-durability span { display: block; height: 3dp; background: #9ad27d; }
 .selected-durability { font-size: 8dp; color: #c9e3ad; margin-left: 5dp; }
@@ -289,7 +291,9 @@ button:active { background: #47789b; }
       <div class="inventory-heading">PERSONAJE · EQUIPO</div>
       <div class="inventory-equipment" id="equipment-items"></div>
       <div class="inventory-heading">INVENTARIO · 36 ESPACIOS</div>
+      <div class="inventory-hint">Toca un espacio y luego otro para mover o combinar. Divide o suelta la pila seleccionada.</div>
       <div id="inventory-items" class="inventory-grid"></div>
+      <div class="inventory-actions"><button id="inventory-split">Dividir pila</button><button id="inventory-drop">Soltar 1</button></div>
       <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="eat">Comer</button><button id="inventory-close">Cerrar</button></div>
     </div>
     <div class="inventory-right" id="inventory-right">
@@ -556,6 +560,8 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("death-exit", "save-exit");
     AttachAction("inventory", "inventory");
     AttachAction("inventory-close", "inventory-close");
+    AttachAction("inventory-split", "inventory-split");
+    AttachAction("inventory-drop", "inventory-drop");
     AttachAction("crafting-open", "crafting-open");
     AttachAction("crafting-close", "crafting-close");
     AttachAction("craft-planks", "craft-planks");
