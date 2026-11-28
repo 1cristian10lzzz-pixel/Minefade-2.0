@@ -201,9 +201,15 @@ button:active { background: #47789b; }
 #pickup { position: absolute; z-index: 5; right: 12dp; bottom: 54dp; color: #ffffff; font-size: 11dp; text-shadow: 0dp 1dp 3dp #000000; background: #102131bb; border: 1dp #d9e9a455; border-radius: 9dp; padding: 6dp 9dp; pointer-events: none; }
 
 #inventory-panel { z-index: 9; }
-#starter-chest-panel { z-index: 11; width: 280dp; margin-left: -140dp; max-height: 70%; }
-#starter-chest-panel .actions { justify-content: center; }
-#starter-chest-panel button { min-width: 104dp; }
+#starter-chest-panel { z-index: 11; width: 92%; max-width: 520dp; max-height: 82%; margin-left: -46%; padding: 10dp; background: #17293cf5; border: 2dp #8ca8c5; border-radius: 10dp; overflow-y: auto; }
+#starter-chest-panel .container-title { color: #e7f1fa; font-size: 13dp; padding: 2dp 4dp 8dp 4dp; border-bottom: 1dp #7694b455; }
+#starter-chest-panel #starter-chest-items { display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 4dp; padding: 8dp 0dp; }
+#starter-chest-panel .container-slot { width: 10.6%; min-width: 30dp; height: 44dp; padding: 2dp; background: #20384f; border: 1dp #7290a9; border-radius: 3dp; }
+#starter-chest-panel .container-slot img { width: 24dp; height: 24dp; }
+#starter-chest-panel .container-slot span { font-size: 7dp; color: #e9f1f6; }
+#starter-chest-panel .container-empty { color: #7890a2; }
+#starter-chest-panel .actions { justify-content: center; flex-wrap: wrap; gap: 6dp; }
+#starter-chest-panel button { min-width: 84dp; min-height: 34dp; }
 #death-panel { z-index: 20; width: 286dp; margin-left: -143dp; margin-top: -104dp; padding: 18dp; background: #251a25f5; border: 2dp #d46c70dd; border-radius: 14dp; }
 .death-title { color: #ff7e83; text-align: center; font-size: 23dp; font-weight: bold; margin-bottom: 8dp; }
 .death-subtitle { color: #e4d8dc; text-align: center; font-size: 11dp; margin-bottom: 16dp; }
@@ -323,9 +329,11 @@ button:active { background: #47789b; }
   </div>
 </div>
 <div id="starter-chest-panel" class="panel">
-  <div id="starter-chest-items"></div>
+  <div class="container-title">COFRE · 27 ESPACIOS</div>
+  <div id="starter-chest-items" class="container-grid"></div>
   <div class="actions">
     <button id="starter-chest-take">Recoger todo</button>
+    <button id="container-put">Guardar selección</button>
     <button id="starter-chest-close">Cerrar</button>
   </div>
 </div>
@@ -529,8 +537,9 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
 </div>
 <div id="crafting-panel" class="panel"><div id="crafting-recipes"></div><button id="crafting-close">Volver</button></div>
 <div id="pause-panel" class="panel"><div class="actions"><button id="resume">Continuar</button><button id="save-exit">Guardar y salir</button></div></div>
-<div id="starter-chest-panel" class="panel"><div id="starter-chest-items"></div>
-<button id="starter-chest-take">Recoger</button><button id="starter-chest-close">Cerrar</button></div>
+<div id="starter-chest-panel" class="panel"><div class="container-title">COFRE · 27 ESPACIOS</div>
+<div id="starter-chest-items" class="container-grid"></div>
+<button id="starter-chest-take">Recoger todo</button><button id="container-put">Guardar selección</button><button id="starter-chest-close">Cerrar</button></div>
 <div id="death-panel" class="panel"><div class="death-title">HAS MUERTO</div><div class="death-subtitle">Tu aventura continúa.</div><div class="actions"><button id="respawn">Reaparecer</button><button id="death-exit">Guardar y salir</button></div></div>
 </body>
 </rml>
@@ -578,6 +587,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("starter-chest-open", "starter-chest-open");
     AttachAction("starter-chest-close", "starter-chest-close");
     AttachAction("starter-chest-take", "starter-chest-take");
+    AttachAction("container-put", "container-put");
     for (int slot = 0; slot < 9; ++slot) {
         const std::string id = "slot-" + std::to_string(slot);
         AttachAction(id.c_str(), id.c_str());
@@ -617,6 +627,7 @@ void RmlUiRuntime::Shutdown() {
     listeners_.clear();
     inventoryListeners_.clear();
     craftingListeners_.clear();
+    containerListeners_.clear();
     // RmlUi requires its contexts to be destroyed before Shutdown and the render interface to outlive it.
     if (rmlInitialised_) Rml::Shutdown();
     rmlInitialised_ = false;
@@ -932,8 +943,18 @@ void RmlUiRuntime::SetCrouchEnabled(bool enabled) {
 
 void RmlUiRuntime::SetChestContents(const std::string& markup) {
     if (document_ == nullptr) return;
-    if (Rml::Element* element = document_->GetElementById("starter-chest-items"))
-        element->SetInnerRML(markup);
+    Rml::Element* container = document_->GetElementById("starter-chest-items");
+    if (container == nullptr) return;
+    container->SetInnerRML(markup);
+    containerListeners_.clear();
+    for (int slot = 0; slot < 27; ++slot) {
+        const std::string elementId = "container-slot-" + std::to_string(slot);
+        Rml::Element* element = document_->GetElementById(elementId);
+        if (element == nullptr) continue;
+        containerListeners_.push_back(
+            std::make_unique<ActionListener>(callback_, elementId));
+        element->AddEventListener("click", containerListeners_.back().get());
+    }
 }
 
 void RmlUiRuntime::SetMinimap(const std::string& gridMarkup, const std::string& coordinates) {
