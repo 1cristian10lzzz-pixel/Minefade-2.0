@@ -20,6 +20,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - C++20: motor voxel, jugador, meshing y backend OpenGL ES 3.
 - Rust: núcleo de simulación mediante ABI C.
 - RmlUi 6.3 y FreeType 2.13.3.
+- El generador MFMod v3 apunta por defecto al motor Android 2.4.0; los módulos opcionales del paquete se validan de forma estricta al cargarlos.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
 
 ## Actualización técnica 2.2.4 — recuperación de fluidos LOD2
