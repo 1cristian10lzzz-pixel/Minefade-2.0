@@ -40,12 +40,13 @@ int main() {
     // MFMod v3 optional data sections may be absent, but a present malformed
     // section must fail the load instead of silently disabling that feature.
     const std::filesystem::path modJsonRoot = "/tmp/minefade-mod-v3-json-test";
+    const std::filesystem::path modJsonPackage = modJsonRoot / "runtime_test";
     std::filesystem::remove_all(modJsonRoot);
-    std::filesystem::create_directories(modJsonRoot / "data");
+    std::filesystem::create_directories(modJsonPackage / "data");
     {
-        std::ofstream manifest(modJsonRoot / "manifest.json", std::ios::binary);
+        std::ofstream manifest(modJsonPackage / "manifest.json", std::ios::binary);
         manifest << R"({"format":3,"id":"runtime_test"})";
-        std::ofstream gameplay(modJsonRoot / "data" / "gameplay.mfmod", std::ios::binary);
+        std::ofstream gameplay(modJsonPackage / "data" / "gameplay.mfmod", std::ios::binary);
         gameplay << "id=runtime_test\nname=Runtime Test\nversion=1.0\nenabled=true\n";
     }
     std::vector<std::uint8_t> baseModAtlas(kBlockAtlasByteCount, 0u);
@@ -59,11 +60,11 @@ int main() {
         expandedModAtlas, expandedModAtlasWidth, expandedModAtlasHeight, modRuntimeError));
     modRegistry.Clear();
     {
-        std::ofstream malformed(modJsonRoot / "data" / "blocks.json", std::ios::binary);
+        std::ofstream malformed(modJsonPackage / "data" / "blocks.json", std::ios::binary);
         assert(malformed.good());
         malformed << "{ invalid json";
     }
-    const std::filesystem::path malformedBlocks = modJsonRoot / "data" / "blocks.json";
+    const std::filesystem::path malformedBlocks = modJsonPackage / "data" / "blocks.json";
     assert(std::filesystem::is_regular_file(malformedBlocks));
     assert(std::filesystem::file_size(malformedBlocks) > 0u);
     JsonValue invalidOptionalJson;
