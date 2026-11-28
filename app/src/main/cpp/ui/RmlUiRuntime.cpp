@@ -310,7 +310,7 @@ button:active { background: #47789b; }
       <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="inventory-close">Cerrar</button></div>
     </div>
     <div class="inventory-right" id="inventory-right">
-      <div class="inventory-heading">MOCHILA · 36 ESPACIOS</div>
+      <div class="inventory-heading">INVENTARIO · 36 ESPACIOS</div>
       <div class="inventory-hint">Toca un espacio y después otro para mover o combinar. Selecciona una pila para dividirla o soltarla.</div>
       <div id="inventory-items" class="inventory-grid"></div>
       <div class="inventory-actions"><button id="inventory-split">Dividir pila</button><button id="inventory-drop">Soltar 1</button></div>
@@ -321,8 +321,16 @@ button:active { background: #47789b; }
 </div>
 <div id="crafting-panel" class="panel">
   <div class="crafting-workbench">
-    <div class="workbench-title">FABRICACIÓN · RECETAS REALES</div>
-    <div class="crafting-note">Selecciona una receta para comprobar ingredientes, estación y espacio libre. La fabricación se confirma en tu inventario.</div>
+    <div class="workbench-title">FABRICACIÓN · MESA DE TRABAJO</div>
+    <div class="workbench-layout">
+      <div class="crafting-input-grid">
+        <div class="craft-slot"></div><div class="craft-slot"></div>
+        <div class="craft-slot"></div><div class="craft-slot"></div>
+      </div>
+      <div class="craft-arrow">➜</div>
+      <div class="craft-output"></div>
+    </div>
+    <div class="crafting-note">Elige una receta: se validan materiales, estación y espacio antes de consumir nada.</div>
   </div>
   <div class="recipe-title">RECETAS DISPONIBLES</div>
   <div id="crafting-recipes"></div>
