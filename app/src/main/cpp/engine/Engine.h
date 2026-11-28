@@ -205,6 +205,7 @@ private:
     bool pendingAnimationsEnabled_{true};
     std::array<int, 6> avatarAppearance_{{0,0,0,0,0,0}};
     bool inventoryVisible_{false};
+    int inventoryCursorSlot_{-1};
     bool craftingVisible_{false};
     bool pauseVisible_{false};
     bool thirdPerson_{false};
