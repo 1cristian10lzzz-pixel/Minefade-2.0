@@ -915,7 +915,7 @@ public final class ModManager {
         }
     }
 
-    private static byte[] readBoundedFile(File file, int maximum) throws Exception {
+    private static byte[] readModPackageFileBounded(File file, int maximum) throws Exception {
         if (file == null || !file.isFile() || file.length() <= 0L || file.length() > maximum)
             throw new IOException("Archivo de mod inválido.");
         try (InputStream input = new FileInputStream(file);
@@ -949,7 +949,7 @@ public final class ModManager {
         if (packageManifest == null) {
             updateDigestFile(digest, info.file, 1024 * 1024);
         } else {
-            byte[] manifestBytes = readBoundedFile(packageManifest, 65536);
+            byte[] manifestBytes = readModPackageFileBounded(packageManifest, 65536);
             digest.update(manifestBytes);
             JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
             if (manifest.optInt("format", -1) == 3) {
@@ -1044,7 +1044,7 @@ public final class ModManager {
             if (sidecar.isFile()) {
                 if (sidecar.length() <= 0L || sidecar.length() > 262144L)
                     return "El manifiesto de mods del mundo está dañado.";
-                String pinned = new String(readBoundedFile(sidecar, 262144), StandardCharsets.UTF_8).trim();
+                String pinned = new String(readModPackageFileBounded(sidecar, 262144), StandardCharsets.UTF_8).trim();
                 if (pinned.endsWith("\\n")) pinned = pinned.substring(0, pinned.length() - 2).trim();
                 if (pinned.startsWith("{")) {
                     JSONObject saved = new JSONObject(pinned);
