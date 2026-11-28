@@ -94,8 +94,19 @@ endif()
 add_library(minefade_native SHARED
     NativeEngine.cpp
     engine/Engine.cpp
+    world/ProtectionManager.cpp
     render/WorldMeshRenderer.cpp
+    render/FirstPersonRenderer.cpp
     game/Player.cpp
+    entity/ModelLoader.cpp
+    entity/ModelValidator.cpp
+    entity/EntityDefinition.cpp
+    entity/LegacyModelAdapter.cpp
+    entity/Skeleton.cpp
+    entity/AnimationController.cpp
+    entity/EntityVisualSystem.cpp
+    mods/JsonLite.cpp
+    mods/ModContentRegistry.cpp
     world/VoxelWorld.cpp
     blocks/BlockRegistry.cpp
     ui/RmlUiOpenGLES.cpp

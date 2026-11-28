@@ -37,6 +37,8 @@ public:
     void SetSpeedMultiplier(float multiplier) { speedMultiplier = multiplier; }
     void SetJumpMultiplier(float multiplier);
     void SetAppearance(const std::array<int, 6>& appearance);
+    std::array<float, 3> FirstPersonSkinColor() const;
+    std::array<float, 3> FirstPersonSleeveColor() const;
     void SetAnimationOptions(std::uint8_t quality, bool enabled);
     void SetContactShadows(bool enabled) { contactShadows = enabled; }
     // Keeps saved player positions out of solid blocks and finds nearby open ground.
@@ -51,6 +53,8 @@ public:
     static constexpr std::size_t kSlotCount = 36;
     static constexpr std::size_t kHotbarSlotCount = 9;
     std::array<std::uint32_t, kSlotCount> counts{{2016u}};
+    // Runtime/persistence sidecar data; the historical MFVOX inventory ABI is unchanged.
+    std::array<std::uint16_t, kSlotCount> toolDurability{};
     std::uint16_t selectedSlot{0};
     std::array<std::uint16_t, 4> equippedArmor{}; // helmet, chestplate, leggings, boots
 
@@ -59,6 +63,11 @@ public:
     bool CanAdd(std::uint16_t itemId, std::uint16_t amount = 1) const;
     bool Add(std::uint16_t itemId, std::uint16_t amount = 1);
     bool ConsumeSelected(std::uint16_t amount = 1);
+    bool DamageSelectedItem(std::uint16_t amount = 1);
+    std::uint16_t SelectedItemMaxDurability() const;
+    std::uint16_t SelectedItemDurability() const;
+    std::uint16_t SlotItemMaxDurability(std::size_t slot) const;
+    std::uint16_t SlotItemDurability(std::size_t slot) const;
     std::uint16_t CountItem(std::uint16_t itemId) const;
     bool ConsumeItem(std::uint16_t itemId, std::uint16_t amount);
     std::uint16_t SelectedItemId() const;
@@ -71,6 +80,19 @@ struct Entity {
     int kind{0};
     int behavior{0}; // 0 wander, 1 flee, 2 graze/eat, 3 pursue
     float behaviorTimer{0.0f};
+    // Runtime-only combat health; it is not part of MFVOX or the Rust ABI.
+    float health{5.0f};
+    float attackDamage{1.0f};
+    bool hostile{false};
+    bool modded{false};
+
+    // Visual-only data. These fields never enter the Rust ABI or world save format.
+    float yaw{0.0f};
+    float movementAmount{0.0f};
+    float animationClock{0.0f};
+    std::uint8_t visualState{0}; // 0 idle, 1 moving, 2 eating
+    std::uint8_t previousVisualState{0};
+    float visualTransitionSeconds{0.0f};
 };
 
 struct DroppedItem {
@@ -102,6 +124,9 @@ public:
     void SpawnInitial(const VoxelWorld& world);
     void Update(const VoxelWorld& world, const Player& player, float deltaSeconds);
     void AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum = nullptr) const;
+    void AppendLegacyMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum,
+                          int excludedKind) const;
+    const std::vector<Entity>& Entities() const { return entities_; }
     void SetContactShadows(bool enabled) { contactShadows_ = enabled; }
     void SetSpeedMultiplier(float multiplier);
     void SetModOptions(float passiveSpeed, float hostileSpeed, float fleeRadius,
@@ -110,6 +135,11 @@ public:
     void SetAnimationOptions(std::uint8_t quality, bool enabled) { animationQuality_ = quality > 2 ? 2 : quality; animationsEnabled_ = enabled; }
     std::size_t Count() const { return entities_.size(); }
     bool SpawnEntity(const Vec3& nearPosition, int kind, const VoxelWorld& world);
+    bool SpawnModEntity(const Vec3& nearPosition, int kind, float health, float damage,
+                        bool hostile, const VoxelWorld& world);
+    // Damages the nearest forward-facing hostile. Returns true on a hit.
+    bool DamageNearest(const Vec3& origin, const Vec3& direction, float maxDistance,
+                       float damage, bool* defeated = nullptr, int* defeatedKind = nullptr);
 private:
     std::vector<Entity> entities_;
     bool initialized_{false};

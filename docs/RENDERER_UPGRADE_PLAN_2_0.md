@@ -153,3 +153,61 @@ No publicar porcentajes de mejora ni FPS hasta medirlos en teléfonos reales de 
 - No compartir una sola cola sin prioridades entre streaming, render, pregeneración y guardado.
 - No introducir GitHub Actions.
 - No publicar un APK como Release terminado hasta pasar los criterios de aceptación.
+
+---
+## Ejecución de la Fase 1 — revisión de estabilidad y renderer
+
+**Estado de esta rama:** implementación parcial verificable por CI; todavía no equivale a aceptación en un teléfono físico ni a completar todas las fases A–G del diseño.
+
+### Cambios que sí están implementados
+
+1. **Diagnóstico GLES al iniciar**
+   - Registra fabricante, renderer, versión OpenGL ES, versión GLSL, lista (truncada de forma segura) de extensiones, límites de textura/renderbuffer/viewport, framebuffer enlazado y estado de completitud.
+   - Una superficie con ancho/alto no válido durante una recreación se ignora; no se sustituye por un viewport 1×1.
+   - Antes de limpiar y dibujar el mundo se enlaza el framebuffer de ventana (0), se restaura viewport completo, scissor, máscaras de color/profundidad y función de profundidad.
+   - En resize se vuelve a enlazar el framebuffer de ventana y se registra un estado incompleto.
+
+2. **Snapshots de bloques para meshing**
+   - Se copian solo los chunks con malla pendiente y su halo cardinal de vecinos, no todos los chunks cargados en cada pasada.
+   - Las consultas de bloques vecinos se resuelven desde ese conjunto de snapshots, no consultando los contenedores mutables de VoxelWorld desde el worker.
+   - Cada chunk lleva una revisión de ejecución. Un cambio real de bloque la incrementa; escribir el mismo bloque no invalida innecesariamente la malla.
+   - Antes de publicar una malla se compara la revisión viva con la revisión capturada. Si no coincide, se descarta el resultado y se vuelve a marcar el chunk como dirty.
+   - La revisión y las métricas son datos de ejecución: no se escriben al archivo del mundo.
+
+3. **Presupuesto de transferencia GPU**
+   - Se conserva la prioridad por distancia y el límite de 1/2/3 chunks por frame según la calidad.
+   - Además se pasa un presupuesto inicial por calidad de 256 KiB / 768 KiB / 2 MiB y una ventana objetivo de 1,5 / 2,5 / 4 ms.
+   - Se comprueba tiempo y bytes entre chunks. Un primer chunk puede superar el presupuesto de bytes/tiempo para evitar que un chunk grande quede bloqueado para siempre; una única llamada GLES no se interrumpe a mitad de transferencia.
+   - Los VBO crecen geométricamente, se reutiliza la capacidad disponible y se actualizan con glBufferSubData; se evita reasignar almacenamiento completo para cada cambio de malla.
+   - El renderer conserva y restaura las vinculaciones VAO y GL_ARRAY_BUFFER alrededor de la subida.
+
+4. **Métricas del motor**
+   - Mantiene una ventana móvil de 120 fotogramas para calcular p50/p95/p99 del tiempo de frame.
+   - Expone en diagnóstico el tiempo de meshing, el tiempo empleado por el hilo de render en recoger trabajos de generación completados, tiempo de sincronización GPU, chunks, memoria CPU estimada de bloques/mallas, capacidad VBO GPU, bytes subidos y pendientes.
+   - El dato generation_pump_ms mide el coste del bombeo/recogida en el hilo de render; no debe confundirse con la duración interna total de cada worker de generación.
+
+5. **Compatibilidad de guardados**
+   - No cambia la estructura serializada de MFVOX003.
+   - No se serializan revisiones ni contadores de memoria.
+   - Se conservan los cargadores históricos de MFVOX001 y MFVOX002; las pruebas de mundo/guardado deben seguir ejecutándose en CI.
+
+### Qué no se declara terminado todavía
+
+- **Scheduler persistente de meshing:** BuildMesh sigue creando workers y esperando a que terminen antes de retornar. Hay snapshots seguros y un presupuesto de mallas por llamada, pero aún falta una cola persistente acotada/deduplicada con cancelación real, revisión y antigüedad por trabajo.
+- **Presupuesto duro por transferencia:** el límite de tiempo/bytes se aplica entre chunks; la primera subida puede rebasarlo y una transferencia GLES individual no se puede pausar en mitad de glBufferSubData.
+- **Recuperación EGL comprobada:** se reconstruyen recursos en la ruta de inicialización, pero falta una prueba instrumentada en dispositivo/emulador que fuerce pérdida y recreación de contexto y compare el resultado.
+- **Memoria de mundo:** se mide RAM de bloques y caché, pero no se expulsa mundo visitado. No hacerlo evita perder construcciones: una expulsión segura necesita almacenamiento regional transaccional y recuperación antes de liberar el chunk.
+- **LOD distante:** la representación LOD2 sigue siendo altura/material por columna y no conserva cuevas, túneles, voladizos ni capas subterráneas.
+- **Franja negra/pantalla blanca:** se agregaron comprobaciones y diagnóstico del framebuffer, pero el resultado visual también depende de Surface, insets y GPU reales; no se puede declarar corregido solo por compilar.
+- **Pruebas Android físicas:** falta abrir, entrar a un mundo, guardar, volver a abrir, girar/recrear Surface, comprobar primera/tercera persona, HUD y controles en dispositivos ARM reales de diferentes GPUs.
+- **Telemetría restante:** faltan edad/profundidad de colas, chunks por segundo medidos, latencias de guardado/carga y temperatura del dispositivo.
+
+### Orden de aceptación restante
+
+1. CI limpia con pruebas Python, Rust, C++ y compilación Android para ARM64/ARMv7.
+2. Verificar firma, paquete, versión, ABIs y checksum del APK exacto generado por el último commit.
+3. Instalar y ejecutar en Android real; probar mundo nuevo y mundos guardados históricos, pausa/reanudación y recreación EGL.
+4. Medir p50/p95/p99, colas, memoria y estabilidad térmica en al menos un teléfono de gama baja, uno medio y uno alto.
+5. Solo después, cerrar los pendientes de scheduler persistente y almacenamiento regional antes de etiquetar esta fase como aceptada al 100 %.
+
+**Regla de integridad:** una compilación correcta demuestra que el proyecto compila y pasa sus pruebas automatizadas; no demuestra por sí sola que el juego se abra correctamente en todos los teléfonos ni que la franja negra esté resuelta.

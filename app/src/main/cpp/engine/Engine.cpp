@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "minefade_core.h"
+#include "../mods/ModContentRegistry.h"
 
 #include <android/log.h>
 
@@ -103,6 +104,8 @@ flat in highp int vAtlasTile;
 in mediump float vFogDistanceSquared;
 uniform sampler2D uBlockAtlas;
 uniform int uUseAtlas;
+uniform sampler2D uEntityTexture;
+uniform int uUseEntityTexture;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -118,7 +121,9 @@ vec2 AtlasUv(vec2 localUv, int tile) {
     return vec2(pixel.x / atlasSize.x, pixel.y / atlasSize.y);
 }
 void main() {
-    vec4 texel = (uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0);
+    vec4 texel = (uUseEntityTexture == 1)
+        ? texture(uEntityTexture, vTexCoord)
+        : ((uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0));
     vec3 litColor = texel.rgb * vColor;
     float fogNearSquared = uFogNear * uFogNear;
     float fogFarSquared = uFogFar * uFogFar;
@@ -142,27 +147,45 @@ bool Engine::IsUiReady() const { return ui_.IsReady(); }
 
 void Engine::FallbackAction(int action, bool pressed) {
     if (!ready_) return;
-    // 0 jump, 1 crouch, 2 perspective, 3 pause, 4 resume, 5 save-and-exit.
+    // 0 jump, 1 crouch, 2 perspective cycle, 3 pause, 4 resume, 5 save/exit.
+    // 6..9 are held D-pad directions: forward, backward, left, right.
     if (action == 1) {
-        crouching_ = pressed;
-        player_.SetCrouching(pressed);
+        // Match the main RmlUi HUD: crouch is a toggle, not a hold-only control.
+        if (!pressed) return;
+        crouching_ = !crouching_;
+        player_.SetCrouching(crouching_);
+        ui_.SetCrouchEnabled(crouching_);
+        return;
+    }
+    if (action >= 6 && action <= 9) {
+        fallbackMovementButtons_[static_cast<std::size_t>(action - 6)] = pressed;
+        UpdateTouchMovement();
         return;
     }
     if (!pressed) return;
+    if (action >= 20 && action <= 28) {
+        inventory_.selectedSlot = static_cast<std::uint16_t>(action - 20);
+        RefreshInventoryUi();
+        return;
+    }
     switch (action) {
         case 0:
             if (!paused_ && player_.grounded) {
                 player_.Jump();
-                soundEvents_.fetch_or(16u, std::memory_order_release);
+                if (!player_.grounded) {
+                    if (progressionJumps_ < 10000000u) ++progressionJumps_;
+                    if (gameMode_ != 1) AddProgressionXp(1u);
+                    soundEvents_.fetch_or(16u, std::memory_order_release);
+                }
             }
             break;
-        case 2:
-            thirdPerson_ = !thirdPerson_;
-            RebuildEntityMesh();
-            UploadEntityMesh();
-            break;
+        case 2: CyclePerspective(); break;
         case 3:
             if (!paused_) {
+                fallbackMovementButtons_.fill(false);
+                UpdateTouchMovement();
+                crouching_ = false;
+                player_.SetCrouching(false);
                 Pause();
                 pauseVisible_ = true;
             } else {
@@ -180,8 +203,8 @@ void Engine::FallbackAction(int action, bool pressed) {
             SaveWorld();
             exitRequested_.store(true, std::memory_order_release);
             break;
-        default:
-            break;
+        case 10: HandleUiAction("attack"); break;
+        default: break;
     }
 }
 
@@ -359,6 +382,8 @@ bool Engine::CreateWorldProgram() {
         daylightLocation_ = glGetUniformLocation(worldProgram_, "uDaylight");
         atlasLocation_ = glGetUniformLocation(worldProgram_, "uBlockAtlas");
         useAtlasLocation_ = glGetUniformLocation(worldProgram_, "uUseAtlas");
+        entityTextureLocation_ = glGetUniformLocation(worldProgram_, "uEntityTexture");
+        useEntityTextureLocation_ = glGetUniformLocation(worldProgram_, "uUseEntityTexture");
         timeLocation_ = glGetUniformLocation(worldProgram_, "uTime");
         qualityLocation_ = glGetUniformLocation(worldProgram_, "uQuality");
         waterWavesLocation_ = glGetUniformLocation(worldProgram_, "uWaterWaves");
@@ -375,12 +400,16 @@ bool Engine::CreateWorldProgram() {
     if (buildProgram(kWorldVertexShader, kWorldFragmentShader, fullDiagnostic)) {
         fetchLocations();
         if (mvpLocation_ >= 0 && lightLocation_ >= 0 && daylightLocation_ >= 0 &&
-            atlasLocation_ >= 0 && useAtlasLocation_ >= 0 && timeLocation_ >= 0 &&
-            qualityLocation_ >= 0 && waterWavesLocation_ >= 0 && cameraLocation_ >= 0 &&
+            atlasLocation_ >= 0 && useAtlasLocation_ >= 0 &&
+            entityTextureLocation_ >= 0 && useEntityTextureLocation_ >= 0 &&
+            timeLocation_ >= 0 && qualityLocation_ >= 0 &&
+            waterWavesLocation_ >= 0 && cameraLocation_ >= 0 &&
             fogColorLocation_ >= 0 && fogNearLocation_ >= 0 && fogFarLocation_ >= 0) {
             glUseProgram(worldProgram_);
             glUniform1i(atlasLocation_, 0);
             glUniform1i(useAtlasLocation_, 1);
+            glUniform1i(entityTextureLocation_, 1);
+            glUniform1i(useEntityTextureLocation_, 0);
             glUseProgram(0);
             ENGINE_LOGI("Full world shader compiled and linked");
             return true;
@@ -419,6 +448,8 @@ in mediump vec2 vTexCoord;
 flat in highp int vAtlasTile;
 uniform sampler2D uBlockAtlas;
 uniform int uUseAtlas;
+uniform sampler2D uEntityTexture;
+uniform int uUseEntityTexture;
 out vec4 outColor;
 vec2 AtlasUv(vec2 localUv, int tile) {
     vec2 atlasSize = vec2(textureSize(uBlockAtlas, 0));
@@ -431,7 +462,9 @@ vec2 AtlasUv(vec2 localUv, int tile) {
     return vec2(pixel.x / atlasSize.x, pixel.y / atlasSize.y);
 }
 void main() {
-    vec4 texel = (uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0);
+    vec4 texel = (uUseEntityTexture == 1)
+        ? texture(uEntityTexture, vTexCoord)
+        : ((uUseAtlas == 1) ? texture(uBlockAtlas, AtlasUv(vTexCoord, vAtlasTile)) : vec4(1.0));
     vec3 material = vColor;
     // Fluid tags are encoded in the red component by the mesh builder. The
     // conservative shader must decode them too; multiplying the negative tag
@@ -450,7 +483,8 @@ void main() {
         return false;
     }
     fetchLocations();
-    if (mvpLocation_ < 0 || atlasLocation_ < 0 || useAtlasLocation_ < 0) {
+    if (mvpLocation_ < 0 || atlasLocation_ < 0 || useAtlasLocation_ < 0 ||
+        entityTextureLocation_ < 0 || useEntityTextureLocation_ < 0) {
         fallbackDiagnostic = "El shader alternativo enlazó, pero faltan uniforms obligatorios.";
         gWorldShaderDiagnostic = "Shader principal: " + fullDiagnostic +
                 "\nShader alternativo: " + fallbackDiagnostic;
@@ -461,6 +495,8 @@ void main() {
     glUseProgram(worldProgram_);
     glUniform1i(atlasLocation_, 0);
     glUniform1i(useAtlasLocation_, 1);
+    glUniform1i(entityTextureLocation_, 1);
+    glUniform1i(useEntityTextureLocation_, 0);
     glUseProgram(0);
     ENGINE_LOGW("Using conservative ES 3.0 fallback world shader");
     return true;
@@ -486,20 +522,60 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
         ENGINE_LOGE("Atlas byte count mismatch: got %zu expected %zu", bytes, expected);
         return false;
     }
-    glGenTextures(1, &blockAtlasTexture_);
-    if (blockAtlasTexture_ == 0) return false;
+
+    // This renderer shares one GLES context with entity/UI texture uploads.
+    // A bound PBO changes the pixels argument from a CPU address into a byte
+    // offset, and a texture upload must not replace another subsystem's unit
+    // zero binding. Save and restore all upload state on every exit path.
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousTextureBinding = 0;
     GLint previousUnpackAlignment = 4;
+    GLint previousUnpackRowLength = 0;
+    GLint previousUnpackSkipPixels = 0;
+    GLint previousUnpackSkipRows = 0;
+    GLint previousPixelUnpackBuffer = 0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
     glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH, &previousUnpackRowLength);
+    glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &previousUnpackSkipPixels);
+    glGetIntegerv(GL_UNPACK_SKIP_ROWS, &previousUnpackSkipRows);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousPixelUnpackBuffer);
+
+    const auto restoreUploadState = [&]() {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER,
+                     static_cast<GLuint>(previousPixelUnpackBuffer));
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, previousUnpackRowLength);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, previousUnpackSkipPixels);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, previousUnpackSkipRows);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+        glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+    };
+
+    // glTexImage2D interprets its pointer as a PBO offset while a pixel
+    // unpack buffer is bound. Explicitly select client-memory upload mode.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glGenTextures(1, &blockAtlasTexture_);
+    if (blockAtlasTexture_ == 0) {
+        restoreUploadState();
+        return false;
+    }
     glBindTexture(GL_TEXTURE_2D, blockAtlasTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     const GLenum error = glGetError();
+    restoreUploadState();
+
     if (error != GL_NO_ERROR) {
         glDeleteTextures(1, &blockAtlasTexture_);
         blockAtlasTexture_ = 0;
@@ -510,18 +586,141 @@ bool Engine::UploadBlockAtlas(const std::uint8_t* pixels, std::size_t bytes, int
     return true;
 }
 
+bool Engine::UploadSheepTexture(const std::uint8_t* pixels, std::size_t bytes) {
+    constexpr int width = 64;
+    constexpr int height = 32;
+    constexpr std::size_t expectedBytes = static_cast<std::size_t>(width * height * 4);
+    if (pixels == nullptr || bytes != expectedBytes) {
+        ENGINE_LOGW("MAES sheep texture has invalid size (%zu); using baked face-colour fallback", bytes);
+        return false;
+    }
+
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousBinding = 0;
+    GLint previousUnpackAlignment = 4;
+    GLint previousUnpackBuffer = 0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE1);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousBinding);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousUnpackBuffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+    glGenTextures(1, &sheepTexture_);
+    if (sheepTexture_ == 0) {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousUnpackBuffer));
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousBinding));
+        glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+        return false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, sheepTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    const GLenum error = glGetError();
+
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousUnpackBuffer));
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousBinding));
+    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+
+    if (error != GL_NO_ERROR) {
+        ENGINE_LOGW("MAES sheep texture upload failed: GL error 0x%04X; using baked face-colour fallback",
+                    static_cast<unsigned int>(error));
+        glDeleteTextures(1, &sheepTexture_);
+        sheepTexture_ = 0;
+        return false;
+    }
+    return true;
+}
+
 bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
-                        std::size_t atlasBytes, int atlasWidth, int atlasHeight) {
+                        std::size_t atlasBytes, int atlasWidth, int atlasHeight,
+                        const std::uint8_t* sheepModelBytes, std::size_t sheepModelSize,
+                        const std::uint8_t* sheepTextureRgba, std::size_t sheepTextureBytes) {
     // Preserve the previous world first (Shutdown saves it when appropriate), then
     // reset every gameplay subsystem before loading or creating the next session.
     // Without this reset, a failed/missing save could silently reuse stale chunks,
     // entities, drops, inventory and player state from the previous GL session.
     lastInitError_.clear();
-    Shutdown();
+    dead_ = false;
+    paused_ = false;
+    const auto glString = [](GLenum name) {
+        const GLubyte* value = glGetString(name);
+        return value != nullptr ? reinterpret_cast<const char*>(value) : "no disponible";
+    };
+    GLint maxTextureSize = 0;
+    GLint maxRenderbufferSize = 0;
+    GLint extensionCount = 0;
+    GLint framebufferBinding = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+    glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxRenderbufferSize);
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebufferBinding);
+    GLint maxViewport[2]{0, 0};
+    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, maxViewport);
+    char extensionSummary[2048]{};
+    std::size_t extensionLength = 0u;
+    for (GLint index = 0; index < extensionCount; ++index) {
+        const GLubyte* extension = glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(index));
+        if (extension == nullptr) continue;
+        const int written = std::snprintf(extensionSummary + extensionLength,
+            sizeof(extensionSummary) - extensionLength, "%s%s",
+            extensionLength == 0u ? "" : " ", reinterpret_cast<const char*>(extension));
+        if (written < 0) break;
+        if (static_cast<std::size_t>(written) >= sizeof(extensionSummary) - extensionLength) {
+            extensionLength = sizeof(extensionSummary) - 1u;
+            break;
+        }
+        extensionLength += static_cast<std::size_t>(written);
+    }
+    const GLenum startupFramebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    ENGINE_LOGI("GLES startup vendor=%s renderer=%s version=%s GLSL=%s maxTexture=%d maxRenderbuffer=%d maxViewport=%dx%d extensions=%d framebuffer=%d status=0x%04X",
+        glString(GL_VENDOR), glString(GL_RENDERER), glString(GL_VERSION),
+        glString(GL_SHADING_LANGUAGE_VERSION), maxTextureSize, maxRenderbufferSize,
+        maxViewport[0], maxViewport[1], extensionCount, framebufferBinding,
+        static_cast<unsigned int>(startupFramebufferStatus));
+    if (extensionLength > 0u) ENGINE_LOGI("GLES extensions: %s", extensionSummary);
+    if (startupFramebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
+        ENGINE_LOGW("Default startup framebuffer is incomplete: 0x%04X",
+                    static_cast<unsigned int>(startupFramebufferStatus));
+    }
+    frameTimeSamplesMs_.fill(0.0f);
+    frameTimeSampleCursor_ = frameTimeSampleCount_ = 0u;
+    lastChunkGenerationPumpMs_ = lastMeshBuildMs_ = lastGpuUploadMs_ = 0.0f;
+    // MainActivity has already paused and saved the previous world on the GL
+    // thread before changing storagePath_. Do not save the previous in-memory
+    // world again here: storagePath_ now belongs to the NEW world.
+    Shutdown(false);
+    inventoryVisible_ = false;
+    craftingVisible_ = false;
+    pauseVisible_ = false;
+    paused_ = false;
+    playerIdentity_ = pendingPlayerIdentity_;
+    if (!storagePath_.empty() && !protection_.Load(storagePath_ + ".claims"))
+        ENGINE_LOGW("Claim file missing or damaged; protection remains fail-closed");
     world_ = VoxelWorld(0x4D464445u);
     player_ = Player();
     player_.SetAppearance(avatarAppearance_);
     inventory_ = Inventory();
+    lastQuickbarSelection_ = 0xffffu;
+    selectedItemToastUntil_ = 0.0;
+    firstPersonItemId_ = 0xffffu;
+    firstPersonSwitchStarted_ = 0.0;
+    firstPersonActionStarted_ = 0.0;
+    firstPersonActionKind_ = 0;
+    progressionXp_ = 0u;
+    progressionBlocksMined_ = 0u;
+    progressionBlocksPlaced_ = 0u;
+    progressionItemsCollected_ = 0u;
+    progressionJumps_ = 0u;
+    progressionWorldEntered_ = false;
     droppedItems_ = DroppedItemSystem();
     entities_ = EntitySystem();
     environment_ = EnvironmentSystem();
@@ -540,11 +739,27 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     entityMeshAccumulator_ = 0.0f;
     itemMeshAccumulator_ = 0.0f;
     minimapAccumulator_ = 0.0f;
+    playerHealth_ = 20.0f;
+    playerHunger_ = 20.0f;
+    hungerExhaustion_ = 0.0f;
+    hungerDrainTimer_ = 0.0f;
+    starvationTimer_ = 0.0f;
+    regenerationTimer_ = 0.0f;
+    hostileDamageCooldown_ = 0.0f;
+    hostileSpawnTimer_ = 0.0f;
+    hostileSpawnSequence_ = 0u;
     exitRequested_.store(false, std::memory_order_release);
     soundEvents_.store(0u, std::memory_order_release);
 
     multiplayerMode_ = pendingMultiplayerMode_;
     multiplayerSlot_ = pendingMultiplayerSlot_;
+    gameMode_ = pendingGameMode_;
+    allowCheats_ = pendingAllowCheats_;
+    starterChestEnabled_ = pendingStarterChestEnabled_;
+    requestedWorldSeed_ = pendingWorldSeed_;
+    flatWorld_ = pendingFlatWorld_;
+    difficulty_ = pendingDifficulty_;
+    generateStructures_ = pendingGenerateStructures_;
     graphicsQuality_ = pendingGraphicsQuality_;
     renderDistanceChunks_ = pendingRenderDistanceChunks_;
     waterWaves_ = pendingWaterWaves_;
@@ -554,6 +769,18 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     entities_.SetContactShadows(contactShadows_);
     animationQuality_ = pendingAnimationQuality_;
     animationsEnabled_ = pendingAnimationsEnabled_;
+    entityVisuals_.Clear();
+    if (sheepModelBytes != nullptr && sheepModelSize > 0u) {
+        std::string modelError;
+        if (!entityVisuals_.LoadSheepModel(sheepModelBytes, sheepModelSize, modelError)) {
+            ENGINE_LOGW("MAES sheep model rejected; retaining legacy kind 0 renderer: %s",
+                        modelError.c_str());
+        } else {
+            ENGINE_LOGI("MAES sheep model loaded: %s", entityVisuals_.SheepDiagnostic().c_str());
+        }
+    } else {
+        ENGINE_LOGW("MAES sheep model asset missing; retaining legacy kind 0 renderer");
+    }
     player_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
     entities_.SetAnimationOptions(static_cast<std::uint8_t>(animationQuality_), animationsEnabled_);
     lookSensitivityX_ = pendingLookSensitivityX_;
@@ -569,7 +796,6 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     const auto* glRenderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
     const auto* glVendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
     const auto* glslVersion = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
-    GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
     ENGINE_LOGI("OpenGL version=%s GLSL=%s vendor=%s renderer=%s maxTexture=%d",
                 glVersion != nullptr ? glVersion : "unknown",
@@ -587,12 +813,74 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         }
         ENGINE_LOGE("World initialisation failed: %s; releasing partial GL and UI state",
                     lastInitError_.c_str());
+        ModContentRegistry::Instance().Clear();
         Shutdown();
         return false;
     };
 
     if (minefade_core_abi_version() != MINEFADE_CORE_ABI_VERSION) {
         return failInitialisation("La versión ABI del núcleo Rust no coincide con la esperada por el motor C++.");
+    }
+
+    // Load data definitions before world/save loading, so the stable namespaced
+    // block IDs are already registered when MFVOX data is decoded.
+    LoadEnabledMods();
+    std::vector<std::uint8_t> expandedModAtlas;
+    int expandedModAtlasWidth = atlasWidth;
+    int expandedModAtlasHeight = atlasHeight;
+    std::string modContentError;
+    if (!ModContentRegistry::Instance().Load(modsDirectory_, atlasPixels, atlasBytes,
+            atlasWidth, atlasHeight, expandedModAtlas,
+            expandedModAtlasWidth, expandedModAtlasHeight, modContentError)) {
+        return failInitialisation("No se pudieron cargar los recursos de mods: " + modContentError);
+    }
+    atlasPixels = expandedModAtlas.data();
+    atlasBytes = expandedModAtlas.size();
+    atlasWidth = expandedModAtlasWidth;
+    atlasHeight = expandedModAtlasHeight;
+
+    // Load every registered external model before spawning its entity kind.
+    for (const ModEntityDefinition& modEntity : ModContentRegistry::Instance().Entities()) {
+        if (modEntity.runtimeKind < 64 || modEntity.modelPath.empty()) continue;
+        const std::size_t separator = modEntity.id.find(':');
+        if (separator == std::string::npos) continue;
+        const std::filesystem::path packageRoot =
+            std::filesystem::path(modsDirectory_) / modEntity.id.substr(0u, separator);
+        std::error_code pathError;
+        const std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(packageRoot, pathError);
+        if (pathError) continue;
+        const std::filesystem::path modelFile =
+            std::filesystem::weakly_canonical(packageRoot / modEntity.modelPath, pathError);
+        if (pathError) continue;
+        const std::string rootPrefix = canonicalRoot.generic_string() + "/";
+        const std::string modelName = modelFile.generic_string();
+        if (modelName.rfind(rootPrefix, 0u) != 0u ||
+            !std::filesystem::is_regular_file(modelFile, pathError) || pathError) continue;
+        const std::uintmax_t modelBytes = std::filesystem::file_size(modelFile, pathError);
+        if (pathError || modelBytes == 0u || modelBytes > 8u * 1024u * 1024u) continue;
+        std::ifstream modelStream(modelFile, std::ios::binary);
+        if (!modelStream) continue;
+        const std::istreambuf_iterator<char> modelBegin(modelStream);
+        const std::istreambuf_iterator<char> modelEnd;
+        std::vector<std::uint8_t> modelData(modelBegin, modelEnd);
+        if (modelData.size() != modelBytes) continue;
+
+        EntityDefinition definition;
+        definition.identifier = modEntity.id;
+        definition.legacyKind = modEntity.runtimeKind;
+        definition.modelPath = modEntity.modelPath;
+        definition.texturePath = modEntity.texturePath;
+        definition.animationPath = modEntity.animationPath;
+        definition.controllerPath = modEntity.controllerPath;
+        definition.width = modEntity.width;
+        definition.height = modEntity.height;
+        definition.eyeHeight = modEntity.eyeHeight;
+        std::string modelError;
+        if (!entityVisuals_.LoadModEntityModel(modEntity.runtimeKind, definition,
+                modelData.data(), modelData.size(), modelError)) {
+            ENGINE_LOGW("Mod entity model %s was rejected: %s",
+                        modEntity.id.c_str(), modelError.c_str());
+        }
     }
 
     // Clear any stale driver error before attributing a failure to a startup stage.
@@ -607,11 +895,17 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     if (!UploadBlockAtlas(atlasPixels, atlasBytes, atlasWidth, atlasHeight)) {
         return failInitialisation("No se pudo cargar la textura atlas de bloques. Comprueba sus dimensiones, memoria gráfica y GL_MAX_TEXTURE_SIZE.");
     }
+    if (sheepTextureRgba != nullptr && sheepTextureBytes > 0u)
+        UploadSheepTexture(sheepTextureRgba, sheepTextureBytes);
     glGenVertexArrays(1, &entityVao_);
     glGenBuffers(1, &entityVbo_);
+    glGenVertexArrays(1, &maesEntityVao_);
+    glGenBuffers(1, &maesEntityVbo_);
     glGenVertexArrays(1, &itemVao_);
     glGenBuffers(1, &itemVbo_);
-    if (entityVao_ == 0 || entityVbo_ == 0 || itemVao_ == 0 || itemVbo_ == 0)
+    if (entityVao_ == 0 || entityVbo_ == 0 ||
+        maesEntityVao_ == 0 || maesEntityVbo_ == 0 ||
+        itemVao_ == 0 || itemVbo_ == 0)
         return failInitialisation("El controlador no pudo reservar los VAO/VBO de entidades u objetos. Posible falta de memoria gráfica.");
     if (const GLenum error = glGetError(); error != GL_NO_ERROR) {
         char code[24]{};
@@ -623,17 +917,36 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     starterChestContents_ = {{1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u}};
     bool loadedExistingWorld = false;
     if (multiplayerMode_) {
-        // All LAN peers start from the same deterministic seed. The host's block
-        // edits are then replicated as authoritative block-change events.
-        world_ = VoxelWorld(0x4D464445u);
-        world_.GenerateAround(8, 8, 1);
+        // The host opens the selected local save; joining peers generate the same
+        // deterministic terrain from the host's advertised seed and settings.
+        const bool hasWorldSavePath = storagePath_.size() >= 8u &&
+            storagePath_.compare(storagePath_.size() - 8u, 8u, ".mfworld") == 0;
+        if (multiplayerSlot_ == 0 && hasWorldSavePath) {
+            loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
+            if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);
+        }
+        if (!loadedExistingWorld) {
+            world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);
+        }
+        const bool isExistingHostWorld = loadedExistingWorld && multiplayerSlot_ == 0;
         const int spawnX = 8 + (multiplayerSlot_ % 4) * 2;
         const int spawnZ = 8 + ((multiplayerSlot_ / 4) % 4) * 2;
-        player_.position = {static_cast<float>(spawnX),
-                            static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f,
-                            static_cast<float>(spawnZ)};
+        if (!isExistingHostWorld) {
+            player_.position = {static_cast<float>(spawnX),
+                                static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f,
+                                static_cast<float>(spawnZ)};
+        }
+        // Loaded worlds may have their player thousands of blocks from origin.
+        // Generate the first resident ring around the actual saved position.
+        const int generationX = isExistingHostWorld
+            ? static_cast<int>(std::floor(player_.position.x)) : spawnX;
+        const int generationZ = isExistingHostWorld
+            ? static_cast<int>(std::floor(player_.position.z)) : spawnZ;
+        world_.GenerateAround(generationX, generationZ, 1);
+        world_.RequestGenerateAround(generationX, generationZ, renderDistanceChunks_);
     } else if (!storagePath_.empty()) {
         loadedExistingWorld = world_.Load(storagePath_, player_.position, inventory_.counts);
+        if (loadedExistingWorld) world_.SetGenerationOptions(flatWorld_, generateStructures_);
         if (!loadedExistingWorld) {
             // Preserve an unreadable existing save before making a fresh world.
             std::error_code backupError;
@@ -645,7 +958,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 if (!backupError) ENGINE_LOGE("Unreadable world preserved at %s", backupPath.c_str());
                 else ENGINE_LOGE("Could not preserve unreadable world: %s", backupError.message().c_str());
             }
-            world_ = VoxelWorld(requestedWorldSeed_);
+            world_ = VoxelWorld(requestedWorldSeed_, flatWorld_, generateStructures_);
             world_.GenerateAround(8, 8, 0);
             player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
         }
@@ -655,6 +968,78 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
         player_.position = {8.0f, static_cast<float>(world_.GetSurfaceHeight(8, 8)) + 1.05f, 8.0f};
     }
     if (loadedExistingWorld && !storagePath_.empty()) {
+        // Progression uses a sidecar to keep old MFVOX world formats byte-compatible.
+        std::ifstream progressionFile(storagePath_ + ".progression", std::ios::binary);
+        if (progressionFile) {
+            std::uint32_t magic = 0u, version = 0u, savedXp = 0u;
+            std::uint32_t mined = 0u, placed = 0u, collected = 0u, jumps = 0u;
+            std::uint32_t entered = 0u;
+            progressionFile.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            progressionFile.read(reinterpret_cast<char*>(&version), sizeof(version));
+            progressionFile.read(reinterpret_cast<char*>(&savedXp), sizeof(savedXp));
+            progressionFile.read(reinterpret_cast<char*>(&mined), sizeof(mined));
+            progressionFile.read(reinterpret_cast<char*>(&placed), sizeof(placed));
+            progressionFile.read(reinterpret_cast<char*>(&collected), sizeof(collected));
+            progressionFile.read(reinterpret_cast<char*>(&jumps), sizeof(jumps));
+            progressionFile.read(reinterpret_cast<char*>(&entered), sizeof(entered));
+            if (progressionFile && progressionFile.peek() == std::char_traits<char>::eof() &&
+                magic == 0x4D465052u && version == 1u && savedXp <= 100000000u &&
+                mined <= 10000000u && placed <= 10000000u && collected <= 10000000u &&
+                jumps <= 10000000u && entered <= 1u) {
+                progressionXp_ = savedXp;
+                progressionBlocksMined_ = mined;
+                progressionBlocksPlaced_ = placed;
+                progressionItemsCollected_ = collected;
+                progressionJumps_ = jumps;
+                progressionWorldEntered_ = entered != 0u;
+            } else {
+                ENGINE_LOGW("Ignored invalid progression sidecar; starting progression safely");
+            }
+        }
+        // Survival stats are stored in a validated sidecar so MFVOX001/002/003
+        // remain byte-for-byte compatible with existing worlds.
+        std::ifstream survivalFile(storagePath_ + ".survival", std::ios::binary);
+        if (survivalFile) {
+            std::uint32_t magic = 0u;
+            std::uint32_t version = 0u;
+            float savedHealth = 20.0f;
+            float savedHunger = 20.0f;
+            survivalFile.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            survivalFile.read(reinterpret_cast<char*>(&version), sizeof(version));
+            survivalFile.read(reinterpret_cast<char*>(&savedHealth), sizeof(savedHealth));
+            survivalFile.read(reinterpret_cast<char*>(&savedHunger), sizeof(savedHunger));
+            if (survivalFile && survivalFile.peek() == std::char_traits<char>::eof() &&
+                magic == 0x4D465356u && version == 1u &&
+                std::isfinite(savedHealth) && std::isfinite(savedHunger) &&
+                savedHealth >= 0.0f && savedHealth <= 20.0f &&
+                savedHunger >= 0.0f && savedHunger <= 20.0f) {
+                playerHealth_ = savedHealth;
+                playerHunger_ = savedHunger;
+            } else {
+                ENGINE_LOGW("Ignored invalid survival sidecar; retaining safe default health/hunger");
+            }
+        }
+        std::ifstream durabilityFile(storagePath_ + ".durability", std::ios::binary);
+        if (durabilityFile) {
+            std::uint32_t magic = 0u;
+            std::uint32_t version = 0u;
+            std::array<std::uint16_t, Inventory::kSlotCount> savedDurability{};
+            durabilityFile.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            durabilityFile.read(reinterpret_cast<char*>(&version), sizeof(version));
+            durabilityFile.read(reinterpret_cast<char*>(savedDurability.data()),
+                static_cast<std::streamsize>(sizeof(savedDurability)));
+            bool valid = durabilityFile && durabilityFile.peek() == std::char_traits<char>::eof() &&
+                magic == 0x4D464459u && version == 1u;
+            if (valid) {
+                for (std::size_t slot = 0; slot < savedDurability.size(); ++slot) {
+                    if (savedDurability[slot] > 2000u) { valid = false; break; }
+                    const std::uint16_t itemId = static_cast<std::uint16_t>(inventory_.counts[slot] / 1000u);
+                    if (itemId == 0u) savedDurability[slot] = 0u;
+                }
+            }
+            if (valid) inventory_.toolDurability = savedDurability;
+            else ENGINE_LOGW("Ignored invalid tool durability sidecar; legacy tools start at full durability");
+        }
         std::ifstream gearFile(storagePath_ + ".armor", std::ios::binary);
         if (gearFile) {
             std::array<std::uint16_t,4> savedGear{};
@@ -709,7 +1094,6 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     footstepElapsed_ = 0.0f;
     lastChunkX_ = static_cast<int>(std::floor(player_.position.x / 16.0f));
     lastChunkZ_ = static_cast<int>(std::floor(player_.position.z / 16.0f));
-    LoadEnabledMods();
     player_.SetSpeedMultiplier(modPlayerSpeed_);
     player_.SetJumpMultiplier(modPlayerJump_);
     player_.crouchSpeedMultiplier = modCrouchSpeed_;
@@ -727,7 +1111,16 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     for (int i = 0; i < modRabbitSpawns_; ++i) entities_.SpawnEntity(modSpawn, 6, world_);
     for (int i = 0; i < modZombieSpawns_; ++i) entities_.SpawnEntity(modSpawn, 4, world_);
     for (int i = 0; i < modSkeletonSpawns_; ++i) entities_.SpawnEntity(modSpawn, 5, world_);
-    RebuildWorldMesh();
+    for (const ModEntityDefinition& modEntity : ModContentRegistry::Instance().Entities()) {
+        if (!entityVisuals_.IsModEntityReady(modEntity.runtimeKind)) continue;
+        for (int count = 0; count < modEntity.spawnCount; ++count) {
+            if (!entities_.SpawnModEntity(modSpawn, modEntity.runtimeKind,
+                    modEntity.health, modEntity.damage, modEntity.hostile, world_)) break;
+        }
+    }
+    // Build the spawn chunk synchronously so the first world frame contains terrain.
+    world_.BuildMesh(meshBuildScratch_, static_cast<int>(std::floor(player_.position.x)),
+        static_cast<int>(std::floor(player_.position.z)), 0, nullptr, nullptr, 0u, false);
     UploadWorldMesh();
     UploadTransparentWorldMesh();
     RebuildEntityMesh();
@@ -766,8 +1159,12 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     lastStats_ = lastFrame_;
     ready_ = true;
     paused_ = false;
+    progressionWorldEntered_ = true;
     thirdPerson_ = false;
+    thirdPersonFront_ = false;
+    fallbackMovementButtons_.fill(false);
     ui_.SetPerspectiveEnabled(false);
+    ui_.SetMinimapShape(minimapShape_);
     ui_.SetChestButtonVisible(starterChestEnabled_ && !multiplayerMode_);
     RefreshInventoryUi();
     ENGINE_LOGI("World ready: %zu chunks, %d GPU vertices, seed=%u",
@@ -780,23 +1177,150 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     return true;
 }
 
-void Engine::Shutdown() {
-    if (ready_) SaveWorld();
+
+bool Engine::RestoreGlContext(float displayDensity, const std::uint8_t* atlasPixels,
+                              std::size_t atlasBytes, int atlasWidth, int atlasHeight,
+                              const std::uint8_t* sheepTextureRgba,
+                              std::size_t sheepTextureBytes) {
+    if (!ready_) {
+        lastInitError_ = "No hay una sesión de mundo activa que restaurar.";
+        return false;
+    }
+    if (atlasPixels == nullptr || atlasWidth <= 0 || atlasHeight <= 0) {
+        lastInitError_ = "No se pudo restaurar el atlas de bloques tras recrear OpenGL.";
+        return false;
+    }
+    const bool wasPaused = paused_;
+    if ((!multiplayerMode_ || multiplayerSlot_ == 0) && !storagePath_.empty())
+        SaveWorld();
+
+    // Drop only GPU objects. Keep world/chunks/player/inventory/entities in CPU memory.
+    ready_ = false;
     ui_.Shutdown();
     worldRenderer_.Shutdown();
+    firstPersonRenderer_.Shutdown();
     if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
     if (entityVao_ != 0) glDeleteVertexArrays(1, &entityVao_);
+    if (maesEntityVbo_ != 0) glDeleteBuffers(1, &maesEntityVbo_);
+    if (maesEntityVao_ != 0) glDeleteVertexArrays(1, &maesEntityVao_);
     if (itemVbo_ != 0) glDeleteBuffers(1, &itemVbo_);
     if (itemVao_ != 0) glDeleteVertexArrays(1, &itemVao_);
     if (worldProgram_ != 0) glDeleteProgram(worldProgram_);
     if (blockAtlasTexture_ != 0) glDeleteTextures(1, &blockAtlasTexture_);
+    if (sheepTexture_ != 0) glDeleteTextures(1, &sheepTexture_);
     entityVbo_ = entityVao_ = itemVbo_ = itemVao_ = 0;
-    worldProgram_ = blockAtlasTexture_ = 0;
+    maesEntityVao_ = maesEntityVbo_ = 0;
+    worldProgram_ = blockAtlasTexture_ = sheepTexture_ = 0;
+    entityVertexCount_ = maesEntityVertexCount_ = itemVertexCount_ = 0;
+    firstPersonItemId_ = 0xffffu;
+    worldChunkViews_.clear();
+    while (glGetError() != GL_NO_ERROR) { }
+
+    const auto fail = [this](const std::string& reason) {
+        lastInitError_ = reason;
+        ready_ = false;
+        ENGINE_LOGE("OpenGL context restoration failed: %s", reason.c_str());
+        return false;
+    };
+    if (!CreateWorldProgram()) {
+        std::string reason = "No se pudo recrear el shader del mundo.";
+        if (!gWorldShaderDiagnostic.empty()) reason += " " + gWorldShaderDiagnostic;
+        return fail(reason);
+    }
+    if (!UploadBlockAtlas(atlasPixels, atlasBytes, atlasWidth, atlasHeight))
+        return fail("No se pudo volver a subir el atlas de bloques a la GPU.");
+    if (sheepTextureRgba != nullptr && sheepTextureBytes > 0u)
+        UploadSheepTexture(sheepTextureRgba, sheepTextureBytes);
+
+    glGenVertexArrays(1, &entityVao_);
+    glGenBuffers(1, &entityVbo_);
+    glGenVertexArrays(1, &maesEntityVao_);
+    glGenBuffers(1, &maesEntityVbo_);
+    glGenVertexArrays(1, &itemVao_);
+    glGenBuffers(1, &itemVbo_);
+    if (entityVao_ == 0 || entityVbo_ == 0 || maesEntityVao_ == 0 ||
+        maesEntityVbo_ == 0 || itemVao_ == 0 || itemVbo_ == 0)
+        return fail("El controlador no pudo recrear los buffers de entidades y objetos.");
+    if (const GLenum error = glGetError(); error != GL_NO_ERROR) {
+        char code[24]{};
+        std::snprintf(code, sizeof(code), "0x%04X", static_cast<unsigned int>(error));
+        return fail(std::string("Error al recrear buffers OpenGL: ") + code);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glViewport(0, 0, std::max(width_, 1), std::max(height_, 1));
+
+    RebuildEntityMesh();
+    UploadEntityMesh();
+    UploadItemMesh();
+    UploadWorldMesh();
+
+    ui_.SetBlockAtlas(atlasPixels, atlasBytes, atlasWidth, atlasHeight);
+    ui_.SetStatusVisible(showHudStats_);
+    ui_.SetLeftHanded(leftHandedControls_);
+    ui_.SetControlMode(controlMode_);
+    if (!ui_.Initialise(width_, height_, displayDensity,
+            [this](const std::string& action) { HandleUiAction(action); })) {
+        ENGINE_LOGE("RmlUi restore failed; Android fallback controls remain available: %s",
+                    ui_.LastError().c_str());
+    }
+    ui_.Resize(width_, height_);
+    ui_.SetPerspectiveEnabled(thirdPerson_);
+    ui_.SetMinimapShape(minimapShape_);
+    ui_.SetCrouchEnabled(crouching_);
+    ui_.SetChestButtonVisible(starterChestEnabled_ && !multiplayerMode_);
+    ui_.SetPanelVisible("inventory-panel", inventoryVisible_);
+    ui_.SetPanelVisible("crafting-panel", craftingVisible_);
+    ui_.SetPanelVisible("pause-panel", pauseVisible_);
+    ui_.SetPanelVisible("starter-chest-panel", starterChestOpen_);
+    RefreshInventoryUi();
+    firstPersonRenderer_.Upload();
+
+    paused_ = wasPaused;
+    ready_ = true;
+    lastFrame_ = std::chrono::steady_clock::now();
+    lastStats_ = lastFrame_;
+    lastInitError_.clear();
+    ENGINE_LOGI("OpenGL ES context restored without reloading the active Minefade world");
+    return true;
+}
+
+void Engine::Shutdown(bool saveWorld) {
+    if (saveWorld && ready_) SaveWorld();
+    ui_.Shutdown();
+    worldRenderer_.Shutdown();
+    firstPersonRenderer_.Shutdown();
+    firstPersonItemId_ = 0xffffu;
+    firstPersonSwitchStarted_ = 0.0;
+    firstPersonActionStarted_ = 0.0;
+    firstPersonActionKind_ = 0;
+    if (entityVbo_ != 0) glDeleteBuffers(1, &entityVbo_);
+    if (entityVao_ != 0) glDeleteVertexArrays(1, &entityVao_);
+    if (maesEntityVbo_ != 0) glDeleteBuffers(1, &maesEntityVbo_);
+    if (maesEntityVao_ != 0) glDeleteVertexArrays(1, &maesEntityVao_);
+    if (itemVbo_ != 0) glDeleteBuffers(1, &itemVbo_);
+    if (itemVao_ != 0) glDeleteVertexArrays(1, &itemVao_);
+    if (worldProgram_ != 0) glDeleteProgram(worldProgram_);
+    if (blockAtlasTexture_ != 0) glDeleteTextures(1, &blockAtlasTexture_);
+    if (sheepTexture_ != 0) glDeleteTextures(1, &sheepTexture_);
+    entityVbo_ = entityVao_ = itemVbo_ = itemVao_ = 0;
+    maesEntityVao_ = maesEntityVbo_ = 0;
+    worldProgram_ = blockAtlasTexture_ = sheepTexture_ = 0;
     mvpLocation_ = lightLocation_ = daylightLocation_ = atlasLocation_ = useAtlasLocation_ = -1;
+    entityTextureLocation_ = useEntityTextureLocation_ = -1;
     timeLocation_ = qualityLocation_ = waterWavesLocation_ = -1;
     lavaAnimationsLocation_ = leafWindLocation_ = leafWindStrengthLocation_ = -1;
     cameraLocation_ = fogColorLocation_ = fogNearLocation_ = fogFarLocation_ = -1;
-    entityVertexCount_ = itemVertexCount_ = 0;
+    entityVertexCount_ = maesEntityVertexCount_ = itemVertexCount_ = 0;
     worldChunkViews_.clear();
     meshBuildScratch_.clear();
     ready_ = false;
@@ -804,29 +1328,53 @@ void Engine::Shutdown() {
 }
 
 void Engine::Resize(int width, int height) {
-    width_ = std::max(width, 1);
-    height_ = std::max(height, 1);
+    // Surface callbacks may briefly report zero while Android is recreating a
+    // window. Keep the last valid extent instead of forcing a 1x1 viewport.
+    if (width <= 0 || height <= 0) {
+        ENGINE_LOGW("Ignoring invalid EGL surface extent %dx%d; keeping %dx%d",
+                    width, height, width_, height_);
+        return;
+    }
+    width_ = width;
+    height_ = height;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width_, height_);
+    const GLenum framebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (framebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
+        ENGINE_LOGE("Window framebuffer incomplete after resize %dx%d: 0x%04X",
+                    width_, height_, static_cast<unsigned int>(framebufferStatus));
+    }
     ui_.Resize(width_, height_);
 }
 
 void Engine::RebuildWorldMesh() {
-    // Update only dirty cache entries. The normal play path deliberately skips
-    // flattening every cached chunk into one large CPU vertex vector.
+    // Update only dirty cache entries from immutable block snapshots. The normal
+    // play path deliberately skips flattening every cached chunk into one vector.
+    const auto buildStart = std::chrono::steady_clock::now();
     world_.BuildMesh(meshBuildScratch_, static_cast<int>(std::floor(player_.position.x)),
                      static_cast<int>(std::floor(player_.position.z)),
                      renderDistanceChunks_, nullptr, nullptr, 1u, false);
+    lastMeshBuildMs_ = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - buildStart).count();
 }
 
 void Engine::UploadWorldMesh() {
+    const auto uploadStart = std::chrono::steady_clock::now();
     const int centerX = static_cast<int>(std::floor(player_.position.x));
     const int centerZ = static_cast<int>(std::floor(player_.position.z));
     world_.GetChunkMeshViews(centerX, centerZ, renderDistanceChunks_, worldChunkViews_);
     const std::size_t uploadBudget = graphicsQuality_ <= 0 ? 1u
         : (graphicsQuality_ >= 2 ? 3u : 2u);
-    if (!worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(), uploadBudget)) {
+    const std::size_t byteBudget = graphicsQuality_ <= 0 ? 256u * 1024u
+        : (graphicsQuality_ >= 2 ? 2u * 1024u * 1024u : 768u * 1024u);
+    const double timeBudgetMs = graphicsQuality_ <= 0 ? 1.5
+        : (graphicsQuality_ >= 2 ? 4.0 : 2.5);
+    if (!worldRenderer_.Sync(worldChunkViews_, player_.CameraPosition(),
+                             uploadBudget, byteBudget, timeBudgetMs)) {
         ENGINE_LOGE("One or more chunk GPU buffers could not be synchronized; affected chunks will retry on the next upload pass");
     }
+    lastGpuUploadMs_ = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - uploadStart).count();
 }
 
 void Engine::UploadTransparentWorldMesh() {
@@ -835,6 +1383,7 @@ void Engine::UploadTransparentWorldMesh() {
 
 void Engine::RebuildEntityMesh() {
     entityMesh_.clear();
+    maesEntityMesh_.clear();
     itemMesh_.clear();
     const Vec3 eye=ViewPosition();
     const Vec3 target=ViewTarget();
@@ -842,60 +1391,27 @@ void Engine::RebuildEntityMesh() {
         static_cast<float>(width_)/static_cast<float>(height_),0.08f,120.0f);
     const Mat4 view=LookAt(eye,target,{0.0f,1.0f,0.0f});
     const CameraFrustum frustum=ExtractFrustum(Multiply(projection,view));
-    entities_.AppendMesh(entityMesh_,&frustum);
+    // MAES only replaces the sheep when its external model has passed every
+    // format, hierarchy, material and animation validation. All other entity
+    // kinds remain on the historical renderer until individually migrated.
+    entities_.AppendLegacyMesh(entityMesh_, &frustum,
+                               entityVisuals_.IsSheepReady() ? 0 : -1);
+    entityVisuals_.AppendMesh(entities_.Entities(), maesEntityMesh_, &frustum,
+                              sheepTexture_ != 0);
     if (thirdPerson_) {
+        firstPersonRenderer_.Clear();
+        firstPersonItemId_ = 0xffffu;
         player_.AppendMesh(entityMesh_);
     } else {
         const std::uint16_t selected = inventory_.SelectedItemId();
         const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(selected));
-        if (definition != nullptr && selected != static_cast<std::uint16_t>(BlockId::Air)) {
-            const Vec3 eye = player_.CameraPosition();
-            const Vec3 forward = player_.Forward();
-            const Vec3 right{-forward.z, 0.0f, forward.x};
-            const Vec3 held{
-                eye.x + forward.x * 0.66f + right.x * 0.30f,
-                eye.y + forward.y * 0.66f - 0.28f,
-                eye.z + forward.z * 0.66f + right.z * 0.30f
-            };
-            const float movementAmount = std::clamp(
-                std::abs(player_.movementX) + std::abs(player_.movementY), 0.0f, 1.0f);
-            const float handBob = std::sin(player_.animationTime * 1.6f) * 0.012f
-                + std::cos(player_.walkPhase * 2.0f) * 0.022f * movementAmount;
-            const float handYaw = player_.yaw + std::sin(player_.walkPhase) * 0.055f * movementAmount;
-
-            if (definition->shape != BlockShape::None) {
-                AppendAnimatedTexturedBlockCube(itemMesh_, static_cast<BlockId>(selected),
-                    held, {0.105f, 0.105f, 0.105f}, handYaw, handBob);
-            } else {
-                // The wooden progression tools are inventory items, not placeable cubes.
-                // Draw a simple voxel hand-held silhouette in the entity colour pass.
-                const std::array<float, 3> wood{0.48f, 0.29f, 0.13f};
-                const Vec3 grip{held.x, held.y + handBob, held.z};
-                AppendCube(entityMesh_, grip, {0.035f, 0.22f, 0.035f}, wood);
-                const std::string_view key(definition->key);
-                std::array<float,3> head{0.72f,0.52f,0.29f};
-                if (key.find("_stone_") != std::string_view::npos) head={0.55f,0.58f,0.62f};
-                else if (key.find("_copper_") != std::string_view::npos) head={0.72f,0.35f,0.20f};
-                else if (key.find("_iron_") != std::string_view::npos) head={0.78f,0.82f,0.86f};
-                else if (key.find("_gold_") != std::string_view::npos) head={0.95f,0.72f,0.18f};
-                else if (key.find("_diamond_") != std::string_view::npos) head={0.18f,0.78f,0.83f};
-                else if (key.find("_emerald_") != std::string_view::npos) head={0.12f,0.72f,0.34f};
-                if (key.find("_pickaxe") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x,grip.y+0.22f,grip.z},{0.19f,0.045f,0.045f},head);
-                } else if (key.find("_axe") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x-0.09f,grip.y+0.18f,grip.z},{0.09f,0.12f,0.07f},head);
-                } else if (key.find("_shovel") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x,grip.y+0.23f,grip.z},{0.075f,0.105f,0.055f},head);
-                } else if (key.find("_sword") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x,grip.y+0.28f,grip.z},{0.045f,0.17f,0.035f},head);
-                } else if (key.find("_hoe") != std::string_view::npos) {
-                    AppendCube(entityMesh_, {grip.x+0.07f,grip.y+0.21f,grip.z},{0.12f,0.04f,0.045f},head);
-                }
-            }
-            const std::array<float, 3> sleeve{0.28f, 0.43f, 0.38f};
-            AppendCube(entityMesh_, {held.x - right.x * 0.19f, held.y - 0.12f, held.z - right.z * 0.19f},
-                       {0.085f, 0.16f, 0.085f}, sleeve);
+        if (selected != firstPersonItemId_) {
+            firstPersonItemId_ = selected;
+            firstPersonSwitchStarted_ = ElapsedSeconds();
         }
+        // The viewmodel owns its own camera-space arm/item meshes. It never
+        // enters the entity/drop meshes, their frustum, or gameplay raycasts.
+        firstPersonRenderer_.Build(player_, selected, definition, leftHandedControls_);
     }
     // Remote players use the same articulated voxel model as the local avatar.
     for (std::size_t i = 0; i + 5u < remotePlayers_.size(); i += 6u) {
@@ -972,6 +1488,34 @@ void Engine::UploadEntityMesh() {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     entityVertexCount_ = static_cast<GLsizei>(entityMesh_.size());
+    UploadMaesEntityMesh();
+}
+
+void Engine::UploadMaesEntityMesh() {
+    if (maesEntityVao_ == 0 || maesEntityVbo_ == 0) return;
+    glBindVertexArray(maesEntityVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, maesEntityVbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(maesEntityMesh_.size() * sizeof(WorldVertex)),
+                 maesEntityMesh_.empty() ? nullptr : maesEntityMesh_.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, x)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, nx)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, r)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, u)));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex),
+                          reinterpret_cast<const void*>(offsetof(WorldVertex, atlasTile)));
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    maesEntityVertexCount_ = static_cast<GLsizei>(maesEntityMesh_.size());
 }
 
 double Engine::ElapsedSeconds() const {
@@ -981,10 +1525,11 @@ double Engine::ElapsedSeconds() const {
 Vec3 Engine::ViewPosition() const {
     if (!thirdPerson_) return player_.CameraPosition();
     const Vec3 flatForward{std::cos(player_.yaw), 0.0f, std::sin(player_.yaw)};
+    const float cameraSide = thirdPersonFront_ ? 1.0f : -1.0f;
     return {
-        player_.position.x - flatForward.x * 3.8f,
+        player_.position.x + flatForward.x * cameraSide * 3.8f,
         player_.position.y + 2.25f,
-        player_.position.z - flatForward.z * 3.8f
+        player_.position.z + flatForward.z * cameraSide * 3.8f
     };
 }
 
@@ -1015,11 +1560,105 @@ void Engine::Render() {
     const auto now = std::chrono::steady_clock::now();
     const float delta = std::chrono::duration<float>(now - lastFrame_).count();
     lastFrame_ = now;
+    frameTimeSamplesMs_[frameTimeSampleCursor_] = std::clamp(delta, 0.0f, 1.0f) * 1000.0f;
+    frameTimeSampleCursor_ = (frameTimeSampleCursor_ + 1u) % frameTimeSamplesMs_.size();
+    frameTimeSampleCount_ = std::min(frameTimeSampleCount_ + 1u, frameTimeSamplesMs_.size());
     if (!paused_) {
         const float safeDelta = std::clamp(delta, 0.0f, 0.05f);
         environment_.Update(safeDelta * modDaySpeed_);
+        const bool wasGrounded = player_.grounded;
+        const float incomingVerticalVelocity = player_.verticalVelocity;
         player_.Update(world_, safeDelta);
         autoJumpCooldown_ = std::max(0.0f, autoJumpCooldown_ - safeDelta);
+
+        if (gameMode_ != 1) {
+            const auto applyPlayerDamage = [this](float rawDamage, const char* source) {
+                if (rawDamage <= 0.0f || !std::isfinite(rawDamage) || playerHealth_ <= 0.0f) return;
+                std::size_t armorPieces = 0u;
+                unsigned int modArmorProtection = 0u;
+                for (const std::uint16_t item : inventory_.equippedArmor) {
+                    if (item == 0u) continue;
+                    ++armorPieces;
+                    const BlockDefinition* armor =
+                        GetBlockDefinition(static_cast<BlockId>(item));
+                    if (armor != nullptr) modArmorProtection += armor->armorProtection;
+                }
+                const float armorFactor = modArmorProtection > 0u
+                    ? std::max(0.25f, 1.0f -
+                        static_cast<float>(std::min(modArmorProtection, 20u)) / 25.0f)
+                    : std::max(0.55f, 1.0f - 0.08f * static_cast<float>(armorPieces));
+                playerHealth_ = std::clamp(playerHealth_ - rawDamage * armorFactor, 0.0f, 20.0f);
+                ui_.SetChatMessage(std::string(source) + " · Vida " +
+                    std::to_string(static_cast<int>(std::ceil(playerHealth_))) + "/20");
+                if (playerHealth_ <= 0.0f && !dead_) {
+                    // Freeze the simulation and require an explicit respawn action.
+                    // The previous implementation teleported immediately, so the
+                    // player never saw a death state or had a chance to choose.
+                    dead_ = true;
+                    paused_ = true;
+                    player_.SetMovement(0.0f, 0.0f);
+                    touches_.clear();
+                    miningPointerId_ = -1;
+                    miningElapsed_ = 0.0f;
+                    miningRequired_ = 0.0f;
+                    SetTargetBlock({}, 0.0f);
+                    ui_.SetPanelVisible("death-panel", true);
+                }
+            };
+
+            // A fall only causes damage when the movement solver reports a new landing.
+            if (!wasGrounded && player_.grounded && incomingVerticalVelocity < -10.0f) {
+                const float fallDamage = std::ceil((-incomingVerticalVelocity - 10.0f) * 0.45f);
+                applyPlayerDamage(fallDamage, "Daño por caída");
+            }
+
+            if (difficulty_ != 0) {
+                const bool moving = std::abs(player_.movementX) + std::abs(player_.movementY) > 0.12f;
+                hungerExhaustion_ += safeDelta * (moving ? 0.020f : 0.0012f);
+                while (hungerExhaustion_ >= 1.0f && playerHunger_ > 0.0f) {
+                    hungerExhaustion_ -= 1.0f;
+                    playerHunger_ = std::max(0.0f, playerHunger_ - 1.0f);
+                }
+            }
+
+            if (playerHunger_ >= 18.0f && playerHealth_ < 20.0f) {
+                regenerationTimer_ += safeDelta;
+                if (regenerationTimer_ >= 4.0f) {
+                    regenerationTimer_ = std::fmod(regenerationTimer_, 4.0f);
+                    playerHealth_ = std::min(20.0f, playerHealth_ + 1.0f);
+                    playerHunger_ = std::max(0.0f, playerHunger_ - 1.0f);
+                }
+            } else {
+                regenerationTimer_ = 0.0f;
+            }
+
+            if (difficulty_ != 0 && playerHunger_ <= 0.0f) {
+                starvationTimer_ += safeDelta;
+                if (starvationTimer_ >= 8.0f) {
+                    starvationTimer_ = std::fmod(starvationTimer_, 8.0f);
+                    applyPlayerDamage(1.0f, "Hambre extrema");
+                }
+            } else {
+                starvationTimer_ = 0.0f;
+            }
+
+            hostileDamageCooldown_ = std::max(0.0f, hostileDamageCooldown_ - safeDelta);
+            if (difficulty_ != 0 && hostileDamageCooldown_ <= 0.0f) {
+                const bool hostileNearby = std::any_of(entities_.Entities().begin(),
+                    entities_.Entities().end(), [this](const Entity& entity) {
+                        if (!entity.hostile) return false;
+                        const float dx = entity.position.x - player_.position.x;
+                        const float dy = entity.position.y - player_.position.y;
+                        const float dz = entity.position.z - player_.position.z;
+                        return dx * dx + dy * dy + dz * dz < 1.65f;
+                    });
+                if (hostileNearby) {
+                    const float hostileDamage = difficulty_ == 1 ? 1.0f : (difficulty_ == 3 ? 3.0f : 2.0f);
+                    applyPlayerDamage(hostileDamage, "Ataque enemigo");
+                    hostileDamageCooldown_ = 1.25f;
+                }
+            }
+        }
         if (autoJump_ && autoJumpCooldown_ <= 0.0f && player_.grounded &&
             player_.movementY > 0.28f) {
             // Bedrock-style auto-jump: jump only when forward movement meets a
@@ -1040,10 +1679,41 @@ void Engine::Render() {
                                         !world_.IsSolid(obstacleX, feetY + 2, obstacleZ);
                 if (obstacle && clearAbove) {
                     player_.Jump();
+                    if (progressionJumps_ < 10000000u) ++progressionJumps_;
                     autoJumpCooldown_ = 0.42f;
                     soundEvents_.fetch_or(16u, std::memory_order_release);
                 }
             }
+        }
+        // Survival worlds spawn a limited number of hostiles after dusk.
+        // Spawn anchors are placed away from the player so enemies approach
+        // through their normal pursuit steering instead of appearing at contact range.
+        if (gameMode_ != 1 && difficulty_ != 0 && environment_.Daylight() < 0.22f) {
+            hostileSpawnTimer_ += safeDelta;
+            const float hostileSpawnInterval = difficulty_ == 1 ? 78.0f : (difficulty_ == 3 ? 30.0f : 48.0f);
+            if (hostileSpawnTimer_ >= hostileSpawnInterval) {
+                const auto& currentEntities = entities_.Entities();
+                const std::size_t hostileCount = static_cast<std::size_t>(std::count_if(
+                    currentEntities.begin(), currentEntities.end(), [](const Entity& entity) {
+                        return entity.hostile;
+                    }));
+                const std::size_t hostileLimit = difficulty_ == 1 ? 2u : (difficulty_ == 3 ? 6u : 4u);
+                if (hostileCount < hostileLimit && currentEntities.size() < 128u) {
+                    const float angle = static_cast<float>(hostileSpawnSequence_++) * 2.39996323f;
+                    const Vec3 anchor{
+                        player_.position.x + std::cos(angle) * 12.0f,
+                        player_.position.y,
+                        player_.position.z + std::sin(angle) * 12.0f
+                    };
+                    const int kind = (hostileSpawnSequence_ % 3u == 0u) ? 5 : 4;
+                    if (entities_.SpawnEntity(anchor, kind, world_)) {
+                        ENGINE_LOGI("Night hostile spawned: kind=%d count=%zu", kind, hostileCount + 1u);
+                    }
+                }
+                hostileSpawnTimer_ = 0.0f;
+            }
+        } else {
+            hostileSpawnTimer_ = 0.0f;
         }
         entities_.Update(world_, player_, safeDelta);
         minimapAccumulator_ += safeDelta;
@@ -1093,6 +1763,9 @@ void Engine::Render() {
         const std::size_t pickedCount =
             droppedItems_.Update(world_, player_, inventory_, safeDelta, &pickedItemId);
         if (pickedCount > 0u) {
+            progressionItemsCollected_ = std::min(10000000u,
+                progressionItemsCollected_ + static_cast<std::uint32_t>(std::min<std::size_t>(pickedCount, 10000000u)));
+            if (gameMode_ != 1) AddProgressionXp(static_cast<std::uint32_t>(std::min<std::size_t>(pickedCount, 2500000u) * 2u));
             RefreshInventoryUi();
             const BlockDefinition* pickedDefinition =
                 GetBlockDefinition(static_cast<BlockId>(pickedItemId));
@@ -1108,7 +1781,10 @@ void Engine::Render() {
         }
 
         UpdateMining(safeDelta);
+        const auto generationStart = std::chrono::steady_clock::now();
         const bool generatedChunkReady = world_.PumpChunkGeneration();
+        lastChunkGenerationPumpMs_ = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - generationStart).count();
         if (generatedChunkReady) {
             // Start meshing as soon as a generated chunk becomes available, but
             // never rebuild every dirty chunk in one render frame.
@@ -1156,7 +1832,10 @@ void Engine::Render() {
             chunkMeshAccumulator_ = 0.0f;
         }
     }
-    // OpenGL ES state is global. Restore full-surface state before clearing.
+    // Always draw into the Android window framebuffer, never into an FBO that
+    // may have been left bound by another UI or native rendering path.
+    // OpenGL ES state is global. Restore the complete surface before clearing.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width_, height_);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -1169,7 +1848,19 @@ void Engine::Render() {
     glClearColor(sky[0], sky[1], sky[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if (worldProgram_ != 0 && worldRenderer_.OpaqueVertexCount() > 0) {
+    if (selectedItemToastUntil_ > 0.0 && ElapsedSeconds() >= selectedItemToastUntil_) {
+        ui_.SetSelectedItem({});
+        selectedItemToastUntil_ = 0.0;
+    }
+    // CPU geometry is cached; GPU creation/publication remains on the GLSurfaceView
+    // thread where the current EGL context is guaranteed to exist.
+    firstPersonRenderer_.Upload();
+    const bool hasFirstPerson = !thirdPerson_ && firstPersonRenderer_.HasContent();
+    const bool hasAnyWorldPass = worldRenderer_.OpaqueVertexCount() > 0 ||
+        worldRenderer_.TransparentVertexCount() > 0 ||
+        entityVertexCount_ > 0 || maesEntityVertexCount_ > 0 ||
+        itemVertexCount_ > 0 || hasFirstPerson;
+    if (worldProgram_ != 0 && hasAnyWorldPass) {
         const Vec3 eye = ViewPosition();
         const Vec3 target = ViewTarget();
         const Mat4 projection = Perspective(fieldOfView_ * (kPi / 180.0f),
@@ -1203,13 +1894,28 @@ void Engine::Render() {
         glBindTexture(GL_TEXTURE_2D, blockAtlasTexture_);
         // Uploads are incremental per-chunk; frustum culling and transparent
         // ordering live in the dedicated terrain renderer component.
-        worldRenderer_.DrawOpaque(frustum);
+        if (worldRenderer_.OpaqueVertexCount() > 0)
+            worldRenderer_.DrawOpaque(frustum);
 
         if (entityVertexCount_ > 0) {
             glUniform1i(useAtlasLocation_, 0);
+            glUniform1i(useEntityTextureLocation_, 0);
             glBindVertexArray(entityVao_);
             glDrawArrays(GL_TRIANGLES, 0, entityVertexCount_);
             glBindVertexArray(0);
+        }
+        if (maesEntityVertexCount_ > 0) {
+            glUniform1i(useAtlasLocation_, 0);
+            glUniform1i(useEntityTextureLocation_, sheepTexture_ != 0 ? 1 : 0);
+            if (sheepTexture_ != 0) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, sheepTexture_);
+            }
+            glBindVertexArray(maesEntityVao_);
+            glDrawArrays(GL_TRIANGLES, 0, maesEntityVertexCount_);
+            glBindVertexArray(0);
+            glUniform1i(useEntityTextureLocation_, 0);
+            glActiveTexture(GL_TEXTURE0);
         }
         if(itemVertexCount_>0) {
             glUniform1i(useAtlasLocation_,1);
@@ -1229,11 +1935,79 @@ void Engine::Render() {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glDepthMask(GL_FALSE);
             glDisable(GL_CULL_FACE);
-            worldRenderer_.DrawTransparent(frustum, eye);
+            worldRenderer_.DrawTransparent(frustum, eye, worldChunkViews_);
             glEnable(GL_CULL_FACE);
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
         }
+
+        // First-person arm and held item are drawn after world transparencies
+        // with a camera-space projection. Their depth still participates in
+        // nearby-wall occlusion; no depth clear or world-state mutation occurs.
+        if (hasFirstPerson) {
+            const float movementAmount = std::clamp(
+                std::abs(player_.movementX) + std::abs(player_.movementY), 0.0f, 1.0f);
+            const float walkBob = std::sin(player_.walkPhase * 2.0f) * 0.014f * movementAmount;
+            const float idleBob = std::sin(player_.animationTime * 1.4f) * 0.003f;
+            const float switchElapsed = static_cast<float>(
+                std::max(0.0, ElapsedSeconds() - firstPersonSwitchStarted_));
+            const float switchProgress = std::clamp(switchElapsed / 0.22f, 0.0f, 1.0f);
+            const float switchDip = (1.0f - switchProgress) *
+                std::sin((1.0f - switchProgress) * (kPi * 0.5f)) * 0.15f;
+            float actionAngle = 0.0f;
+            float actionLift = 0.0f;
+            if (firstPersonActionKind_ != 0) {
+                const float actionElapsed = static_cast<float>(
+                    std::max(0.0, ElapsedSeconds() - firstPersonActionStarted_));
+                if (actionElapsed < 0.24f) {
+                    const float phase = std::clamp(actionElapsed / 0.24f, 0.0f, 1.0f);
+                    const float envelope = std::sin(phase * kPi);
+                    if (firstPersonActionKind_ == 1) actionAngle = -0.48f * envelope;
+                    else if (firstPersonActionKind_ == 2) actionAngle = 0.34f * envelope;
+                    else if (firstPersonActionKind_ == 3) {
+                        actionAngle = -0.16f * envelope;
+                        actionLift = 0.07f * envelope;
+                    }
+                } else {
+                    firstPersonActionKind_ = 0;
+                }
+            }
+            Mat4 viewModel{};
+            viewModel.v[0] = 1.0f;
+            viewModel.v[5] = std::cos(actionAngle);
+            viewModel.v[6] = std::sin(actionAngle);
+            viewModel.v[9] = -std::sin(actionAngle);
+            viewModel.v[10] = std::cos(actionAngle);
+            viewModel.v[15] = 1.0f;
+            viewModel.v[12] = std::sin(player_.walkPhase) * 0.008f * movementAmount;
+            viewModel.v[13] = walkBob + idleBob - switchDip + actionLift;
+            const Mat4 viewModelProjection = Multiply(projection, viewModel);
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_CULL_FACE);
+            glDisable(GL_BLEND);
+            glDepthMask(GL_TRUE);
+            glUseProgram(worldProgram_);
+            glUniformMatrix4fv(mvpLocation_, 1, GL_FALSE, viewModelProjection.v.data());
+            glUniform3f(cameraLocation_, 0.0f, 0.0f, 0.0f);
+            glUniform1f(fogNearLocation_, 100.0f);
+            glUniform1f(fogFarLocation_, 120.0f);
+            glUniform1f(daylightLocation_, std::max(0.55f, environment_.Daylight()));
+            glUniform1i(useEntityTextureLocation_, 0);
+            glUniform1i(useAtlasLocation_, 1);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, blockAtlasTexture_);
+            firstPersonRenderer_.DrawHeldAtlas();
+            glUniform1i(useAtlasLocation_, 0);
+            firstPersonRenderer_.DrawHeldColor();
+            firstPersonRenderer_.DrawArm();
+            glUniform1i(useAtlasLocation_, 1);
+            glUniform3f(cameraLocation_, eye.x, eye.y, eye.z);
+            glUniform1f(fogNearLocation_, fogStart);
+            glUniform1f(fogFarLocation_, fogEnd);
+        }
+        glDepthMask(GL_TRUE);
+        glEnable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
         glUseProgram(0);
     }
 
@@ -1242,13 +2016,56 @@ void Engine::Render() {
         fps_ = static_cast<float>(framesSinceStats_);
         framesSinceStats_ = 0;
         lastStats_ = now;
-        char status[128]{};
-        std::snprintf(status, sizeof(status),
-                      "FPS %.0f · C %zu +%zu · GPU %zu +%zu · Día %.0f%%",
-                      fps_, world_.ChunkCount(), world_.PendingChunkCount(),
-                      worldRenderer_.ResidentChunkCount(), worldRenderer_.PendingUploadCount(),
-                      environment_.Daylight() * 100.0f);
+        std::array<float, 120> sortedFrameTimes = frameTimeSamplesMs_;
+        std::sort(sortedFrameTimes.begin(),
+                  sortedFrameTimes.begin() + static_cast<std::ptrdiff_t>(frameTimeSampleCount_));
+        const auto percentile = [&](double fraction) {
+            if (frameTimeSampleCount_ == 0u) return 0.0f;
+            const double rank = std::ceil(fraction * static_cast<double>(frameTimeSampleCount_));
+            const std::size_t index = std::min(frameTimeSampleCount_ - 1u,
+                static_cast<std::size_t>(std::max(1.0, rank) - 1.0));
+            return sortedFrameTimes[index];
+        };
+        const float frameP50 = percentile(0.50);
+        const float frameP95 = percentile(0.95);
+        const float frameP99 = percentile(0.99);
+        std::uint32_t level = 1u, spent = 0u, needed = 100u;
+        while (level < 10000u && progressionXp_ >= spent + needed) {
+            spent += needed;
+            ++level;
+            needed = 100u + (level - 1u) * 50u;
+        }
+        const std::uint32_t intoLevel = progressionXp_ - spent;
+        const int armorPieces = static_cast<int>(std::count_if(
+            inventory_.equippedArmor.begin(), inventory_.equippedArmor.end(),
+            [](std::uint16_t item) { return item != 0u; }));
+        char status[220]{};
+        if (gameMode_ == 1) {
+            std::snprintf(status, sizeof(status),
+                          "Creativo · FPS %.0f · F %.1f/%.1fms · C %zu · GPU %.1fMiB",
+                          fps_, frameP50, frameP95, world_.ChunkCount(),
+                          static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0));
+        } else {
+            std::snprintf(status, sizeof(status),
+                          "VIDA %.0f/20 · COMIDA %.0f/20 · NV %u · XP %u/%u · FPS %.0f",
+                          std::ceil(playerHealth_), std::floor(playerHunger_), level, intoLevel, needed, fps_);
+        }
         ui_.SetStatus(status);
+        ui_.SetVitals(playerHealth_, playerHunger_, armorPieces, level,
+                      static_cast<float>(intoLevel) / static_cast<float>(std::max(needed, 1u)));
+
+        if (lastPerfLog_.time_since_epoch().count() == 0 ||
+            now - lastPerfLog_ >= std::chrono::seconds(5)) {
+            ENGINE_LOGI("perf frame_ms p50=%.2f p95=%.2f p99=%.2f generation_pump_ms=%.2f mesh_ms=%.2f upload_ms=%.2f chunks=%zu pending_generation=%zu cpu_blocks_MiB=%.2f cpu_mesh_MiB=%.2f gpu_MiB=%.2f uploads=%zu upload_bytes=%zu pending_uploads=%zu pending_bytes=%zu",
+                frameP50, frameP95, frameP99, lastChunkGenerationPumpMs_, lastMeshBuildMs_,
+                lastGpuUploadMs_, world_.ChunkCount(), world_.PendingChunkCount(),
+                static_cast<double>(world_.ChunkStorageBytes()) / (1024.0 * 1024.0),
+                static_cast<double>(world_.MeshCacheMemoryBytes()) / (1024.0 * 1024.0),
+                static_cast<double>(worldRenderer_.ResidentGpuBytes()) / (1024.0 * 1024.0),
+                worldRenderer_.LastUploadCount(), worldRenderer_.LastUploadBytes(),
+                worldRenderer_.PendingUploadCount(), worldRenderer_.PendingUploadBytes());
+            lastPerfLog_ = now;
+        }
     }
 
     ui_.UpdateAndRender();
@@ -1258,28 +2075,99 @@ void Engine::Render() {
     glDisable(GL_SCISSOR_TEST);
 }
 
+void Engine::UpdateTouchMovement() {
+    float moveX = (fallbackMovementButtons_[3] ? 1.0f : 0.0f) -
+                  (fallbackMovementButtons_[2] ? 1.0f : 0.0f);
+    float moveY = (fallbackMovementButtons_[0] ? 1.0f : 0.0f) -
+                  (fallbackMovementButtons_[1] ? 1.0f : 0.0f);
+    for (const auto& entry : touches_) {
+        const TouchState& touch = entry.second;
+        if (!touch.movementPad) continue;
+        moveX += touch.movementX;
+        moveY += touch.movementY;
+    }
+    const float magnitude = std::sqrt(moveX * moveX + moveY * moveY);
+    if (magnitude > 1.0f) {
+        moveX /= magnitude;
+        moveY /= magnitude;
+    }
+    player_.SetMovement(std::clamp(moveX, -1.0f, 1.0f),
+                        std::clamp(moveY, -1.0f, 1.0f));
+}
+
 void Engine::Touch(int action, int pointerId, float x, float y) {
     constexpr int kDown = 0;
     constexpr int kUp = 1;
     constexpr int kMove = 2;
     constexpr int kCancel = 3;
-    const bool uiUnhandled = ui_.Touch(action, x, y);
 
+    // While dead, only the death-screen controls may receive touch input.
+    if (dead_) {
+        ui_.Touch(action, pointerId, x, y);
+        return;
+    }
+
+    if (action == kDown) {
+        if (ui_.CrouchButtonAt(x, y)) {
+            // The centre crouch button has its own pointer route. It must still
+            // respond while another finger owns the camera or a movement key.
+            HandleUiAction("crouch");
+            TouchState state;
+            state.startX = state.lastX = x;
+            state.startY = state.lastY = y;
+            state.startedAt = ElapsedSeconds();
+            state.uiHandled = true;
+            touches_[pointerId] = state;
+            return;
+        }
+        float moveX = 0.0f;
+        float moveY = 0.0f;
+        if (ui_.MovementVectorAt(x, y, moveX, moveY)) {
+            TouchState state;
+            state.startX = state.lastX = x;
+            state.startY = state.lastY = y;
+            state.startedAt = ElapsedSeconds();
+            state.movementPad = true;
+            state.movementX = moveX;
+            state.movementY = moveY;
+            state.moved = true;
+            touches_[pointerId] = state;
+            UpdateTouchMovement();
+            return;
+        }
+    }
+
+    auto found = touches_.find(pointerId);
+    if (action != kDown && found == touches_.end()) return;
+    if (action != kDown && found != touches_.end() && found->second.movementPad) {
+        if (action == kMove) {
+            float moveX = 0.0f;
+            float moveY = 0.0f;
+            const bool inside = ui_.MovementVectorAt(x, y, moveX, moveY);
+            found->second.movementX = inside ? moveX : 0.0f;
+            found->second.movementY = inside ? moveY : 0.0f;
+            found->second.lastX = x;
+            found->second.lastY = y;
+            UpdateTouchMovement();
+        } else if (action == kUp || action == kCancel) {
+            touches_.erase(found);
+            UpdateTouchMovement();
+        }
+        return;
+    }
+
+    const bool uiUnhandled = ui_.Touch(action, pointerId, x, y);
     if (action == kDown) {
         TouchState state;
         state.startX = state.lastX = x;
         state.startY = state.lastY = y;
         state.startedAt = ElapsedSeconds();
         state.uiHandled = !uiUnhandled;
-        state.joystick = uiUnhandled && ui_.IsInMovementPad(x, y);
-        state.mining = uiUnhandled && !state.joystick && gameMode_ != 2;
+        state.mining = uiUnhandled && gameMode_ != 2;
         touches_[pointerId] = state;
-        if (state.joystick) player_.SetMovement(0.0f, 0.0f);
         return;
     }
 
-    auto found = touches_.find(pointerId);
-    if (found == touches_.end()) return;
     TouchState& state = found->second;
     if (state.uiHandled) {
         if (action == kUp || action == kCancel) touches_.erase(found);
@@ -1287,60 +2175,42 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
     }
 
     if (action == kMove) {
-        if (state.joystick) {
-            const float dx = (x - state.startX) / 48.0f;
-            const float dy = (state.startY - y) / 48.0f;
-            const float magnitude = std::sqrt(dx * dx + dy * dy);
+        const float deltaX = x - state.lastX;
+        const float deltaY = y - state.lastY;
+        if (std::abs(x - state.startX) + std::abs(y - state.startY) > 7.0f) {
             state.moved = true;
-            if (magnitude <= joystickDeadzone_) {
-                player_.SetMovement(0.0f, 0.0f);
-            } else if (controlMode_ == 1) {
-                // D-pad mode quantises movement to four directions (including clean diagonals).
-                const float nx = dx / std::max(magnitude, 0.0001f);
-                const float ny = dy / std::max(magnitude, 0.0001f);
-                float moveX = std::abs(nx) > 0.34f ? (nx > 0.0f ? 1.0f : -1.0f) : 0.0f;
-                float moveY = std::abs(ny) > 0.34f ? (ny > 0.0f ? 1.0f : -1.0f) : 0.0f;
-                if (std::abs(nx) > std::abs(ny) * 1.65f) moveY = 0.0f;
-                else if (std::abs(ny) > std::abs(nx) * 1.65f) moveX = 0.0f;
-                player_.SetMovement(moveX, moveY);
-            } else {
-                // Analogue joystick: ease the usable range beyond the dead zone to [0, 1].
-                const float intensity = std::clamp(
-                    (magnitude - joystickDeadzone_) / (1.0f - joystickDeadzone_), 0.0f, 1.0f);
-                const float factor = intensity / std::max(magnitude, 0.0001f);
-                player_.SetMovement(dx * factor, dy * factor);
-            }
-        } else {
-            const float deltaX = x - state.lastX;
-            const float deltaY = y - state.lastY;
-            if (std::abs(x - state.startX) + std::abs(y - state.startY) > 7.0f) {
-                state.moved = true;
-                state.mining = false;
-            }
-            if (state.moved) {
-                const float verticalDirection = invertLookY_ ? -1.0f : 1.0f;
-                player_.Rotate(deltaX * lookSensitivityX_,
-                               deltaY * lookSensitivityY_ * verticalDirection);
-            }
+            state.mining = false;
+        }
+        if (state.moved && uiUnhandled) {
+            const float verticalDirection = invertLookY_ ? -1.0f : 1.0f;
+            player_.Rotate(deltaX * lookSensitivityX_,
+                           deltaY * lookSensitivityY_ * verticalDirection);
         }
         state.lastX = x;
         state.lastY = y;
     } else if (action == kUp || action == kCancel) {
-        if (state.joystick) {
-            player_.SetMovement(0.0f, 0.0f);
-        } else if (action == kUp && !state.moved &&
-                   ElapsedSeconds() - state.startedAt < 0.22) {
-            // A brief tap is reserved for placing the selected block. Mining requires
-            // a stationary hold; moving the finger turns the gesture into camera look.
+        if (action == kUp && !state.moved &&
+            ElapsedSeconds() - state.startedAt < 0.22) {
             const std::uint16_t selected = inventory_.SelectedItemId();
+            Vec3 placementTarget{};
             Vec3 placed{};
-            if (gameMode_ != 2 && selected > 0 && world_.PlaceRay(ViewPosition(), ViewDirection(), 6.0f,
-                                                static_cast<BlockId>(selected), &placed)) {
+            const bool hasPlacementTarget = gameMode_ != 2 && selected > 0 &&
+                world_.GetPlacementTargetBlock(ViewPosition(), ViewDirection(), 6.0f, &placementTarget);
+            if (hasPlacementTarget && !protection_.CanBuild(playerIdentity_,
+                    static_cast<int>(placementTarget.x), static_cast<int>(placementTarget.z))) {
+                ui_.SetChatMessage("Zona protegida. El dueño debe autorizarte para construir aquí.");
+            } else if (hasPlacementTarget &&
+                world_.PlaceRay(ViewPosition(), ViewDirection(), 6.0f,
+                                static_cast<BlockId>(selected), &placed)) {
                 pendingBlockEdits_.insert(pendingBlockEdits_.end(), {
-                    static_cast<int>(placed.x), static_cast<int>(placed.y), static_cast<int>(placed.z),
-                    static_cast<int>(selected)
+                    static_cast<int>(placed.x), static_cast<int>(placed.y),
+                    static_cast<int>(placed.z), static_cast<int>(selected)
                 });
+                firstPersonActionStarted_ = ElapsedSeconds();
+                firstPersonActionKind_ = 2; // PLACE: only after a successful world edit.
                 if (gameMode_ != 1) inventory_.ConsumeSelected();
+                if (progressionBlocksPlaced_ < 10000000u) ++progressionBlocksPlaced_;
+                if (gameMode_ != 1) AddProgressionXp(1u);
                 RefreshInventoryUi();
                 soundEvents_.fetch_or(2u, std::memory_order_release);
                 if (HasBlockFlag(static_cast<BlockId>(selected), BlockFluid))
@@ -1366,21 +2236,56 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
             miningElapsed_ = 0.0f;
             miningRequired_ = 0.0f;
         }
-        ui_.SetTargetBlock({}, 0.0f);
+        SetTargetBlock({}, 0.0f);
         touches_.erase(found);
     }
 }
 
+void Engine::CyclePerspective() {
+    if (!thirdPerson_) {
+        thirdPerson_ = true;
+        thirdPersonFront_ = false;
+    } else if (!thirdPersonFront_) {
+        thirdPersonFront_ = true;
+    } else {
+        thirdPerson_ = false;
+        thirdPersonFront_ = false;
+    }
+    ui_.SetPerspectiveEnabled(thirdPerson_);
+    RebuildEntityMesh();
+    UploadEntityMesh();
+}
+
 void Engine::HandleUiAction(const std::string& action) {
     soundEvents_.fetch_or(4u, std::memory_order_release);
-    if (action == "perspective") {
-        thirdPerson_ = !thirdPerson_;
-        ui_.SetPerspectiveEnabled(thirdPerson_);
-        RebuildEntityMesh();
-        UploadEntityMesh();
+    if (action == "respawn") {
+        if (!dead_) return;
+        if (!player_.ResolveSafeSpawn(world_)) {
+            const int spawnX = 8;
+            const int spawnZ = 8;
+            player_.position = {8.0f,
+                static_cast<float>(world_.GetSurfaceHeight(spawnX, spawnZ)) + 1.05f, 8.0f};
+        }
+        playerHealth_ = 20.0f;
+        playerHunger_ = std::max(playerHunger_, 8.0f);
+        hungerExhaustion_ = 0.0f;
+        starvationTimer_ = 0.0f;
+        regenerationTimer_ = 0.0f;
+        hostileDamageCooldown_ = 1.0f;
+        dead_ = false;
+        ui_.SetPanelVisible("death-panel", false);
+        paused_ = pauseVisible_ || inventoryVisible_ || craftingVisible_;
+        ui_.SetChatMessage("Has reaparecido. Conservas tu inventario.");
+        SaveWorld();
+    } else if (action == "chat") {
+        chatRequested_.store(true, std::memory_order_release);
+    } else if (action == "perspective") {
+        CyclePerspective();
     } else if (action == "inventory") {
         inventoryVisible_ = !inventoryVisible_;
         if (inventoryVisible_) RefreshInventoryUi();
+        craftingVisible_ = false;
+        ui_.SetPanelVisible("crafting-panel", false);
         ui_.SetPanelVisible("inventory-panel", inventoryVisible_);
         if (inventoryVisible_) {
             ui_.SetPanelVisible("pause-panel", false);
@@ -1392,10 +2297,13 @@ void Engine::HandleUiAction(const std::string& action) {
         }
     } else if (action == "inventory-close") {
         inventoryVisible_ = false;
+        craftingVisible_ = false;
         ui_.SetPanelVisible("inventory-panel", false);
+        ui_.SetPanelVisible("crafting-panel", false);
         paused_ = pauseVisible_;
     } else if (action == "crafting-open") {
         inventoryVisible_ = false;
+        craftingVisible_ = true;
         ui_.SetPanelVisible("inventory-panel", false);
         ui_.SetPanelVisible("pause-panel", false);
         pauseVisible_ = false;
@@ -1403,11 +2311,75 @@ void Engine::HandleUiAction(const std::string& action) {
         RefreshCraftingUi();
         ui_.SetPanelVisible("crafting-panel", true);
     } else if (action == "crafting-close") {
+        craftingVisible_ = false;
         ui_.SetPanelVisible("crafting-panel", false);
         inventoryVisible_ = true;
         paused_ = true;
         RefreshInventoryUi();
         ui_.SetPanelVisible("inventory-panel", true);
+    } else if (action == "eat") {
+        if (gameMode_ == 1) {
+            ui_.SetChatMessage("En creativo no necesitas comer.");
+        } else if (playerHunger_ >= 20.0f) {
+            ui_.SetChatMessage("No tienes hambre.");
+        } else {
+            const std::uint16_t selected = inventory_.SelectedItemId();
+            const BlockDefinition* food = GetBlockDefinition(static_cast<BlockId>(selected));
+            float restored = 0.0f;
+            if (food != nullptr) {
+                const std::string_view key(food->key);
+                if (key == "carrots") restored = 4.0f;
+                else if (key == "potatoes") restored = 3.0f;
+            }
+            if (restored <= 0.0f) {
+                ui_.SetChatMessage("Selecciona zanahorias o patatas para comer.");
+            } else if (inventory_.ConsumeSelected(1u)) {
+                firstPersonActionStarted_ = ElapsedSeconds();
+                firstPersonActionKind_ = 3; // EAT: item was actually consumed.
+                playerHunger_ = std::min(20.0f, playerHunger_ + restored);
+                hungerExhaustion_ = 0.0f;
+                RefreshInventoryUi();
+                ui_.SetChatMessage(std::string("Has comido ") + food->nameEs + ".");
+            } else {
+                ui_.SetChatMessage("No quedan unidades de ese alimento.");
+            }
+        }
+    } else if (action == "attack") {
+        if (gameMode_ == 1) {
+            ui_.SetChatMessage("El combate no está disponible en este modo.");
+        } else {
+            float damage = 2.0f;
+            const BlockDefinition* held = GetBlockDefinition(
+                static_cast<BlockId>(inventory_.SelectedItemId()));
+            if (held != nullptr) {
+                const std::string_view key(held->key);
+                if (key.find("_sword") != std::string_view::npos) damage = 6.0f;
+                else if (key.find("_axe") != std::string_view::npos) damage = 4.0f;
+                else if (key.find("_pickaxe") != std::string_view::npos) damage = 3.0f;
+                if (held->attackDamage > 0.0f)
+                    damage = std::clamp(held->attackDamage, 0.0f, 100.0f);
+            }
+            bool defeated = false;
+            int defeatedKind = -1;
+            if (entities_.DamageNearest(player_.CameraPosition(), player_.Forward(),
+                                        3.25f, damage, &defeated, &defeatedKind)) {
+                firstPersonActionStarted_ = ElapsedSeconds();
+                firstPersonActionKind_ = 1; // ATTACK: an enemy was actually hit.
+                if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
+                if (defeated) {
+                    if (gameMode_ != 1) AddProgressionXp(20u);
+                    ui_.SetChatMessage(defeatedKind == 5
+                        ? "Has derrotado a un esqueleto."
+                        : "Has derrotado a un zombi.");
+                } else {
+                    ui_.SetChatMessage("Impacto · daño " + std::to_string(static_cast<int>(damage)));
+                }
+                RebuildEntityMesh();
+                UploadEntityMesh();
+            } else {
+                ui_.SetChatMessage("No hay ningún enemigo frente a ti.");
+            }
+        }
     } else if (action == "craft-planks") {
         CraftRecipe("planks");
     } else if (action == "craft-sticks") {
@@ -1447,8 +2419,11 @@ void Engine::HandleUiAction(const std::string& action) {
     } else if (action == "jump") {
         const bool wasGrounded = player_.grounded;
         player_.Jump();
-        if (wasGrounded && !player_.grounded)
+        if (wasGrounded && !player_.grounded) {
+            if (progressionJumps_ < 10000000u) ++progressionJumps_;
+            if (gameMode_ != 1) AddProgressionXp(1u);
             soundEvents_.fetch_or(16u, std::memory_order_release);
+        }
     } else if (action == "crouch") {
         crouching_ = !crouching_;
         player_.SetCrouching(crouching_);
@@ -1492,6 +2467,8 @@ void Engine::HandleUiAction(const std::string& action) {
                     RefreshInventoryUi();
                 } else {
                     std::swap(inventory_.counts[slot], inventory_.counts[inventory_.selectedSlot]);
+                    std::swap(inventory_.toolDurability[slot],
+                              inventory_.toolDurability[inventory_.selectedSlot]);
                     RefreshInventoryUi();
                 }
             }
@@ -1506,27 +2483,36 @@ void Engine::HandleUiAction(const std::string& action) {
 }
 
 
-bool Engine::HasNearbyCraftingTable() const {
+bool Engine::HasNearbyBlock(const std::string& blockKey) const {
+    const BlockDefinition* definition = FindBlockDefinition(blockKey);
+    if (definition == nullptr) return false;
+    const BlockId stationId = static_cast<BlockId>(definition->id);
     const int centerX = static_cast<int>(std::floor(player_.position.x));
     const int centerY = static_cast<int>(std::floor(player_.position.y));
     const int centerZ = static_cast<int>(std::floor(player_.position.z));
     for (int y = std::max(0, centerY - 1); y <= std::min(VoxelWorld::kWorldHeight - 1, centerY + 2); ++y) {
         for (int z = centerZ - 2; z <= centerZ + 2; ++z) {
             for (int x = centerX - 2; x <= centerX + 2; ++x) {
-                if (world_.GetBlock(x, y, z) == BlockId::CraftingTable) return true;
+                if (world_.GetBlock(x, y, z) == stationId) return true;
             }
         }
     }
     return false;
 }
 
+bool Engine::HasNearbyCraftingTable() const { return HasNearbyBlock("crafting_table"); }
+bool Engine::HasNearbyFurnace() const { return HasNearbyBlock("furnace"); }
+bool Engine::HasNearbyStonecutter() const { return HasNearbyBlock("stonecutter"); }
+
 bool Engine::CraftRecipe(const std::string& recipe) {
     struct Ingredient { std::uint16_t id; std::uint16_t amount; };
-    std::array<Ingredient, 3> ingredients{};
+    std::array<Ingredient, 9> ingredients{};
     std::size_t ingredientCount = 0u;
     std::uint16_t outputId = 0u;
     std::uint16_t outputAmount = 1u;
     bool needsTable = false;
+    bool needsFurnace = false;
+    bool needsStonecutter = false;
     const auto addIngredient = [&ingredients, &ingredientCount](std::uint16_t id, std::uint16_t amount) {
         if (id == 0u || amount == 0u || ingredientCount >= ingredients.size()) return false;
         ingredients[ingredientCount++] = {id, amount};
@@ -1550,17 +2536,196 @@ bool Engine::CraftRecipe(const std::string& recipe) {
     } else if (recipe == "table") {
         addIngredient(findId("planks"), 4u);
         outputId = findId("crafting_table");
+    } else if (recipe == "torch") {
+        if (!addIngredient(findId("coal_ore"), 1u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("torch"); outputAmount = 4u;
+    } else if (recipe == "chest") {
+        if (!addIngredient(findId("planks"), 8u)) return false;
+        outputId = findId("chest"); needsTable = true;
+    } else if (recipe == "furnace") {
+        if (!addIngredient(findId("cobblestone"), 8u)) return false;
+        outputId = findId("furnace"); needsTable = true;
+    } else if (recipe == "wooden_door") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId("wooden_door"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "ladder") {
+        if (!addIngredient(findId("minefade_stick"), 7u)) return false;
+        outputId = findId("ladder"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "fence") {
+        if (!addIngredient(findId("planks"), 4u) || !addIngredient(findId("minefade_stick"), 2u)) return false;
+        outputId = findId("fence"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "wooden_slab") {
+        if (!addIngredient(findId("planks"), 3u)) return false;
+        outputId = findId("wooden_slab"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "oak_stairs") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId("oak_stairs"); outputAmount = 4u; needsTable = true;
+    } else if (recipe == "stone_stairs") {
+        if (!addIngredient(findId("cobblestone"), 6u)) return false;
+        outputId = findId("stone_stairs"); outputAmount = 4u; needsTable = true;
+    } else if (recipe == "lever") {
+        if (!addIngredient(findId("cobblestone"), 1u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("lever");
+    } else if (recipe == "wooden_pressure_plate") {
+        if (!addIngredient(findId("planks"), 2u)) return false;
+        outputId = findId("wooden_pressure_plate");
+    } else if (recipe == "stone_pressure_plate") {
+        if (!addIngredient(findId("cobblestone"), 2u)) return false;
+        outputId = findId("stone_pressure_plate");
+    } else if (recipe == "wooden_button") {
+        if (!addIngredient(findId("planks"), 1u)) return false;
+        outputId = findId("wooden_button");
+    } else if (recipe == "stone_button") {
+        if (!addIngredient(findId("cobblestone"), 1u)) return false;
+        outputId = findId("stone_button");
+    } else if (recipe == "trapdoor") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId("trapdoor"); outputAmount = 2u; needsTable = true;
+    } else if (recipe == "standing_sign") {
+        if (!addIngredient(findId("planks"), 6u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("standing_sign"); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "rail") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u) || !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("rail"); outputAmount = 16u; needsTable = true;
     } else if (recipe == "copper_ingot" || recipe == "iron_ingot" || recipe == "gold_ingot") {
         const std::string metal = recipe.substr(0, recipe.find('_'));
-        addIngredient(findId(metal + "_ore"), 1u);
-        addIngredient(findId("coal_ore"), 1u);
+        if (!addIngredient(findId("minefade_raw_" + metal), 1u) ||
+            !addIngredient(findId("coal_ore"), 1u)) return false;
         outputId = findId("minefade_" + recipe);
-        needsTable = true;
+        needsFurnace = true;
     } else if (recipe == "diamond_gem" || recipe == "emerald_gem") {
         const std::string gem = recipe.substr(0, recipe.find('_'));
         addIngredient(findId(gem + "_ore"), 1u);
         outputId = findId("minefade_" + gem);
-        needsTable = true;
+    } else if (recipe == "glass" || recipe == "stone") {
+        if (!addIngredient(findId(recipe == "glass" ? "sand" : "cobblestone"), 1u) ||
+            !addIngredient(findId("coal_ore"), 1u)) return false;
+        outputId = findId(recipe);
+        needsFurnace = true;
+    } else if (recipe == "iron_block" || recipe == "gold_block" ||
+               recipe == "copper_block" || recipe == "diamond_block" ||
+               recipe == "emerald_block" || recipe == "coal_block" ||
+               recipe == "redstone_block") {
+        std::string material = recipe.substr(0, recipe.find('_'));
+        if (material == "iron" || material == "gold" || material == "copper")
+            material = "minefade_" + material + "_ingot";
+        else if (material == "diamond" || material == "emerald")
+            material = "minefade_" + material;
+        else if (material == "redstone") material = "redstone_wire";
+        else if (material == "coal") material = "coal_ore";
+        if (!addIngredient(findId(material), 9u)) return false;
+        outputId = findId(recipe); needsTable = true;
+    } else if (recipe == "iron_bars") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u)) return false;
+        outputId = findId("iron_bars"); outputAmount = 16u; needsTable = true;
+    } else if (recipe == "glass_pane") {
+        if (!addIngredient(findId("glass"), 6u)) return false;
+        outputId = findId("glass_pane"); outputAmount = 16u; needsTable = true;
+    } else if (recipe == "cobblestone_wall") {
+        if (!addIngredient(findId("cobblestone"), 6u)) return false;
+        outputId = findId("cobblestone_wall"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "nether_brick_fence") {
+        if (!addIngredient(findId("nether_brick"), 6u)) return false;
+        outputId = findId("nether_brick_fence"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "stonebrick") {
+        if (!addIngredient(findId("stone"), 4u)) return false;
+        outputId = findId("stonebrick"); outputAmount = 4u; needsTable = true;
+    } else if (recipe == "stonecutter") {
+        if (!addIngredient(findId("stone"), 3u) ||
+            !addIngredient(findId("minefade_iron_ingot"), 1u)) return false;
+        outputId = findId("stonecutter"); needsTable = true;
+    } else if (recipe == "hopper") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 5u) ||
+            !addIngredient(findId("chest"), 1u)) return false;
+        outputId = findId("hopper"); needsTable = true;
+    } else if (recipe == "anvil") {
+        if (!addIngredient(findId("iron_block"), 3u) ||
+            !addIngredient(findId("minefade_iron_ingot"), 4u)) return false;
+        outputId = findId("anvil"); needsTable = true;
+    } else if (recipe == "dropper") {
+        if (!addIngredient(findId("cobblestone"), 7u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("dropper"); needsTable = true;
+    } else if (recipe == "piston") {
+        if (!addIngredient(findId("planks"), 3u) ||
+            !addIngredient(findId("cobblestone"), 4u) ||
+            !addIngredient(findId("minefade_iron_ingot"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("piston"); needsTable = true;
+    } else if (recipe == "redstone_torch") {
+        if (!addIngredient(findId("redstone_wire"), 1u) ||
+            !addIngredient(findId("minefade_stick"), 1u)) return false;
+        outputId = findId("redstone_torch");
+    } else if (recipe == "redstone_lamp") {
+        if (!addIngredient(findId("glowstone"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 4u)) return false;
+        outputId = findId("redstone_lamp"); needsTable = true;
+    } else if (recipe == "fence_gate") {
+        if (!addIngredient(findId("planks"), 2u) ||
+            !addIngredient(findId("minefade_stick"), 4u)) return false;
+        outputId = findId("fence_gate"); needsTable = true;
+    } else if (recipe == "sandstone") {
+        if (!addIngredient(findId("sand"), 4u)) return false;
+        outputId = findId("sandstone");
+    } else if (recipe == "stone_slab") {
+        if (!addIngredient(findId("stone"), 3u)) return false;
+        outputId = findId("stone_slab"); outputAmount = 6u; needsStonecutter = true;
+    } else if (recipe == "stone_brick_stairs" || recipe == "brick_stairs" ||
+               recipe == "nether_brick_stairs" || recipe == "sandstone_stairs" ||
+               recipe == "spruce_stairs" || recipe == "birch_stairs" ||
+               recipe == "jungle_stairs" || recipe == "acacia_stairs" ||
+               recipe == "dark_oak_stairs" || recipe == "cherry_stairs") {
+        std::string material = "planks";
+        if (recipe == "stone_brick_stairs") material = "stonebrick";
+        else if (recipe == "brick_stairs") material = "brick_block";
+        else if (recipe == "nether_brick_stairs") material = "nether_brick";
+        else if (recipe == "sandstone_stairs") material = "sandstone";
+        if (!addIngredient(findId(material), 6u)) return false;
+        outputId = findId(recipe); outputAmount = 4u;
+        needsStonecutter = material != "planks";
+        needsTable = material == "planks";
+    } else if (recipe == "spruce_door" || recipe == "birch_door" ||
+               recipe == "jungle_door" || recipe == "acacia_door" ||
+               recipe == "dark_oak_door") {
+        if (!addIngredient(findId("planks"), 6u)) return false;
+        outputId = findId(recipe); outputAmount = 3u; needsTable = true;
+    } else if (recipe == "spruce_fence_gate" || recipe == "birch_fence_gate" ||
+               recipe == "jungle_fence_gate" || recipe == "acacia_fence_gate" ||
+               recipe == "dark_oak_fence_gate") {
+        if (!addIngredient(findId("planks"), 2u) ||
+            !addIngredient(findId("minefade_stick"), 4u)) return false;
+        outputId = findId(recipe); needsTable = true;
+    } else if (recipe == "golden_rail") {
+        if (!addIngredient(findId("minefade_gold_ingot"), 6u) ||
+            !addIngredient(findId("minefade_stick"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("golden_rail"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "detector_rail") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u) ||
+            !addIngredient(findId("stone_pressure_plate"), 1u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("detector_rail"); outputAmount = 6u; needsTable = true;
+    } else if (recipe == "activator_rail") {
+        if (!addIngredient(findId("minefade_iron_ingot"), 6u) ||
+            !addIngredient(findId("minefade_stick"), 2u) ||
+            !addIngredient(findId("redstone_wire"), 1u)) return false;
+        outputId = findId("activator_rail"); outputAmount = 6u; needsTable = true;
+    } else if (const ModRecipeDefinition* modRecipe =
+                   ModContentRegistry::Instance().FindRecipe(recipe);
+               modRecipe != nullptr) {
+        for (const ModRecipeIngredient& ingredient : modRecipe->ingredients) {
+            const BlockId item = ResolveModBlockId(ingredient.itemId);
+            if (item == BlockId::Air ||
+                !addIngredient(static_cast<std::uint16_t>(item), ingredient.count)) return false;
+        }
+        const BlockId output = ResolveModBlockId(modRecipe->outputId);
+        if (output == BlockId::Air) return false;
+        outputId = static_cast<std::uint16_t>(output);
+        outputAmount = modRecipe->outputCount;
+        if (modRecipe->station == "crafting_table" || modRecipe->station == "anvil")
+            needsTable = true;
+        else if (modRecipe->station == "furnace") needsFurnace = true;
+        else if (modRecipe->station == "stonecutter") needsStonecutter = true;
     } else {
         const std::size_t split = recipe.find('_');
         if (split == std::string::npos) return false;
@@ -1595,32 +2760,37 @@ bool Engine::CraftRecipe(const std::string& recipe) {
         needsTable = true;
     }
 
-    if (outputId == 0u || !inventory_.CanAdd(outputId, outputAmount)) {
-        ui_.SetChatMessage("No hay espacio suficiente o la receta no está disponible.");
+    if (outputId == 0u) {
+        ui_.SetChatMessage("La receta no está disponible en este catálogo.");
         return false;
     }
     if (needsTable && !HasNearbyCraftingTable()) {
         ui_.SetChatMessage("Necesitas una mesa de trabajo cerca para fabricar este objeto.");
         return false;
     }
+    if (needsFurnace && !HasNearbyFurnace()) {
+        ui_.SetChatMessage("Necesitas un horno cerca para fundir este material.");
+        return false;
+    }
+    if (needsStonecutter && !HasNearbyStonecutter()) {
+        ui_.SetChatMessage("Necesitas un cortapiedras cerca para fabricar esta pieza.");
+        return false;
+    }
+    // Craft against a private inventory copy. Either the ingredients and output
+    // are committed together, or the live inventory stays unchanged.
+    Inventory stagedInventory = inventory_;
     for (std::size_t i = 0; i < ingredientCount; ++i) {
-        if (inventory_.CountItem(ingredients[i].id) < ingredients[i].amount) {
+        if (!stagedInventory.ConsumeItem(ingredients[i].id, ingredients[i].amount)) {
             ui_.SetChatMessage("Faltan materiales para esta receta.");
             return false;
         }
     }
-    for (std::size_t i = 0; i < ingredientCount; ++i) {
-        if (!inventory_.ConsumeItem(ingredients[i].id, ingredients[i].amount)) {
-            ui_.SetChatMessage("No se pudo completar la receta; revisa el inventario.");
-            RefreshInventoryUi();
-            return false;
-        }
-    }
-    if (!inventory_.Add(outputId, outputAmount)) {
-        ui_.SetChatMessage("No se pudo guardar el objeto fabricado.");
-        RefreshInventoryUi();
+    if (!stagedInventory.Add(outputId, outputAmount)) {
+        ui_.SetChatMessage("No hay espacio suficiente para guardar el resultado.");
         return false;
     }
+    inventory_ = stagedInventory;
+    if (gameMode_ != 1) AddProgressionXp(5u);
     const BlockDefinition* output = GetBlockDefinition(static_cast<BlockId>(outputId));
     ui_.SetChatMessage(output != nullptr ? std::string("Fabricado: ") + output->nameEs :
                        "Objeto fabricado.");
@@ -1628,10 +2798,92 @@ bool Engine::CraftRecipe(const std::string& recipe) {
     return true;
 }
 
+std::string Engine::QuickbarSnapshot() const {
+    std::ostringstream output;
+    output << inventory_.selectedSlot;
+    for (std::size_t slot = 0; slot < Inventory::kHotbarSlotCount; ++slot) {
+        const std::uint32_t encoded = inventory_.counts[slot];
+        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+        const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+        const BlockDefinition* definition = itemId == 0u
+            ? nullptr : GetBlockDefinition(static_cast<BlockId>(itemId));
+        output << ';' << itemId << '|' << amount << '|'
+               << (definition == nullptr ? 0u : definition->tileSide) << '|'
+               << (definition == nullptr ? "" : definition->nameEs);
+    }
+    return output.str();
+}
+
+void Engine::AddProgressionXp(std::uint32_t amount) {
+    if (amount == 0u) return;
+    progressionXp_ = std::min(100000000u, progressionXp_ + std::min(amount, 100000000u));
+}
+
+std::string Engine::InventorySnapshot() const {
+    std::ostringstream output;
+    output << "v1|" << inventory_.selectedSlot;
+    for (std::size_t slot = 0; slot < Inventory::kSlotCount; ++slot) {
+        const std::uint32_t encoded = inventory_.counts[slot];
+        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+        const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+        const BlockDefinition* definition = itemId == 0u
+            ? nullptr : GetBlockDefinition(static_cast<BlockId>(itemId));
+        const std::uint16_t durability = inventory_.SlotItemDurability(slot);
+        const std::uint16_t maxDurability = inventory_.SlotItemMaxDurability(slot);
+        output << ';' << slot << '|' << itemId << '|' << amount << '|'
+               << durability << '|' << maxDurability << '|'
+               << (definition == nullptr ? 0u : definition->tileSide) << '|'
+               << (definition == nullptr ? "Vacío" : definition->nameEs);
+    }
+    return output.str();
+}
+
+std::string Engine::HudSnapshot() const {
+    const std::uint32_t boundedXp = progressionXp_;
+    std::uint32_t level = 1u;
+    std::uint32_t spent = 0u;
+    std::uint32_t required = 100u;
+    while (boundedXp - spent >= required && level < 100000u) {
+        spent += required;
+        ++level;
+        required = std::min(1000000u, required + 50u);
+    }
+    const std::uint32_t intoLevel = boundedXp - spent;
+    const int healthPercent = std::clamp(
+        static_cast<int>(std::lround(std::clamp(playerHealth_, 0.0f, 20.0f) * 5.0f)), 0, 100);
+    const int hungerPercent = std::clamp(
+        static_cast<int>(std::lround(std::clamp(playerHunger_, 0.0f, 20.0f) * 5.0f)), 0, 100);
+    const int xpPercent = std::clamp(static_cast<int>(
+        static_cast<std::uint64_t>(intoLevel) * 100u / std::max(required, 1u)), 0, 100);
+    const int targetPercent = std::clamp(
+        static_cast<int>(std::lround(targetBlockProgress_ * 100.0f)), 0, 100);
+    const int armorPieces = static_cast<int>(std::count_if(
+        inventory_.equippedArmor.begin(), inventory_.equippedArmor.end(),
+        [](std::uint16_t item) { return item != 0u; }));
+    std::ostringstream output;
+    output << "v1|" << healthPercent << '|' << hungerPercent << '|'
+           << armorPieces << '|' << level << '|' << xpPercent << '|'
+           << targetPercent << '|' << targetBlockName_;
+    return output.str();
+}
+
+void Engine::SelectInventorySlot(int slot) {
+    if (!ready_ || slot < 0 || slot >= static_cast<int>(Inventory::kSlotCount)) return;
+    HandleUiAction("inventory-slot-" + std::to_string(slot));
+}
+
+std::string Engine::ProgressionSnapshot() const {
+    std::ostringstream output;
+    output << "v1|" << progressionBlocksMined_ << '|' << progressionBlocksPlaced_ << '|'
+           << progressionItemsCollected_ << '|' << progressionJumps_ << '|'
+           << (progressionWorldEntered_ ? 1 : 0) << '|' << progressionXp_;
+    return output.str();
+}
+
 std::string Engine::ExecuteCommand(const std::string& rawCommand) {
     if (!ready_) return "El mundo todavía no está preparado.";
     std::string command = rawCommand;
-    const std::size_t first = command.find_first_not_of(" \\t\\r\\n");
+    const std::size_t first = command.find_first_not_of(" \\t\\r\n");
     if (first == std::string::npos) return "Escribe /ayuda para ver los comandos.";
     command = command.substr(first);
     if (!command.empty() && command.front() == '/') command.erase(command.begin());
@@ -1642,10 +2894,89 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (verb == "ayuda" || verb == "help") {
-        return "/oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
+        return "/claim help · /oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
                "/zombi [cantidad] · /esqueleto [cantidad] · /conejo [cantidad] · "
                "/modo supervivencia|creativo|aventura · /tiempo dia|noche · "
-               "/dar <id> [cantidad] · /tp <x> <y> <z> · /semilla";
+               "/dar <id> [cantidad] · /tp <x> <y> <z> · /semilla · /inventario · /fabricar <receta>";
+    }
+    if (verb == "claim" || verb == "parcela") {
+        std::string action;
+        input >> action;
+        if (action.empty() || action == "help") {
+            return "/claim id · /claim create [radio] · /claim list · /claim info · "
+                   "/claim trust <id> · /claim untrust <id> · /claim abandon · "
+                   "/claim flag <pvp|explosions|fire|containers|mob_grief> <on|off>";
+        }
+        if (action == "id") return "Tu ID de protección: " + playerIdentity_;
+        if (action == "list") return protection_.ListFor(playerIdentity_);
+        if (action == "info") return protection_.DescribeAt(playerIdentity_,
+            static_cast<int>(std::floor(player_.position.x)),
+            static_cast<int>(std::floor(player_.position.z)));
+        std::string feedback;
+        if (action == "create") {
+            int radius = 16;
+            if (!(input >> radius)) radius = 16;
+            protection_.CreateClaim(playerIdentity_,
+                static_cast<int>(std::floor(player_.position.x)),
+                static_cast<int>(std::floor(player_.position.z)), radius, &feedback);
+            return feedback;
+        }
+        if (action == "abandon") {
+            protection_.Abandon(playerIdentity_, &feedback);
+            return feedback;
+        }
+        if (action == "trust" || action == "untrust") {
+            std::string identity;
+            input >> identity;
+            if (identity.empty()) return "Indica el ID de jugador. Puedes consultarlo con /claim id.";
+            if (action == "trust") protection_.Trust(playerIdentity_, identity,
+                ProtectionManager::kAllPermissions, &feedback);
+            else protection_.Untrust(playerIdentity_, identity, &feedback);
+            return feedback;
+        }
+        if (action == "flag") {
+            std::string flag, value;
+            input >> flag >> value;
+            if (value != "on" && value != "off") return "Uso: /claim flag <bandera> on|off.";
+            protection_.SetFlag(playerIdentity_, flag, value == "on", &feedback);
+            return feedback;
+        }
+        return "Comando de parcela desconocido. Escribe /claim help.";
+    }
+    if (verb == "inventario" || verb == "inventory") {
+        std::ostringstream summary;
+        summary << "INVENTARIO · 36 ESPACIOS\n";
+        bool any = false;
+        for (std::size_t slot = 0; slot < Inventory::kSlotCount; ++slot) {
+            const std::uint32_t encoded = inventory_.counts[slot];
+            const std::uint16_t id = static_cast<std::uint16_t>(encoded / 1000u);
+            const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+            if (id == 0u || amount == 0u) continue;
+            const BlockDefinition* item = GetBlockDefinition(static_cast<BlockId>(id));
+            if (item == nullptr) continue;
+            any = true;
+            summary << (slot + 1u) << ". " << item->nameEs << " × " << amount;
+            if (slot < Inventory::kHotbarSlotCount) summary << " · Barra rápida";
+            summary << "\n";
+        }
+        if (!any) summary << "Vacío.\n";
+        summary << "Espacio seleccionado: " << (inventory_.selectedSlot + 1u) << "/9.";
+        return summary.str();
+    }
+    if (verb == "fabricar" || verb == "craft") {
+        std::string recipe;
+        input >> recipe;
+        if (recipe.empty() || recipe == "help" || recipe == "list")
+            return "Recetas: planks, sticks, table, torch, chest, furnace, glass, stone, "
+                   "wooden_door, trapdoor, ladder, fence, fence_gate, iron_bars, glass_pane, "
+                   "stonebrick, cobblestone_wall, nether_brick_fence, iron_block, gold_block, "
+                   "copper_block, diamond_block, emerald_block, coal_block, redstone_block, "
+                   "hopper, anvil, stonecutter, dropper, piston, redstone_torch, redstone_lamp, "
+                   "wooden/stone/copper/iron/gold/diamond/emerald tools and armor.";
+        std::transform(recipe.begin(), recipe.end(), recipe.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return CraftRecipe(recipe) ? "Fabricación completada: " + recipe + "." :
+            "No se pudo fabricar " + recipe + ". Comprueba materiales y mesa de trabajo.";
     }
     if (!allowCheats_) return "Los trucos están desactivados en este mundo. Actívalos en sus opciones.";
 
@@ -1704,8 +3035,10 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         int itemId = 0, amount = 1;
         if (!(input >> itemId)) return "Uso: /dar <id_del_bloque> [cantidad].";
         if (!(input >> amount)) amount = 1;
-        itemId = std::clamp(itemId, 1, static_cast<int>(GetBlockDefinitionCount()) - 1);
+        itemId = std::clamp(itemId, 1, 65535);
         amount = std::clamp(amount, 1, 999);
+        if (GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr)
+            return "El id no existe. Usa un bloque u objeto registrado.";
         if (!inventory_.Add(static_cast<std::uint16_t>(itemId), static_cast<std::uint16_t>(amount)))
             return "No hay espacio en el inventario o el bloque no admite esa cantidad.";
         RefreshInventoryUi();
@@ -1738,6 +3071,11 @@ void Engine::OpenStarterChest() {
         !world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f, &target, &type) ||
         type != BlockId::Chest) {
         ui_.SetChatMessage("Mira al cofre y pulsa COFRE para abrirlo.");
+        return;
+    }
+    if (!protection_.CanUseContainer(playerIdentity_, static_cast<int>(target.x),
+                                     static_cast<int>(target.z))) {
+        ui_.SetChatMessage("Este cofre está protegido. Pide permiso a su dueño.");
         return;
     }
     starterChestPosition_ = target;
@@ -1794,6 +3132,12 @@ void Engine::TakeStarterChestContents() {
     ui_.SetChatMessage("Has recogido " + std::to_string(taken) + " objetos del cofre.");
 }
 
+void Engine::SetTargetBlock(const std::string& name, float progress) {
+    targetBlockName_ = name;
+    targetBlockProgress_ = name.empty() ? 0.0f : std::clamp(progress, 0.0f, 1.0f);
+    ui_.SetTargetBlock(targetBlockName_, targetBlockProgress_);
+}
+
 void Engine::UpdateMining(float deltaSeconds) {
     auto active = std::find_if(touches_.begin(), touches_.end(), [](const auto& entry) {
         const TouchState& state = entry.second;
@@ -1809,9 +3153,9 @@ void Engine::UpdateMining(float deltaSeconds) {
         if (world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f,
                                      &target, &targetType)) {
             const BlockDefinition* definition = GetBlockDefinition(targetType);
-            ui_.SetTargetBlock(definition != nullptr ? definition->nameEs : "", 0.0f);
+            SetTargetBlock(definition != nullptr ? definition->nameEs : "", 0.0f);
         } else {
-            ui_.SetTargetBlock({}, 0.0f);
+            SetTargetBlock({}, 0.0f);
         }
         return;
     }
@@ -1825,13 +3169,13 @@ void Engine::UpdateMining(float deltaSeconds) {
         miningElapsed_ = 0.0f;
         miningRequired_ = 0.0f;
         miningBlockType_ = BlockId::Air;
-        ui_.SetTargetBlock({}, 0.0f);
+        SetTargetBlock({}, 0.0f);
         return;
     }
 
     const BlockDefinition* definition = GetBlockDefinition(targetType);
     if (definition == nullptr) {
-        ui_.SetTargetBlock({}, 0.0f);
+        SetTargetBlock({}, 0.0f);
         return;
     }
 
@@ -1849,13 +3193,19 @@ void Engine::UpdateMining(float deltaSeconds) {
     }
 
     if (definition->hardness < 0.0f) {
-        ui_.SetTargetBlock(definition->nameEs, 0.0f);
+        SetTargetBlock(definition->nameEs, 0.0f);
         return;
     }
 
     if (gameMode_ == 2) {
-        ui_.SetTargetBlock(definition->nameEs, 0.0f);
+        SetTargetBlock(definition->nameEs, 0.0f);
         return;
+    }
+    // Repeat the short first-person mining swing while the block is being
+    // damaged, instead of playing it only after the block has disappeared.
+    if (ElapsedSeconds() - firstPersonActionStarted_ >= 0.22) {
+        firstPersonActionStarted_ = ElapsedSeconds();
+        firstPersonActionKind_ = 1;
     }
     // Wooden tools accelerate the material they are designed to harvest.
     float toolMultiplier = 1.0f;
@@ -1888,22 +3238,36 @@ void Engine::UpdateMining(float deltaSeconds) {
                          std::clamp(modMiningSpeed_, 0.5f, 3.0f), 0.12f, 10.0f);
     miningElapsed_ += std::clamp(deltaSeconds, 0.0f, 0.05f);
     const float progress = std::clamp(miningElapsed_ / miningRequired_, 0.0f, 1.0f);
-    ui_.SetTargetBlock(definition->nameEs, progress);
+    SetTargetBlock(definition->nameEs, progress);
     if (progress < 1.0f) return;
 
+    if (!protection_.CanBuild(playerIdentity_, static_cast<int>(target.x), static_cast<int>(target.z))) {
+        ui_.SetChatMessage("Zona protegida. El dueño debe autorizarte para romper bloques.");
+        active->second.mining = false;
+        miningPointerId_ = -1;
+        miningElapsed_ = 0.0f;
+        miningRequired_ = 0.0f;
+        SetTargetBlock(definition->nameEs, 0.0f);
+        return;
+    }
     Vec3 broken{};
     BlockId brokenType = BlockId::Air;
     if (world_.BreakRay(ViewPosition(), ViewDirection(), 6.0f, &broken, &brokenType)) {
+        firstPersonActionStarted_ = ElapsedSeconds();
+        firstPersonActionKind_ = 1; // MINE: a block was actually broken.
         pendingBlockEdits_.insert(pendingBlockEdits_.end(), {
             static_cast<int>(broken.x), static_cast<int>(broken.y), static_cast<int>(broken.z),
             static_cast<int>(BlockId::Air)
         });
+        if (progressionBlocksMined_ < 10000000u) ++progressionBlocksMined_;
+        if (gameMode_ != 1) AddProgressionXp(2u);
         const BlockDefinition* brokenDefinition = GetBlockDefinition(brokenType);
         if (brokenDefinition != nullptr && brokenDefinition->dropId > 0u) {
             const auto dropQuantity = static_cast<std::uint16_t>(std::clamp(modDropQuantity_, 1, 4));
             droppedItems_.Spawn({broken.x + 0.5f, broken.y + 0.55f, broken.z + 0.5f},
                                 brokenDefinition->dropId, dropQuantity);
         }
+        if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
         soundEvents_.fetch_or(1u, std::memory_order_release);
         if (HasBlockFlag(brokenType, BlockFluid))
             soundEvents_.fetch_or(524288u, std::memory_order_release);
@@ -1927,7 +3291,7 @@ void Engine::UpdateMining(float deltaSeconds) {
     miningPointerId_ = -1;
     miningElapsed_ = 0.0f;
     miningRequired_ = 0.0f;
-    ui_.SetTargetBlock({}, 0.0f);
+    SetTargetBlock({}, 0.0f);
 }
 
 void Engine::RefreshInventoryUi() {
@@ -1949,6 +3313,15 @@ void Engine::RefreshInventoryUi() {
         markup+="<button class='inventory-row' id='inventory-slot-"+std::to_string(i)+"'>"+icon+"<span>";
         markup+=name;
         if(quantity>0u)markup+=" × "+std::to_string(quantity);
+        const std::uint16_t itemMaxDurability = inventory_.SlotItemMaxDurability(i);
+        const std::uint16_t itemDurability = inventory_.SlotItemDurability(i);
+        if (itemMaxDurability > 0u) {
+            const int percent = std::clamp(
+                static_cast<int>((static_cast<unsigned int>(itemDurability) * 100u) /
+                                 static_cast<unsigned int>(itemMaxDurability)), 0, 100);
+            markup += "<span class='inventory-durability'><span style='width:" +
+                std::to_string(percent) + "%'></span></span>";
+        }
         markup+="</span></button>";
 
         std::string slotMarkup="·";
@@ -1956,16 +3329,23 @@ void Engine::RefreshInventoryUi() {
             slotMarkup="<img src='minefade://block/"+std::to_string(itemId)+"'/>";
             if(quantity>1u)slotMarkup+="<span class='slot-count'>"+
                 std::to_string(quantity)+"</span>";
+            if (itemMaxDurability > 0u) {
+                const int percent = std::clamp(
+                    static_cast<int>((static_cast<unsigned int>(itemDurability) * 100u) /
+                                     static_cast<unsigned int>(itemMaxDurability)), 0, 100);
+                slotMarkup += "<span class='slot-durability'><span style='width:" +
+                    std::to_string(percent) + "%'></span></span>";
+            }
         }
         ui_.SetQuickbarSlot(static_cast<int>(i),slotMarkup,i==inventory_.selectedSlot);
     }
     if (gameMode_ == 1) {
         markup.clear();
         markup += "<div class='creative-heading'>CATÁLOGO CREATIVO · SELECCIONA UN BLOQUE</div>";
-        for (std::size_t id = 1; id < GetBlockDefinitionCount(); ++id) {
-            const auto blockId = static_cast<BlockId>(id);
-            const BlockDefinition* definition = GetBlockDefinition(blockId);
-            if (definition == nullptr || !HasBlockFlag(blockId, BlockPlaceable)) continue;
+        for (std::size_t index = 1; index < GetBlockDefinitionCount(); ++index) {
+            const BlockDefinition* definition = GetBlockDefinitionByIndex(index);
+            if (definition == nullptr || !HasBlockFlag(definition->id, BlockPlaceable)) continue;
+            const auto id = static_cast<std::uint16_t>(definition->id);
             markup += "<div class='inventory-row creative-row'><img class='inventory-icon' src='minefade://block/"
                 + std::to_string(id) + "'/><span class='creative-name'>" + definition->nameEs
                 + "</span><button id='creative-select-" + std::to_string(id)
@@ -2000,12 +3380,29 @@ void Engine::RefreshInventoryUi() {
         equipmentMarkup += "</button>";
     }
     ui_.SetEquipmentContents(equipmentMarkup);
+    const bool quickbarSelectionChanged =
+        inventory_.selectedSlot != lastQuickbarSelection_;
+    if (quickbarSelectionChanged) {
+        lastQuickbarSelection_ = inventory_.selectedSlot;
+        selectedItemToastUntil_ = ElapsedSeconds() + 1.25;
+    }
     const std::uint16_t selectedId = inventory_.SelectedItemId();
     const BlockDefinition* selectedDefinition =
         GetBlockDefinition(static_cast<BlockId>(selectedId));
-    if (selectedDefinition != nullptr && selectedId > 0u) {
-        ui_.SetSelectedItem("<img src='minefade://block/" + std::to_string(selectedId) +
-            "'/><span>" + selectedDefinition->nameEs + "</span>");
+    if (selectedDefinition != nullptr && selectedId > 0u &&
+        ElapsedSeconds() < selectedItemToastUntil_) {
+        std::string selectedMarkup = "<img src='minefade://block/" +
+            std::to_string(selectedId) + "'/><span>" + selectedDefinition->nameEs + "</span>";
+        const std::uint16_t maximum = inventory_.SelectedItemMaxDurability();
+        if (maximum > 0u) {
+            const std::uint16_t remaining = inventory_.SelectedItemDurability();
+            const int percent = std::clamp(
+                static_cast<int>((static_cast<unsigned int>(remaining) * 100u) /
+                                 static_cast<unsigned int>(maximum)), 0, 100);
+            selectedMarkup += "<span class='selected-durability'>Durabilidad " +
+                std::to_string(remaining) + "/" + std::to_string(maximum) + "</span>";
+        }
+        ui_.SetSelectedItem(selectedMarkup);
     } else {
         ui_.SetSelectedItem({});
     }
@@ -2015,14 +3412,50 @@ void Engine::RefreshCraftingUi() {
     std::string markup;
     markup.reserve(9000u);
     int index = 0;
-    const auto addRecipe = [&markup, &index](const std::string& recipe, const std::string& label) {
+    const auto escapeMarkup = [](std::string_view value) {
+        std::string escaped;
+        escaped.reserve(value.size());
+        for (const char c : value) {
+            switch (c) {
+                case '&': escaped += "&amp;"; break;
+                case '<': escaped += "&lt;"; break;
+                case '>': escaped += "&gt;"; break;
+                case '"': escaped += "&quot;"; break;
+                case 39: escaped += "&#39;"; break;
+                default: escaped.push_back(c); break;
+            }
+        }
+        return escaped;
+    };
+    const auto addRecipe = [&markup, &index, &escapeMarkup](
+            const std::string& recipe, const std::string& label) {
         markup += "<button id='crafting-recipe-" + std::to_string(index++) +
-            "' data-action='craft-" + recipe + "'>" + label + "</button>";
+            "' data-action='craft-" + escapeMarkup(recipe) + "'>" +
+            escapeMarkup(label) + "</button>";
     };
     markup += "<div class='recipe-category'>BÁSICOS</div>";
     addRecipe("planks", "Tronco → 4 tablones");
     addRecipe("sticks", "2 tablones → 4 palos");
     addRecipe("table", "4 tablones → mesa");
+    markup += "<div class='recipe-category'>SUPERVIVENCIA Y CONSTRUCCIÓN</div>";
+    addRecipe("torch", "Mena de carbón + palo → 4 antorchas");
+    addRecipe("chest", "8 tablones → cofre");
+    addRecipe("furnace", "8 adoquines → horno");
+    addRecipe("wooden_door", "6 tablones → 3 puertas");
+    addRecipe("trapdoor", "6 tablones → 2 trampillas");
+    addRecipe("ladder", "7 palos → 3 escaleras");
+    addRecipe("fence", "4 tablones + 2 palos → 3 vallas");
+    addRecipe("wooden_slab", "3 tablones → 6 losas");
+    addRecipe("oak_stairs", "6 tablones → 4 escaleras de madera");
+    addRecipe("stone_stairs", "6 adoquines → 4 escaleras de piedra");
+    markup += "<div class='recipe-category'>MECANISMOS</div>";
+    addRecipe("lever", "Adoquín + palo → palanca");
+    addRecipe("wooden_pressure_plate", "2 tablones → placa de madera");
+    addRecipe("stone_pressure_plate", "2 adoquines → placa de piedra");
+    addRecipe("wooden_button", "1 tablón → botón de madera");
+    addRecipe("stone_button", "1 adoquín → botón de piedra");
+    addRecipe("standing_sign", "6 tablones + palo → 3 señales");
+    addRecipe("rail", "6 lingotes de hierro + palo → 16 raíles");
     markup += "<div class='recipe-category'>PROCESAR MINERALES</div>";
     addRecipe("copper_ingot", "Mena de cobre + carbón → lingote");
     addRecipe("iron_ingot", "Mena de hierro + carbón → lingote");
@@ -2044,14 +3477,26 @@ void Engine::RefreshCraftingUi() {
             addRecipe(std::string(tier.first) + "_" + item.first, label);
         }
     }
+    const auto& modRecipes = ModContentRegistry::Instance().Recipes();
+    if (!modRecipes.empty()) {
+        markup += "<div class='recipe-category'>RECETAS DE MODS</div>";
+        for (const ModRecipeDefinition& recipe : modRecipes) {
+            const BlockId outputId = ResolveModBlockId(recipe.outputId);
+            const BlockDefinition* output = GetBlockDefinition(outputId);
+            const std::string outputName = output != nullptr ? output->nameEs : recipe.outputId;
+            const std::string label = recipe.name + " → " +
+                std::to_string(recipe.outputCount) + " " + outputName;
+            addRecipe(recipe.id, label);
+        }
+    }
     ui_.SetCraftingContents(markup);
 }
 
-void Engine::SaveWorld() {
-    if (multiplayerMode_) return; // LAN sessions are transient until full host-world persistence is added.
+bool Engine::SaveWorld() {
+    if (multiplayerMode_ && multiplayerSlot_ != 0) return true;
     if (storagePath_.empty()) {
         ENGINE_LOGE("Cannot save: Android private storage path has not been supplied");
-        return;
+        return false;
     }
     // Persistence errors must never be reported as a graphics/world startup failure.
     // A user should still be able to enter and play while the storage problem is visible
@@ -2059,8 +3504,44 @@ void Engine::SaveWorld() {
     try {
         if (!world_.Save(storagePath_, player_.position, inventory_.counts)) {
             ENGINE_LOGE("Failed to save world to %s", storagePath_.c_str());
+            return false;
         } else {
             ENGINE_LOGI("World saved to private app storage");
+            if (!protection_.Save())
+                ENGINE_LOGW("Protection claims could not be saved; existing claims file was preserved");
+            {
+                const std::string progressionPath = storagePath_ + ".progression";
+                const std::string progressionTemp = progressionPath + ".tmp";
+                const std::uint32_t magic = 0x4D465052u;
+                const std::uint32_t version = 1u;
+                const std::uint32_t entered = progressionWorldEntered_ ? 1u : 0u;
+                std::ofstream progressionFile(progressionTemp, std::ios::binary | std::ios::trunc);
+                if (progressionFile) {
+                    progressionFile.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    progressionFile.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionXp_), sizeof(progressionXp_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionBlocksMined_), sizeof(progressionBlocksMined_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionBlocksPlaced_), sizeof(progressionBlocksPlaced_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionItemsCollected_), sizeof(progressionItemsCollected_));
+                    progressionFile.write(reinterpret_cast<const char*>(&progressionJumps_), sizeof(progressionJumps_));
+                    progressionFile.write(reinterpret_cast<const char*>(&entered), sizeof(entered));
+                    progressionFile.flush();
+                    progressionFile.close();
+                    std::error_code progressionError;
+                    std::filesystem::rename(progressionTemp, progressionPath, progressionError);
+                    if (progressionError) {
+                        std::filesystem::remove(progressionPath, progressionError);
+                        progressionError.clear();
+                        std::filesystem::rename(progressionTemp, progressionPath, progressionError);
+                    }
+                    if (progressionError) {
+                        ENGINE_LOGE("Could not atomically save progression: %s", progressionError.message().c_str());
+                        std::filesystem::remove(progressionTemp);
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create progression sidecar temporary file");
+                }
+            }
             {
                 const std::string gearPath = storagePath_ + ".armor";
                 const std::string gearTemp = gearPath + ".tmp";
@@ -2099,6 +3580,62 @@ void Engine::SaveWorld() {
                     if (error) std::filesystem::remove(modeTemp);
                 }
             }
+            {
+                const std::string survivalPath = storagePath_ + ".survival";
+                const std::string survivalTemp = survivalPath + ".tmp";
+                const std::uint32_t magic = 0x4D465356u;
+                const std::uint32_t version = 1u;
+                std::ofstream survivalFile(survivalTemp, std::ios::binary | std::ios::trunc);
+                if (survivalFile) {
+                    survivalFile.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    survivalFile.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    survivalFile.write(reinterpret_cast<const char*>(&playerHealth_), sizeof(playerHealth_));
+                    survivalFile.write(reinterpret_cast<const char*>(&playerHunger_), sizeof(playerHunger_));
+                    survivalFile.flush();
+                    survivalFile.close();
+                    std::error_code error;
+                    std::filesystem::rename(survivalTemp, survivalPath, error);
+                    if (error) {
+                        std::filesystem::remove(survivalPath, error);
+                        error.clear();
+                        std::filesystem::rename(survivalTemp, survivalPath, error);
+                    }
+                    if (error) {
+                        ENGINE_LOGE("Could not atomically save survival stats: %s", error.message().c_str());
+                        std::filesystem::remove(survivalTemp);
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create survival sidecar temporary file");
+                }
+            }
+            {
+                const std::string durabilityPath = storagePath_ + ".durability";
+                const std::string durabilityTemp = durabilityPath + ".tmp";
+                const std::uint32_t magic = 0x4D464459u;
+                const std::uint32_t version = 1u;
+                std::ofstream durabilityFile(durabilityTemp, std::ios::binary | std::ios::trunc);
+                if (durabilityFile) {
+                    durabilityFile.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    durabilityFile.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    durabilityFile.write(reinterpret_cast<const char*>(inventory_.toolDurability.data()),
+                        static_cast<std::streamsize>(sizeof(inventory_.toolDurability)));
+                    durabilityFile.flush();
+                    durabilityFile.close();
+                    std::error_code error;
+                    std::filesystem::rename(durabilityTemp, durabilityPath, error);
+                    if (error) {
+                        std::filesystem::remove(durabilityPath, error);
+                        error.clear();
+                        std::filesystem::rename(durabilityTemp, durabilityPath, error);
+                    }
+                    if (error) {
+                        ENGINE_LOGE("Could not atomically save tool durability: %s", error.message().c_str());
+                        std::filesystem::remove(durabilityTemp);
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create tool durability temporary file");
+                }
+            }
             if (starterChestEnabled_) {
                 const std::string chestPath = storagePath_ + ".chest";
                 const std::string tempPath = chestPath + ".tmp";
@@ -2121,21 +3658,25 @@ void Engine::SaveWorld() {
         }
     } catch (const std::exception& error) {
         ENGINE_LOGE("World save raised an exception: %s", error.what());
+        return false;
     } catch (...) {
         ENGINE_LOGE("World save raised an unknown exception");
+        return false;
     }
+    return true;
 }
 
-void Engine::Pause() {
-    if (!ready_) return;
-    SaveWorld();
+bool Engine::Pause() {
+    if (!ready_) return true;
+    const bool saved = SaveWorld();
     paused_ = true;
     player_.SetMovement(0.0f, 0.0f);
+    return saved;
 }
 
 void Engine::Resume() {
     if (!ready_) return;
-    paused_ = pauseVisible_ || inventoryVisible_;
+    paused_ = dead_ || pauseVisible_ || inventoryVisible_ || craftingVisible_;
 }
 
 void Engine::SetStoragePath(std::string path) {
@@ -2145,12 +3686,17 @@ void Engine::SetStoragePath(std::string path) {
         storagePath_ = std::move(path) + "/worlds/default.mfworld";
 }
 
-void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed) {
-    if (ready_) return;
-    gameMode_ = std::clamp(gameMode, 0, 2);
-    allowCheats_ = allowCheats;
-    starterChestEnabled_ = starterChest;
-    requestedWorldSeed_ = seed == 0u ? 0x4D464445u : seed;
+void Engine::SetWorldOptions(int gameMode, bool allowCheats, bool starterChest, std::uint32_t seed, bool flatWorld, int difficulty, bool generateStructures) {
+    // Setters are called before the next nativeInit, while the previous world may
+    // still be ready/paused. Stage these values so they cannot be discarded or
+    // applied to the outgoing world during a world transition.
+    pendingGameMode_ = std::clamp(gameMode, 0, 2);
+    pendingAllowCheats_ = allowCheats;
+    pendingStarterChestEnabled_ = starterChest;
+    pendingWorldSeed_ = seed == 0u ? 0x4D464445u : seed;
+    pendingFlatWorld_ = flatWorld;
+    pendingDifficulty_ = std::clamp(difficulty, 0, 3);
+    pendingGenerateStructures_ = generateStructures;
 }
 
 void Engine::SetModsDirectory(std::string path) {
@@ -2184,10 +3730,34 @@ void Engine::LoadEnabledMods() {
     if (!std::filesystem::is_directory(modsDirectory_, error) || error) return;
 
     std::vector<std::filesystem::path> packs;
-    for (const auto& entry : std::filesystem::directory_iterator(modsDirectory_, error)) {
-        if (error) break;
-        if (!entry.is_regular_file()) continue;
-        if (entry.path().extension() == ".mfmod") packs.push_back(entry.path());
+    for (std::filesystem::recursive_directory_iterator it(
+             modsDirectory_, std::filesystem::directory_options::skip_permission_denied, error), end;
+         !error && it != end; it.increment(error)) {
+        const auto& entry = *it;
+        std::error_code statusError;
+        if (entry.is_symlink(statusError)) {
+            if (entry.is_directory(statusError)) it.disable_recursion_pending();
+            continue;
+        }
+        if (statusError || !entry.is_regular_file(statusError) || statusError ||
+            entry.path().extension() != ".mfmod") continue;
+
+        const std::size_t depth = static_cast<std::size_t>(it.depth());
+        if (depth == 0u) {
+            packs.push_back(entry.path()); // Legacy flat MFMod v1 file.
+        } else if (depth == 2u && entry.path().filename() == "gameplay.mfmod" &&
+                   entry.path().parent_path().filename() == "data") {
+            const std::filesystem::path packageRoot = entry.path().parent_path().parent_path();
+            std::error_code manifestError;
+            if (std::filesystem::is_regular_file(packageRoot / "manifest.json", manifestError) &&
+                !manifestError) {
+                packs.push_back(entry.path()); // Validated MFMod v2 settings payload.
+            }
+        }
+    }
+    if (error) {
+        ENGINE_LOGW("Mod directory traversal ended early: %s", error.message().c_str());
+        error.clear();
     }
     std::sort(packs.begin(), packs.end());
     bool hasExplicitSpawnDistance = false;
@@ -2404,6 +3974,16 @@ bool Engine::ConsumeExitRequest() {
     return exitRequested_.exchange(false, std::memory_order_acq_rel);
 }
 
+void Engine::SetPlayerIdentity(std::string identity) {
+    if (!ProtectionManager::ValidIdentity(identity)) identity = "local-device";
+    pendingPlayerIdentity_ = identity;
+    if (!ready_) playerIdentity_ = identity;
+}
+
+bool Engine::CanRemoteModifyBlockForIdentity(const std::string& identity, int x, int z) const {
+    return ProtectionManager::ValidIdentity(identity) && protection_.CanBuild(identity, x, z);
+}
+
 void Engine::SetMultiplayerMode(bool enabled, int playerSlot) {
     pendingMultiplayerMode_ = enabled;
     pendingMultiplayerSlot_ = std::clamp(playerSlot, 0, 31);
@@ -2457,7 +4037,8 @@ void Engine::SetInputOptions(float sensitivityX, float sensitivityY, float joyst
     lookSensitivityY_ = pendingLookSensitivityY_;
     invertLookY_ = pendingInvertLookY_;
     leftHandedControls_ = pendingLeftHandedControls_;
-    controlMode_ = std::clamp(controlMode, 0, 2);
+    // Keep the legacy argument for old preferences; the visible scheme is now one D-pad.
+    controlMode_ = 0;
     pendingAutoJump_ = autoJump;
     autoJump_ = autoJump;
     if (!autoJump_) autoJumpCooldown_ = 0.0f;
@@ -2469,6 +4050,11 @@ void Engine::SetHudOptions(bool showStats) {
     pendingShowHudStats_ = showStats;
     showHudStats_ = showStats;
     ui_.SetStatusVisible(showHudStats_);
+}
+
+void Engine::SetMinimapShape(int shape) {
+    minimapShape_ = std::clamp(shape, 0, 1);
+    ui_.SetMinimapShape(minimapShape_);
 }
 
 void Engine::SetAnimationOptions(int quality, bool enabled) {
@@ -2519,7 +4105,8 @@ void Engine::ApplyRemoteBlockEdits(const int* values, std::size_t valueCount) {
     bool changed = false;
     for (std::size_t i = 0; i + 3u < valueCount; i += 4u) {
         const int x = values[i], y = values[i + 1u], z = values[i + 2u], id = values[i + 3u];
-        if (id < 0 || id >= static_cast<int>(GetBlockDefinitionCount())) continue;
+        if (id < 0 || id > 65535 ||
+            GetBlockDefinition(static_cast<BlockId>(id)) == nullptr) continue;
         const BlockId previous = world_.GetBlock(x, y, z);
         if (world_.SetBlock(x, y, z, static_cast<BlockId>(id))) {
             changed = true;

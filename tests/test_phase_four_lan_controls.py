@@ -37,13 +37,16 @@ def test_lan_protocol_checks_bounds_and_cleans_up():
     assert "io.shutdownNow();" in LAN
 
 
-def test_touch_layout_has_modes_and_hand_mirroring():
-    assert '"control_mode"' in HOME
-    assert "controlMode_ == 1" in RML and "controlMode_ == 2" in RML
+def test_touch_layout_has_one_directional_pad_and_hand_mirroring():
+    assert '"minimap_shape"' in HOME
+    assert 'settingChoice("Tipo de controles"' not in HOME
+    assert "MovementVectorAt(float x, float y" in RML
+    assert "controlMode_ = 0;" in RML
     assert "leftHanded_" in RML
     assert "leftHanded ? Gravity.RIGHT : Gravity.LEFT" in MAIN
     assert "dispatchFallbackWorldTouch" in MAIN
-    assert "ui_.IsInMovementPad(x, y)" in ENGINE
+    assert "ui_.MovementVectorAt(x, y, moveX, moveY)" in ENGINE
+    assert "touches_" in ENGINE and "UpdateTouchMovement();" in ENGINE
 
 
 if __name__ == "__main__":

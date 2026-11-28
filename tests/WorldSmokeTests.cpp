@@ -1,5 +1,13 @@
 #include "../app/src/main/cpp/world/VoxelWorld.h"
 #include "../app/src/main/cpp/game/Player.h"
+#include "../app/src/main/cpp/entity/ModelLoader.h"
+#include "../app/src/main/cpp/entity/ModelValidator.h"
+#include "../app/src/main/cpp/entity/EntityDefinition.h"
+#include "../app/src/main/cpp/entity/LegacyModelAdapter.h"
+#include "../app/src/main/cpp/entity/Skeleton.h"
+#include "../app/src/main/cpp/entity/AnimationController.h"
+#include "../app/src/main/cpp/mods/JsonLite.h"
+#include "../app/src/main/cpp/entity/EntityVisualSystem.h"
 
 #include <algorithm>
 #include <array>
@@ -8,11 +16,69 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <thread>
+#include <chrono>
+#include <vector>
 #include <iostream>
 
 using namespace minefade;
 
 int main() {
+    // Strict JSON parsing rejects duplicate keys, malformed nesting and invalid values.
+    JsonValue parsedModJson;
+    std::string jsonDiagnostic;
+    const std::string modJson = R"({"id":"testmod:basalt","name":"Basalto","numbers":[1,2,3]})";
+    assert(ParseJson(modJson, parsedModJson, jsonDiagnostic));
+    assert(parsedModJson.Find("id") != nullptr);
+    assert(*parsedModJson.Find("id")->String() == "testmod:basalt");
+    assert(!ParseJson(R"({"id":"one","id":"two"})", parsedModJson, jsonDiagnostic));
+
+    // Dynamic namespaced block IDs remain outside the 414 stable vanilla IDs.
+    // The same registered block must survive mesh generation and MFVOX save/load.
+    const std::size_t baseDefinitionCount = GetBlockDefinitionCount();
+    ModBlockRegistration modBlock;
+    modBlock.key = "testmod:basalt";
+    modBlock.nameEs = "Basalto";
+    modBlock.sound = "stone";
+    modBlock.textureTop = "assets/textures/basalt.rgba";
+    modBlock.textureSide = "assets/textures/basalt.rgba";
+    modBlock.textureBottom = "assets/textures/basalt.rgba";
+    modBlock.tileTop = 1242u;
+    modBlock.tileSide = 1243u;
+    modBlock.tileBottom = 1244u;
+    modBlock.hardness = 3.0f;
+    modBlock.flags = BlockCollidable | BlockOpaque | BlockPlaceable;
+    modBlock.shape = BlockShape::Cube;
+    BlockId modBlockId = BlockId::Air;
+    assert(RegisterModBlock(modBlock, &modBlockId, &jsonDiagnostic));
+    assert(static_cast<std::uint16_t>(modBlockId) >=
+           static_cast<std::uint16_t>(BlockId::Count));
+    assert(GetBlockDefinitionCount() == baseDefinitionCount + 1u);
+    assert(GetBlockDefinition(modBlockId) != nullptr);
+    assert(FindBlockDefinition("testmod:basalt") == GetBlockDefinition(modBlockId));
+    assert(GetBlockDefinitionByIndex(GetBlockDefinitionCount() - 1u) != nullptr);
+
+    VoxelWorld modBlockWorld(0x4d4f4433u);
+    modBlockWorld.GenerateAround(8, 8, 0);
+    assert(modBlockWorld.SetBlock(8, 80, 8, modBlockId));
+    assert(modBlockWorld.GetBlock(8, 80, 8) == modBlockId);
+    std::vector<WorldVertex> modBlockMesh;
+    modBlockWorld.BuildMesh(modBlockMesh, 8, 8, 0);
+    assert(!modBlockMesh.empty());
+    const std::string modBlockSave = "/tmp/minefade-mod-block-smoke.mfworld";
+    const Vec3 modBlockPlayer{8.0f, 82.0f, 8.0f};
+    std::array<std::uint32_t, 36> modInventory{};
+    assert(modBlockWorld.Save(modBlockSave, modBlockPlayer, modInventory));
+    VoxelWorld modBlockLoaded;
+    Vec3 modBlockLoadedPlayer{};
+    std::array<std::uint32_t, 36> modLoadedInventory{};
+    assert(modBlockLoaded.Load(modBlockSave, modBlockLoadedPlayer, modLoadedInventory));
+    assert(modBlockLoaded.GetBlock(8, 80, 8) == modBlockId);
+    std::filesystem::remove(modBlockSave);
+    ClearModBlockDefinitions();
+
     VoxelWorld world(123456u);
     // Exercise the exact default game seed and the same one-chunk spawn path
     // used by Engine::Initialise, not only arbitrary test seeds.
@@ -269,6 +335,30 @@ int main() {
     assert(largestFarMesh > 0u);
     assert(largestFarMesh <= 7680u); // 256 top quads + at most four exposed sides per column.
 
+    // Water must remain visible in a distant LOD2 chunk.
+    for (int y = 0; y < VoxelWorld::kWorldHeight; ++y)
+        if (y != 20 && y != 34)
+            assert(lodWorld.SetBlock(64, y, 8, BlockId::Air));
+    assert(lodWorld.SetBlock(64, 20, 8, BlockId::Stone));
+    assert(lodWorld.SetBlock(64, 34, 8, BlockId::Water));
+    std::vector<WorldVertex> farTransparentMesh;
+    lodWorld.BuildMesh(lodMesh, 8, 8, 4, &farTransparentMesh, &lodRanges);
+    bool farWaterSurfaceVisible = false;
+    for (const ChunkMeshRange& range : lodRanges) {
+        if (range.chunkX != 4 || range.chunkZ != 0 || range.lodLevel != 2) continue;
+        for (std::size_t i = range.transparentFirst;
+             i < range.transparentFirst + range.transparentCount; ++i) {
+            const WorldVertex& vertex = farTransparentMesh[i];
+            if (std::abs(vertex.y - 35.0f) < 0.001f && vertex.r < -0.5f &&
+                vertex.x >= 64.0f && vertex.x <= 65.0f &&
+                vertex.z >= 8.0f && vertex.z <= 9.0f) {
+                farWaterSurfaceVisible = true;
+                break;
+            }
+        }
+    }
+    assert(farWaterSurfaceVisible);
+
     // Frustum AABB tests use a simple [-4,+4] cube around the camera.
     CameraFrustum testFrustum;
     testFrustum.valid = true;
@@ -281,6 +371,43 @@ int main() {
     assert(!testFrustum.IntersectsAabb(8.0f,0.0f,0.0f,10.0f,1.0f,1.0f));
     assert(!testFrustum.IntersectsAabb(-1.0f,-1.0f,8.0f,1.0f,1.0f,10.0f));
 
+    // A partial opaque shape must not erase the entire neighbouring cube face.
+    VoxelWorld shapeWorld(0x53484150u);
+    shapeWorld.GenerateAround(8, 8, 0);
+    for (int z = 6; z <= 10; ++z)
+        for (int x = 6; x <= 11; ++x)
+            assert(shapeWorld.SetBlock(x, 50, z, BlockId::Air));
+    assert(shapeWorld.SetBlock(8, 50, 8, BlockId::Stone));
+    assert(shapeWorld.SetBlock(9, 50, 8, BlockId::StoneSlab));
+    std::vector<WorldVertex> shapeMesh;
+    shapeWorld.BuildMesh(shapeMesh, 8, 8, 0);
+    const auto hasUpperEastFace = [&shapeMesh]() {
+        return std::any_of(shapeMesh.begin(), shapeMesh.end(), [](const WorldVertex& vertex) {
+            return std::abs(vertex.x - 9.0f) < 0.001f &&
+                   vertex.nx > 0.9f && vertex.y > 50.75f;
+        });
+    };
+    assert(hasUpperEastFace());
+    assert(shapeWorld.SetBlock(9, 50, 8, BlockId::Stone));
+    shapeWorld.BuildMesh(shapeMesh, 8, 8, 0);
+    assert(!hasUpperEastFace());
+
+    // Exercise the actual 1-chunk mobile path: CPU meshing completes off-thread,
+    // then the render-side poll publishes the cached section on a later tick.
+    VoxelWorld asyncMeshWorld(0x4153594eu);
+    asyncMeshWorld.GenerateAround(8, 8, 0);
+    std::vector<WorldVertex> asyncScratch;
+    std::vector<ChunkMeshView> asyncViews;
+    bool asyncMeshReady = false;
+    for (int attempt = 0; attempt < 1000 && !asyncMeshReady; ++attempt) {
+        asyncMeshWorld.BuildMesh(asyncScratch, 8, 8, 0, nullptr, nullptr, 1u, false);
+        asyncMeshWorld.GetChunkMeshViews(8, 8, 0, asyncViews);
+        asyncMeshReady = !asyncViews.empty() && asyncViews.front().revision > 0u &&
+            asyncViews.front().opaque != nullptr && !asyncViews.front().opaque->empty();
+        if (!asyncMeshReady) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    assert(asyncMeshReady);
+
     // A generated but excluded chunk must not hide the last visible ring's
     // boundary surfaces, as if its neighbour were unloaded.
     VoxelWorld edgeWorld(0x45444745u);
@@ -292,6 +419,39 @@ int main() {
     std::vector<WorldVertex> edgeMesh;
     edgeWorld.BuildMesh(edgeMesh, 8, 8, 0);
     assert(edgeMesh.size() >= 36u);
+
+    // Partial opaque shapes must not cull a neighbouring full cube face.
+    // A slab occupies only half the cell, so the stone's +X face must remain.
+    VoxelWorld partialOcclusionWorld(0x50415254u);
+    partialOcclusionWorld.GenerateAround(8, 8, 0);
+    assert(partialOcclusionWorld.SetBlock(8, 80, 8, BlockId::Stone));
+    assert(partialOcclusionWorld.SetBlock(9, 80, 8, BlockId::StoneSlab));
+    std::vector<WorldVertex> partialOcclusionMesh;
+    partialOcclusionWorld.BuildMesh(partialOcclusionMesh, 8, 8, 0);
+    const auto countPositiveXFaceTriangles = [](const std::vector<WorldVertex>& vertices,
+                                                 float planeX) {
+        std::size_t triangles = 0u;
+        for (std::size_t i = 0; i + 2u < vertices.size(); i += 3u) {
+            const WorldVertex& a = vertices[i];
+            const WorldVertex& b = vertices[i + 1u];
+            const WorldVertex& c = vertices[i + 2u];
+            const bool onPlane = std::abs(a.x - planeX) < 0.0001f &&
+                std::abs(b.x - planeX) < 0.0001f &&
+                std::abs(c.x - planeX) < 0.0001f;
+            const bool positiveNormal = a.nx > 0.99f && b.nx > 0.99f && c.nx > 0.99f;
+            const float maximumY = std::max({a.y, b.y, c.y});
+            if (onPlane && positiveNormal && maximumY > 80.9f) ++triangles;
+        }
+        return triangles;
+    };
+    assert(countPositiveXFaceTriangles(partialOcclusionMesh, 9.0f) == 2u);
+
+    // Replacing the slab with a complete opaque cube must remove that internal
+    // shared face, not leave a z-fighting surface inside the solid volume.
+    assert(partialOcclusionWorld.SetBlock(9, 80, 8, BlockId::Stone));
+    partialOcclusionMesh.clear();
+    partialOcclusionWorld.BuildMesh(partialOcclusionMesh, 8, 8, 0);
+    assert(countPositiveXFaceTriangles(partialOcclusionMesh, 9.0f) == 0u);
 
     std::vector<WorldVertex> transparentMesh;
     world.SetBlock(8, height + 8, 8, BlockId::Water);
@@ -582,6 +742,92 @@ int main() {
     std::vector<WorldVertex> asyncMesh;
     asyncWorld.BuildMesh(asyncMesh, 32, 32, 1);
     assert(!asyncMesh.empty());
+    // MAES Phase 1: validate and render the first external entity model while
+    // preserving every historical kind and the old visual fallback.
+    const std::filesystem::path sheepModelPath =
+        "app/src/main/assets/entities/sheep/sheep.mfmodel";
+    std::ifstream sheepModelFile(sheepModelPath, std::ios::binary);
+    assert(sheepModelFile.good());
+    std::vector<char> sheepModelChars((std::istreambuf_iterator<char>(sheepModelFile)),
+                                      std::istreambuf_iterator<char>());
+    std::vector<std::uint8_t> sheepModelBytes(sheepModelChars.size());
+    for (std::size_t i = 0; i < sheepModelChars.size(); ++i)
+        sheepModelBytes[i] = static_cast<std::uint8_t>(static_cast<unsigned char>(sheepModelChars[i]));
+    ModelData sheepModel;
+    std::string modelError;
+    const bool sheepModelLoaded = ModelLoader::Load(
+        sheepModelBytes.data(), sheepModelBytes.size(), sheepModel, modelError);
+    if (!sheepModelLoaded)
+        std::cerr << "MAES .mfmodel load failed: " << modelError
+                  << " (bytes=" << sheepModelBytes.size() << ")\\n";
+    assert(sheepModelLoaded);
+    assert(sheepModel.versionMajor == 1u);
+    assert(sheepModel.bones.size() >= 8u);
+    assert(sheepModel.cubes.size() >= 10u);
+    assert(sheepModel.materials.size() == 1u);
+    assert(sheepModel.clips.size() >= 3u);
+    assert(sheepModel.states.size() >= 3u);
+    assert(ModelValidator::Validate(sheepModel, modelError));
+
+    // CRC corruption must reject only the optional visual resource.
+    std::vector<std::uint8_t> corruptSheep = sheepModelBytes;
+    corruptSheep.back() ^= 0x40u;
+    ModelData rejectedModel;
+    assert(!ModelLoader::Load(corruptSheep.data(), corruptSheep.size(), rejectedModel, modelError));
+
+    EntityRegistry entityRegistry;
+    assert(entityRegistry.Register(MakeSheepEntityDefinition(), modelError));
+    assert(entityRegistry.Exists("minefade:sheep"));
+    assert(entityRegistry.FindByLegacyKind(0) != nullptr);
+    EntityDefinition duplicateSheep = MakeSheepEntityDefinition();
+    assert(!entityRegistry.Register(duplicateSheep, modelError));
+    EntityDefinition unsafeSheep = MakeSheepEntityDefinition();
+    unsafeSheep.identifier = "minefade:unsafe";
+    unsafeSheep.modelPath = "../outside.mfmodel";
+    assert(!entityRegistry.Register(unsafeSheep, modelError));
+
+    LegacyModelAdapter legacyAuto;
+    LegacyModelAdapter legacyOnly(LegacyModelMode::Legacy);
+    assert(legacyAuto.UseMaes(true));
+    assert(!legacyAuto.UseMaes(false));
+    assert(!legacyOnly.UseMaes(true));
+
+    EntityAnimationState idlePose;
+    idlePose.condition = 0u;
+    idlePose.previousCondition = 0u;
+    idlePose.time = 0.35f;
+    std::vector<AnimatedBonePose> evaluatedPose;
+    assert(AnimationController::Evaluate(sheepModel, idlePose, evaluatedPose));
+    assert(evaluatedPose.size() == sheepModel.bones.size());
+    std::vector<ModelVec3> boneTranslations;
+    std::vector<ModelQuaternion> boneRotations;
+    std::vector<ModelVec3> boneScales;
+    for (const auto& bonePose : evaluatedPose) {
+        boneTranslations.push_back(bonePose.translation);
+        boneRotations.push_back(bonePose.rotation);
+        boneScales.push_back(bonePose.scale);
+    }
+    std::vector<ModelMatrix> boneMatrices;
+    assert(Skeleton::BuildMatrices(sheepModel, boneTranslations, boneRotations,
+                                    boneScales, boneMatrices));
+    assert(boneMatrices.size() == sheepModel.bones.size());
+
+    EntityVisualSystem sheepVisuals;
+    assert(sheepVisuals.LoadSheepModel(sheepModelBytes.data(),
+                                      sheepModelBytes.size(), modelError));
+    assert(sheepVisuals.IsSheepReady());
+    std::vector<WorldVertex> maesMesh;
+    sheepVisuals.AppendMesh(entities.Entities(), maesMesh, nullptr, false);
+    assert(!maesMesh.empty());
+    assert(maesMesh.size() % 3u == 0u);
+    for (const WorldVertex& vertex : maesMesh) {
+        assert(std::isfinite(vertex.x) && std::isfinite(vertex.y) &&
+               std::isfinite(vertex.z) && std::isfinite(vertex.nx) &&
+               std::isfinite(vertex.ny) && std::isfinite(vertex.nz));
+    }
+    sheepVisuals.Clear();
+    assert(!sheepVisuals.IsSheepReady());
+
     std::cout << "Minefade world smoke tests passed.\n";
     return 0;
 }
