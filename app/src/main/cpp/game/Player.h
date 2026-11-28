@@ -70,6 +70,9 @@ public:
     std::uint16_t SlotItemDurability(std::size_t slot) const;
     std::uint16_t CountItem(std::uint16_t itemId) const;
     bool ConsumeItem(std::uint16_t itemId, std::uint16_t amount);
+    bool MoveOrMergeSlot(std::size_t source, std::size_t destination);
+    bool SplitStack(std::size_t source, std::size_t destination);
+    bool RemoveFromSlot(std::size_t slot, std::uint16_t amount, std::uint16_t* itemId = nullptr);
     std::uint16_t SelectedItemId() const;
 };
 
