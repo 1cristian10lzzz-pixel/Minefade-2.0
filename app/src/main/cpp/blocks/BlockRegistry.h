@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -424,6 +425,12 @@ enum class BlockId : std::uint16_t {
 enum class BlockShape : std::uint8_t { None, Cube, Slab, Stairs, CrossPlant, Thin, Pane, Fence, Door, Trapdoor, Fluid, Scaffolding };
 enum class BlockTool : std::uint8_t { None, Pickaxe, Axe, Shovel, Shears };
 enum BlockFlags : std::uint16_t { BlockCollidable=1, BlockOpaque=2, BlockTransparent=4, BlockFluid=8, BlockPlant=16, BlockEmissive=32, BlockPlaceable=64 };
+struct BlockDropRule {
+    std::uint16_t itemId{0u};
+    std::uint16_t minimumCount{1u};
+    std::uint16_t maximumCount{1u};
+    float chance{1.0f};
+};
 struct BlockDefinition {
     BlockId id;
     const char* key;
@@ -444,6 +451,8 @@ struct BlockDefinition {
     std::uint16_t durability{0u};
     std::uint8_t armorProtection{0u};
     std::uint8_t armorSlot{255u};
+    std::array<BlockDropRule, 4> drops{};
+    std::uint8_t dropCount{0u};
 };
 struct ModBlockRegistration {
     std::string key;
@@ -464,6 +473,8 @@ struct ModBlockRegistration {
     std::uint16_t durability{0u};
     std::uint8_t armorProtection{0u};
     std::uint8_t armorSlot{255u};
+    std::array<BlockDropRule, 4> drops{};
+    std::uint8_t dropCount{0u};
 };
 const BlockDefinition* GetBlockDefinition(BlockId id) noexcept;
 const BlockDefinition* FindBlockDefinition(std::string_view key) noexcept;
@@ -471,6 +482,9 @@ std::size_t GetBlockDefinitionCount() noexcept;
 const BlockDefinition* GetBlockDefinitionByIndex(std::size_t index) noexcept;
 bool RegisterModBlock(ModBlockRegistration definition, BlockId* registeredId = nullptr,
                       std::string* error = nullptr);
+bool SetModBlockDrops(std::string_view blockKey,
+                      const std::array<BlockDropRule, 4>& drops,
+                      std::uint8_t dropCount, std::string* error = nullptr);
 void ClearModBlockDefinitions() noexcept;
 void SetBlockAtlasDimensions(std::size_t width, std::size_t height) noexcept;
 bool HasBlockFlag(BlockId id, BlockFlags flag) noexcept;

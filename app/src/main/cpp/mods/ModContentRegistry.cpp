@@ -76,6 +76,15 @@ bool NamespacedId(std::string_view value, std::string_view expectedNamespace) {
     return true;
 }
 
+bool NamespacedReference(std::string_view value, std::string_view expectedNamespace) {
+    const std::size_t split = value.find(':');
+    if (split == std::string_view::npos) return false;
+    const std::string_view nameSpace = value.substr(0u, split);
+    if (nameSpace != expectedNamespace && nameSpace != "minecraft" && nameSpace != "minefade")
+        return false;
+    return NamespacedId(value, nameSpace);
+}
+
 bool SafeAssetPath(std::string_view path) {
     if (path.size() < 10u || path.size() > 240u ||
         path.substr(0u, 7u) != "assets/" ||
@@ -161,6 +170,7 @@ void ModContentRegistry::Clear() noexcept {
     biomes_.clear();
     structures_.clear();
     entities_.clear();
+    pendingBlockDrops_.clear();
     textureTiles_.clear();
 }
 
@@ -225,9 +235,51 @@ bool ModContentRegistry::Load(const std::filesystem::path& modsDirectory,
             return false;
         }
         if (!LoadPackage(package, expandedAtlas, baseAtlasWidth,
-                         expandedAtlasHeight, nextTile,
-                         error)) return false;
+                         expandedAtlasHeight, nextTile, modId,
+                         error)) { Clear(); return false; }
     }
+    // Resolve drops only after all enabled packs have registered their item IDs.
+    for (const PendingBlockDrops& pending : pendingBlockDrops_) {
+        std::array<BlockDropRule, 4> rules{};
+        if (pending.entries.empty() || pending.entries.size() > rules.size()) {
+            error = "tabla de drops vacía o demasiado grande";
+            Clear();
+            return false;
+        }
+        for (std::size_t index = 0; index < pending.entries.size(); ++index) {
+            const PendingBlockDrop& source = pending.entries[index];
+            const BlockId item = ResolveModBlockId(source.itemId);
+            if (item == BlockId::Air) {
+                error = "el drop " + source.itemId + " no existe o no está registrado";
+                Clear();
+                return false;
+            }
+            rules[index] = BlockDropRule{
+                static_cast<std::uint16_t>(item), source.minimumCount,
+                source.maximumCount, source.chance
+            };
+        }
+        if (!SetModBlockDrops(pending.blockId, rules,
+                              static_cast<std::uint8_t>(pending.entries.size()), &error)) {
+            Clear();
+            return false;
+        }
+    }
+    for (const ModRecipeDefinition& recipe : recipes_) {
+        if (ResolveModBlockId(recipe.outputId) == BlockId::Air) {
+            error = "la salida " + recipe.outputId + " de una receta no existe";
+            Clear();
+            return false;
+        }
+        for (const ModRecipeIngredient& ingredient : recipe.ingredients) {
+            if (ResolveModBlockId(ingredient.itemId) == BlockId::Air) {
+                error = "el ingrediente " + ingredient.itemId + " de una receta no existe";
+                Clear();
+                return false;
+            }
+        }
+    }
+
     // The runtime atlas keeps the original 32-column cell layout and only grows
     // by complete rows; this preserves all built-in texture coordinates.
     expandedAtlasWidth = baseAtlasWidth;
@@ -260,6 +312,13 @@ bool ModContentRegistry::RegisterTexture(const std::filesystem::path& packageRoo
                                          int& atlasHeight, std::uint16_t& nextTile,
                                          std::uint16_t& tile, std::string& error) {
     if (!SafeAssetPath(relativePath)) { error = "ruta de textura no permitida"; return false; }
+    std::string textureName(relativePath);
+    std::transform(textureName.begin(), textureName.end(), textureName.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (textureName.size() < 5u || textureName.compare(textureName.size() - 5u, 5u, ".rgba") != 0) {
+        error = "formato de textura no compatible: usa RGBA 16x16";
+        return false;
+    }
     const std::string cacheKey = packageRoot.generic_string() + "|" + std::string(relativePath);
     const auto cached = textureTiles_.find(cacheKey);
     if (cached != textureTiles_.end()) {
@@ -306,7 +365,7 @@ bool ModContentRegistry::RegisterTexture(const std::filesystem::path& packageRoo
 bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
                                      std::vector<std::uint8_t>& atlas, int atlasWidth,
                                      int& atlasHeight, std::uint16_t& nextTile,
-                                     std::string& error) {
+                                     std::string_view expectedModId, std::string& error) {
     JsonValue blocksJson;
     if (ReadJson(packageRoot / "data" / "blocks.json", blocksJson)) {
         const auto* blocks = blocksJson.Items();
@@ -323,7 +382,7 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
         for (const JsonValue* value : sorted) {
             const std::string id = GetString(*value, "id");
             const std::size_t split = id.find(':');
-            if (split == std::string::npos || !NamespacedId(id, std::string_view(id).substr(0u, split))) {
+            if (split == std::string::npos || !NamespacedId(id, expectedModId)) {
                 error = "id de bloque mod inválido";
                 return false;
             }
@@ -375,7 +434,49 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
             registration.flags = flags;
             registration.shape = shape;
             registration.preferredTool = tool;
+
+            PendingBlockDrops pending;
+            pending.blockId = id;
+            const auto appendDrop = [&](const JsonValue& source) -> bool {
+                PendingBlockDrop drop;
+                if (const std::string* shorthand = source.String()) {
+                    drop.itemId = *shorthand;
+                } else {
+                    drop.itemId = GetString(source, "id");
+                    int minimum = 1, maximum = 1;
+                    double chance = 1.0;
+                    if (!GetInteger(source, "min", 1, 1, 99, minimum) ||
+                        !GetInteger(source, "max", minimum, 1, 99, maximum) ||
+                        maximum < minimum ||
+                        !GetNumber(source, "chance", 1.0, 0.0, 1.0, chance)) return false;
+                    drop.minimumCount = static_cast<std::uint16_t>(minimum);
+                    drop.maximumCount = static_cast<std::uint16_t>(maximum);
+                    drop.chance = static_cast<float>(chance);
+                }
+                if (!NamespacedReference(drop.itemId, expectedModId)) return false;
+                pending.entries.push_back(std::move(drop));
+                return pending.entries.size() <= 4u;
+            };
+            const JsonValue* dropValue = value->Find("drop");
+            if (dropValue == nullptr) {
+                pending.entries.push_back(PendingBlockDrop{id, 1u, 1u, 1.0f});
+            } else if (const auto* dropArray = dropValue->Items()) {
+                if (dropArray->empty() || dropArray->size() > 4u) {
+                    error = "drop debe contener entre uno y cuatro resultados";
+                    return false;
+                }
+                for (const JsonValue& entry : *dropArray) {
+                    if (!appendDrop(entry)) {
+                        error = "definición de drop inválida en " + id;
+                        return false;
+                    }
+                }
+            } else if (!appendDrop(*dropValue)) {
+                error = "definición de drop inválida en " + id;
+                return false;
+            }
             if (!RegisterModBlock(std::move(registration), nullptr, &error)) return false;
+            pendingBlockDrops_.push_back(std::move(pending));
         }
     }
 
@@ -391,7 +492,7 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
         for (const JsonValue* value : sorted) {
             const std::string id = GetString(*value, "id");
             const std::size_t split = id.find(':');
-            if (split == std::string::npos || !NamespacedId(id, std::string_view(id).substr(0u, split))) {
+            if (split == std::string::npos || !NamespacedId(id, expectedModId)) {
                 error = "id de objeto mod inválido"; return false;
             }
             const std::string icon = GetString(*value, "icon");
@@ -452,9 +553,21 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
             recipe.id = GetString(value, "id");
             recipe.name = GetString(value, "name", recipe.id);
             recipe.station = GetString(value, "station", "inventory");
+            static const std::set<std::string> validStations{
+                "inventory", "crafting_table", "furnace", "anvil", "stonecutter"
+            };
+            if (!NamespacedId(recipe.id, expectedModId) ||
+                validStations.find(recipe.station) == validStations.end() ||
+                FindRecipe(recipe.id) != nullptr) {
+                error = "id de receta duplicado o estación no compatible";
+                return false;
+            }
             const JsonValue* output = value.Find("output");
             if (output == nullptr) { error = "receta sin output"; return false; }
             recipe.outputId = GetString(*output, "id");
+            if (!NamespacedReference(recipe.outputId, expectedModId)) {
+                error = "salida de receta con ID namespaced inválido"; return false;
+            }
             int outputCount = 1;
             if (!GetInteger(*output, "count", 1, 1, 999, outputCount)) {
                 error = "cantidad de salida de receta inválida"; return false;
@@ -468,6 +581,9 @@ bool ModContentRegistry::LoadPackage(const std::filesystem::path& packageRoot,
             for (const auto& ingredient : *ingredients) {
                 ModRecipeIngredient item;
                 item.itemId = GetString(ingredient, "id");
+                if (!NamespacedReference(item.itemId, expectedModId)) {
+                    error = "ingrediente de receta con ID namespaced inválido"; return false;
+                }
                 int count = 1;
                 if (!GetInteger(ingredient, "count", 1, 1, 999, count)) {
                     error = "cantidad de ingrediente inválida"; return false;

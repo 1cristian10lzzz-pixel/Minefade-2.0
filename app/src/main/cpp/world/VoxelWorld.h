@@ -21,6 +21,11 @@ struct Vec3 {
 };
 
 // Interleaved vertex format for the OpenGL ES world renderer.
+struct UsedModBlockId {
+    std::uint16_t runtimeId{0u};
+    std::string namespacedId;
+};
+
 struct WorldVertex {
     float x, y, z;
     float nx, ny, nz;
@@ -127,6 +132,7 @@ public:
     bool IsFlatWorld() const { return flatWorld_; }
     std::size_t ChunkCount() const { return chunks_.size(); }
     std::size_t CountNonAirBlocks() const;
+    std::vector<UsedModBlockId> UsedModBlocks() const;
     // Approximate CPU residency; save files and block IDs are unchanged.
     std::size_t ChunkStorageBytes() const noexcept;
     std::size_t MeshCacheMemoryBytes() const noexcept;

@@ -85,10 +85,20 @@ public:
     const ModRecipeDefinition* FindRecipe(std::string_view id) const noexcept;
 
 private:
+    struct PendingBlockDrop {
+        std::string itemId;
+        std::uint16_t minimumCount{1u};
+        std::uint16_t maximumCount{1u};
+        float chance{1.0f};
+    };
+    struct PendingBlockDrops {
+        std::string blockId;
+        std::vector<PendingBlockDrop> entries;
+    };
     bool LoadPackage(const std::filesystem::path& packageRoot,
                      std::vector<std::uint8_t>& atlas, int atlasWidth,
                      int& atlasHeight, std::uint16_t& nextTile,
-                     std::string& error);
+                     std::string_view expectedModId, std::string& error);
     bool RegisterTexture(const std::filesystem::path& packageRoot, std::string_view relativePath,
                          std::vector<std::uint8_t>& atlas, int atlasWidth, int& atlasHeight,
                          std::uint16_t& nextTile, std::uint16_t& tile,
@@ -98,6 +108,7 @@ private:
     std::vector<ModBiomeDefinition> biomes_;
     std::vector<ModStructureDefinition> structures_;
     std::vector<ModEntityDefinition> entities_;
+    std::vector<PendingBlockDrops> pendingBlockDrops_;
     std::map<std::string, std::uint16_t> textureTiles_;
 };
 

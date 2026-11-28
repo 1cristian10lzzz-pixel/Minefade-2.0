@@ -1665,6 +1665,23 @@ std::size_t VoxelWorld::MeshCacheMemoryBytes() const noexcept {
     return total;
 }
 
+std::vector<UsedModBlockId> VoxelWorld::UsedModBlocks() const {
+    std::map<std::uint16_t, std::string> used;
+    for (const auto& entry : chunks_) {
+        for (BlockId block : entry.second.blocks) {
+            const BlockDefinition* definition = GetBlockDefinition(block);
+            if (definition == nullptr || definition->key == nullptr) continue;
+            const std::string_view key(definition->key);
+            if (key.find(':') == std::string_view::npos) continue;
+            used.emplace(static_cast<std::uint16_t>(definition->id), std::string(key));
+        }
+    }
+    std::vector<UsedModBlockId> result;
+    result.reserve(used.size());
+    for (const auto& entry : used) result.push_back({entry.first, entry.second});
+    return result;
+}
+
 bool VoxelWorld::Save(const std::string& filePath,const Vec3& playerPosition,
                       const std::array<std::uint32_t,36>& inventory) const {
     if(chunks_.size()>kMaxSavedChunks||!std::isfinite(playerPosition.x)||!std::isfinite(playerPosition.y)||!std::isfinite(playerPosition.z))return false;
@@ -1684,9 +1701,34 @@ bool VoxelWorld::Save(const std::string& filePath,const Vec3& playerPosition,
             file.write(reinterpret_cast<const char*>(chunk.blocks.data()),static_cast<std::streamsize>(chunk.blocks.size()*sizeof(BlockId)));
         }
         file.flush();if(!file){file.close();std::filesystem::remove(temp);return false;}file.close();
-        std::error_code ec;std::filesystem::rename(temp,path,ec);
-        if(ec){std::filesystem::remove(path,ec);ec.clear();std::filesystem::rename(temp,path,ec);}
-        if(ec){std::filesystem::remove(temp);return false;}
+        std::error_code ec;
+        std::filesystem::rename(temp,path,ec);
+        if (ec) {
+            ec.clear();
+            const std::filesystem::path backup = path.string() + ".bak";
+            std::filesystem::remove(backup, ec);
+            if (ec) { std::filesystem::remove(temp); return false; }
+            ec.clear();
+            const bool hadOriginal = std::filesystem::exists(path, ec) && !ec;
+            if (ec) { std::filesystem::remove(temp); return false; }
+            if (hadOriginal) {
+                std::filesystem::rename(path, backup, ec);
+                if (ec) { std::filesystem::remove(temp); return false; }
+            }
+            std::filesystem::rename(temp, path, ec);
+            if (ec) {
+                if (hadOriginal) {
+                    std::error_code restoreError;
+                    std::filesystem::rename(backup, path, restoreError);
+                }
+                std::filesystem::remove(temp);
+                return false;
+            }
+            if (hadOriginal) {
+                std::error_code cleanupError;
+                std::filesystem::remove(backup, cleanupError);
+            }
+        }
         return true;
     } catch(...) { return false; }
 }
@@ -1724,7 +1766,11 @@ bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
             for(std::size_t n=0;n<oldBlocks.size();++n)chunk.blocks[n]=static_cast<BlockId>(RemapLegacyBlock(oldBlocks[n]));
         } else {
             file.read(reinterpret_cast<char*>(chunk.blocks.data()),static_cast<std::streamsize>(chunk.blocks.size()*sizeof(BlockId)));if(!file)return false;
-            for(BlockId& block:chunk.blocks)if(!IsValidBlock(block))block=BlockId::Air;
+            for (BlockId& block : chunk.blocks) {
+                const auto rawId = static_cast<std::uint16_t>(block);
+                if (!IsValidBlock(block) && rawId < static_cast<std::uint16_t>(BlockId::Count))
+                    block = BlockId::Air;
+            }
         }
         if(!loadedChunks.emplace(std::make_pair(chunk.x,chunk.z),std::move(chunk)).second)return false;
     }
@@ -1735,7 +1781,9 @@ bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
         const std::uint32_t quantity = encoded % 1000u;
         const BlockDefinition* definition =
             GetBlockDefinition(static_cast<BlockId>(itemId));
-        if (definition == nullptr || quantity == 0u || (definition->stackLimit > 0u && quantity > definition->stackLimit)) {
+        if (itemId == 0u || quantity == 0u || quantity > 99u ||
+            (definition == nullptr && itemId < static_cast<std::uint32_t>(BlockId::Count)) ||
+            (definition != nullptr && definition->stackLimit > 0u && quantity > definition->stackLimit)) {
             encoded = 0u;
         }
     }

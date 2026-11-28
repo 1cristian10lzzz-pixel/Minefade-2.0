@@ -3727,7 +3727,34 @@ void Engine::UpdateMining(float deltaSeconds) {
         if (progressionBlocksMined_ < 10000000u) ++progressionBlocksMined_;
         if (gameMode_ != 1) AddProgressionXp(2u);
         const BlockDefinition* brokenDefinition = GetBlockDefinition(brokenType);
-        if (brokenDefinition != nullptr && brokenDefinition->dropId > 0u) {
+        if (brokenDefinition != nullptr && brokenDefinition->dropCount > 0u) {
+            const auto mixDropSeed = [](std::uint32_t value) {
+                value ^= value >> 16u;
+                value *= 0x7feb352du;
+                value ^= value >> 15u;
+                value *= 0x846ca68bu;
+                value ^= value >> 16u;
+                return value;
+            };
+            const std::uint32_t positionSeed =
+                static_cast<std::uint32_t>(static_cast<std::int32_t>(broken.x)) * 0x45d9f3bu ^
+                static_cast<std::uint32_t>(static_cast<std::int32_t>(broken.y)) * 0x119de1f3u ^
+                static_cast<std::uint32_t>(static_cast<std::int32_t>(broken.z)) * 0x27d4eb2du ^
+                progressionBlocksMined_;
+            for (std::size_t index = 0; index < brokenDefinition->dropCount; ++index) {
+                const BlockDropRule& rule = brokenDefinition->drops[index];
+                const std::uint32_t roll = mixDropSeed(
+                    positionSeed ^ static_cast<std::uint32_t>(index + 1u) * 0x9e3779b9u);
+                const float probability = (static_cast<float>(roll) + 0.5f) / 4294967296.0f;
+                if (probability >= rule.chance) continue;
+                const std::uint32_t range =
+                    static_cast<std::uint32_t>(rule.maximumCount - rule.minimumCount) + 1u;
+                const auto quantity = static_cast<std::uint16_t>(
+                    rule.minimumCount + (range == 0u ? 0u : roll % range));
+                droppedItems_.Spawn({broken.x + 0.5f, broken.y + 0.55f, broken.z + 0.5f},
+                                    rule.itemId, quantity);
+            }
+        } else if (brokenDefinition != nullptr && brokenDefinition->dropId > 0u) {
             const auto dropQuantity = static_cast<std::uint16_t>(std::clamp(modDropQuantity_, 1, 4));
             droppedItems_.Spawn({broken.x + 0.5f, broken.y + 0.55f, broken.z + 0.5f},
                                 brokenDefinition->dropId, dropQuantity);
@@ -4002,6 +4029,78 @@ bool Engine::SaveWorld() {
             return false;
         } else {
             ENGINE_LOGI("World saved to private app storage");
+            {
+                std::map<std::uint16_t, std::string> usedModIds;
+                for (const UsedModBlockId& entry : world_.UsedModBlocks())
+                    usedModIds.emplace(entry.runtimeId, entry.namespacedId);
+                const auto addInventoryModId = [&usedModIds](std::uint32_t encoded) {
+                    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+                    if (itemId == 0u) return;
+                    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+                    if (definition != nullptr && definition->key != nullptr &&
+                        std::string_view(definition->key).find(':') != std::string_view::npos)
+                        usedModIds.emplace(itemId, definition->key);
+                };
+                for (std::uint32_t encoded : inventory_.counts) addInventoryModId(encoded);
+                for (std::uint16_t itemId : inventory_.equippedArmor)
+                    addInventoryModId(static_cast<std::uint32_t>(itemId) * 1000u + 1u);
+
+                const std::string idsPath = storagePath_ + ".modids";
+                const std::string idsTemp = idsPath + ".tmp";
+                std::ofstream idsFile(idsTemp, std::ios::binary | std::ios::trunc);
+                const char idsMagic[8] = {'M','F','M','O','D','I','D','1'};
+                const std::uint32_t idsVersion = 1u;
+                const std::uint32_t idsCount = static_cast<std::uint32_t>(usedModIds.size());
+                if (idsFile) {
+                    idsFile.write(idsMagic, sizeof(idsMagic));
+                    idsFile.write(reinterpret_cast<const char*>(&idsVersion), sizeof(idsVersion));
+                    idsFile.write(reinterpret_cast<const char*>(&idsCount), sizeof(idsCount));
+                    for (const auto& entry : usedModIds) {
+                        const std::uint16_t keyLength = static_cast<std::uint16_t>(
+                            std::min<std::size_t>(entry.second.size(), 129u));
+                        idsFile.write(reinterpret_cast<const char*>(&entry.first), sizeof(entry.first));
+                        idsFile.write(reinterpret_cast<const char*>(&keyLength), sizeof(keyLength));
+                        idsFile.write(entry.second.data(), keyLength);
+                    }
+                    idsFile.flush();
+                    idsFile.close();
+                    if (!idsFile) {
+                        ENGINE_LOGE("Could not write world mod ID registry");
+                        std::filesystem::remove(idsTemp);
+                    } else {
+                        std::error_code idsError;
+                        std::filesystem::rename(idsTemp, idsPath, idsError);
+                        if (idsError) {
+                            const std::string idsBackup = idsPath + ".bak";
+                            std::error_code backupError;
+                            std::filesystem::remove(idsBackup, backupError);
+                            backupError.clear();
+                            const bool hadIds = std::filesystem::exists(idsPath, backupError) && !backupError;
+                            if (!backupError && hadIds)
+                                std::filesystem::rename(idsPath, idsBackup, backupError);
+                            if (!backupError) {
+                                idsError.clear();
+                                std::filesystem::rename(idsTemp, idsPath, idsError);
+                            } else {
+                                idsError = backupError;
+                            }
+                            if (idsError) {
+                                if (hadIds) {
+                                    std::error_code restoreError;
+                                    std::filesystem::rename(idsBackup, idsPath, restoreError);
+                                }
+                                std::filesystem::remove(idsTemp);
+                                ENGINE_LOGE("Could not atomically replace world mod ID registry");
+                            } else if (hadIds) {
+                                std::error_code cleanupError;
+                                std::filesystem::remove(idsBackup, cleanupError);
+                            }
+                        }
+                    }
+                } else {
+                    ENGINE_LOGE("Could not create world mod ID registry");
+                }
+            }
             if (!protection_.Save())
                 ENGINE_LOGW("Protection claims could not be saved; existing claims file was preserved");
             {
