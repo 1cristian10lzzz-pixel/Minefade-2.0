@@ -624,6 +624,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("crouch", "crouch");
     AttachAction("attack", "attack");
     AttachHoldAction("eat", "eat-hold-start", "eat-hold-end");
+    AttachAction("eat", "eat");
     AttachAction("starter-chest-open", "starter-chest-open");
     AttachAction("starter-chest-close", "starter-chest-close");
     AttachAction("starter-chest-take", "starter-chest-take");
@@ -644,11 +645,13 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("toggle-shadows", "toggle-shadows");
     AttachAction("toggle-rain", "toggle-rain");
     AttachAction("toggle-animations", "toggle-animations");
-    for (const char* id : {"craft-filter-all", "craft-filter-basic", "craft-filter-building",
-                           "craft-filter-mechanisms", "craft-filter-minerals", "craft-filter-tools",
-                           "craft-filter-mods"}) {
-        AttachAction(id, id);
-    }
+    AttachAction("craft-filter-all", "craft-filter-all");
+    AttachAction("craft-filter-basic", "craft-filter-basic");
+    AttachAction("craft-filter-building", "craft-filter-building");
+    AttachAction("craft-filter-mechanisms", "craft-filter-mechanisms");
+    AttachAction("craft-filter-minerals", "craft-filter-minerals");
+    AttachAction("craft-filter-tools", "craft-filter-tools");
+    AttachAction("craft-filter-mods", "craft-filter-mods");
     document_->Show();
     context_->Update();
     ready_ = true;

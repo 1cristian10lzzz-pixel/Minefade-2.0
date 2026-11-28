@@ -2370,7 +2370,8 @@ void Engine::HandleUiAction(const std::string& action) {
     if (action == "eat-hold-start") {
         eatHeld_ = true; eatHoldConsumed_ = false; eatHoldElapsed_ = 0.0f;
     } else if (action == "eat-hold-end") {
-        if (eatHeld_ && !eatHoldConsumed_) TryEatSelectedFood();
+        // A short tap is handled by the legacy click callback below; a long press
+        // has already consumed one or more portions during the hold timer.
         eatHeld_ = false; eatHoldElapsed_ = 0.0f;
     } else if (action == "respawn") {
         if (!dead_) return;
