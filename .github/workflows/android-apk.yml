@@ -16,7 +16,8 @@ permissions:
 
 concurrency:
   group: minefade-android-${{ github.ref }}
-  cancel-in-progress: false
+  # A newer push to the same PR supersedes an older Android build.
+  cancel-in-progress: true
 
 jobs:
   build-apk:
