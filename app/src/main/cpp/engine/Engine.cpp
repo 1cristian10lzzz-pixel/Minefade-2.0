@@ -2496,6 +2496,8 @@ void Engine::HandleUiAction(const std::string& action) {
         CraftRecipe("wooden_sword");
     } else if (action.rfind("craft-", 0) == 0) {
         CraftRecipe(action.substr(6));
+    } else if (action == "craft-search") {
+        chatRequested_.store(true, std::memory_order_release);
     } else if (action.rfind("craft-filter-", 0) == 0) {
         const std::string filter = action.substr(13);
         craftingFilter_ = filter == "basic" ? 1 : filter == "building" ? 2 :
@@ -3131,7 +3133,7 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         return "/claim help · /oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
                "/zombi [cantidad] · /esqueleto [cantidad] · /conejo [cantidad] · "
                "/modo supervivencia|creativo|aventura · /tiempo dia|noche · "
-               "/dar <id> [cantidad] · /tp <x> <y> <z> · /setspawn · /semilla · /inventario · /fabricar <receta>";
+               "/dar <id> [cantidad] · /tp <x> <y> <z> · /setspawn · /semilla · /inventario · /buscarreceta <texto> · /fabricar <receta>";
     }
     if (verb == "claim" || verb == "parcela") {
         std::string action;
@@ -3196,6 +3198,18 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         if (!any) summary << "Vacío.\n";
         summary << "Espacio seleccionado: " << (inventory_.selectedSlot + 1u) << "/9.";
         return summary.str();
+    }
+    if (verb == "buscarreceta" || verb == "buscarfabricacion") {
+        std::string query;
+        std::getline(input >> std::ws, query);
+        craftingSearch_ = query;
+        RefreshCraftingUi();
+        return query.empty() ? "Búsqueda de recetas limpiada." : "Recetas filtradas por: " + query;
+    }
+    if (verb == "limpiarbusqueda" || verb == "clearsearch") {
+        craftingSearch_.clear();
+        RefreshCraftingUi();
+        return "Búsqueda de recetas limpiada.";
     }
     if (verb == "setspawn" || verb == "spawnpoint" || verb == "puntoaparicion") {
         spawnPoint_ = player_.position; spawnPointSet_ = true;
@@ -4076,8 +4090,19 @@ void Engine::RefreshCraftingUi() {
         return id;
     };
     const auto addRecipe = [&markup, &index, &escapeMarkup, &recipeOutputId, &recipeCategory,
-                            filter = craftingFilter_](const std::string& recipe, const std::string& label) {
+                            filter = craftingFilter_, query = craftingSearch_](
+            const std::string& recipe, const std::string& label) {
         if (filter != 0 && filter != recipeCategory) return;
+        if (!query.empty()) {
+            std::string haystack = recipe + " " + label;
+            std::string needle = query;
+            const auto lower = [](std::string& value) {
+                std::transform(value.begin(), value.end(), value.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            };
+            lower(haystack); lower(needle);
+            if (haystack.find(needle) == std::string::npos) return;
+        }
         const std::uint16_t outputId = recipeOutputId(recipe);
         markup += "<button class='craft-recipe-card' id='crafting-recipe-" +
             std::to_string(index++) + "' data-action='craft-" +

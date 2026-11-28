@@ -196,6 +196,7 @@ button:active { background: #47789b; }
 #pause-settings-panel .actions { justify-content: center; margin-top: 6dp; }
 #crafting-filters { flex-wrap: wrap; justify-content: flex-start; gap: 3dp; padding: 3dp 0dp; }
 #crafting-filters button { width: auto; min-width: 44dp; min-height: 30dp; font-size: 7dp; padding: 3dp 5dp; }
+#craft-search { background: #385c78; border-color: #a7c3d9; font-weight: bold; }
 #crafting-recipes { height: 68%; }
 #pause-panel button { min-width: 104dp; }
 .panel h1, .panel p { display: none; }
@@ -335,11 +336,11 @@ button:active { background: #47789b; }
       <div class="craft-arrow">➜</div>
       <div class="craft-output"></div>
     </div>
-    <div class="crafting-note">Elige una receta: se validan materiales, estación y espacio antes de consumir nada.</div>
+    <div class="crafting-note">Pulsa Buscar y escribe /buscarreceta texto en el chat. /limpiarbusqueda muestra todas las recetas.</div>
   </div>
   <div class="recipe-title">RECETAS DISPONIBLES</div>
   <div id="crafting-filters" class="inventory-actions">
-    <button id="craft-filter-all">Todo</button><button id="craft-filter-basic">Básico</button>
+    <button id="craft-search">Buscar</button><button id="craft-filter-all">Todo</button><button id="craft-filter-basic">Básico</button>
     <button id="craft-filter-building">Construcción</button><button id="craft-filter-mechanisms">Mecanismos</button>
     <button id="craft-filter-minerals">Minerales</button><button id="craft-filter-tools">Equipo</button>
     <button id="craft-filter-mods">Mods</button>
@@ -636,6 +637,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("resume", "resume");
     AttachAction("save", "save");
     AttachAction("save-exit", "save-exit");
+    AttachAction("craft-search", "craft-search");
     AttachAction("pause-settings", "pause-settings");
     AttachAction("pause-settings-close", "pause-settings-close");
     AttachAction("toggle-water", "toggle-water");
