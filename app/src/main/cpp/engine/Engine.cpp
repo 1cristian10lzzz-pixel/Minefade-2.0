@@ -3286,6 +3286,7 @@ void Engine::TakeContainerSlot(std::size_t slot) {
     if (!SaveWorld()) {
         inventory_ = previousInventory;
         containers_[activeContainerKey_] = previousContainer;
+        SaveWorld(); // Restore the previous inventory snapshot on disk as well.
         RefreshInventoryUi();
         RefreshContainerUi();
         ui_.SetChatMessage("No se pudo guardar el traslado; el objeto se ha devuelto al cofre.");
@@ -3327,8 +3328,7 @@ void Engine::TakeContainerContents() {
                 }
             }
             if (!restored) {
-                // Keep this item in the chest and undo only its attempted insertion.
-                inventory_.RemoveFromSlot(Inventory::kSlotCount, 0u, nullptr);
+                // Keep this item in the chest and undo the attempted insertion.
                 inventory_ = previousInventory;
                 ui_.SetChatMessage("No se pudo restaurar una herramienta; se canceló Recoger todo.");
                 return;
