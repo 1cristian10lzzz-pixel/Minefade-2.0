@@ -3165,69 +3165,343 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
 void Engine::OpenStarterChest() {
     Vec3 target{};
     BlockId type = BlockId::Air;
-    if (!starterChestEnabled_ ||
-        !world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f, &target, &type) ||
+    if (!world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f, &target, &type) ||
         type != BlockId::Chest) {
-        ui_.SetChatMessage("Mira al cofre y pulsa COFRE para abrirlo.");
+        ui_.SetChatMessage("Mira directamente a un cofre para abrirlo.");
         return;
     }
-    if (!protection_.CanUseContainer(playerIdentity_, static_cast<int>(target.x),
-                                     static_cast<int>(target.z))) {
+    const int x = static_cast<int>(target.x);
+    const int y = static_cast<int>(target.y);
+    const int z = static_cast<int>(target.z);
+    if (!protection_.CanUseContainer(playerIdentity_, x, z)) {
         ui_.SetChatMessage("Este cofre está protegido. Pide permiso a su dueño.");
         return;
     }
+
+    activeContainerKey_ = {{x, y, z}};
     starterChestPosition_ = target;
-    std::string markup;
-    for (std::size_t i = 0; i < starterChestContents_.size(); ++i) {
-        const std::uint32_t encoded = starterChestContents_[i];
-        if (encoded == 0u) continue;
-        const auto id = static_cast<std::uint16_t>(encoded / 1000u);
-        const auto amount = encoded % 1000u;
-        const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(id));
-        if (definition == nullptr || amount == 0u) continue;
-        markup += "<div class='inventory-row'><img class='inventory-icon' src='minefade://block/"
-            + std::to_string(id) + "'/><span>" + definition->nameEs + " × "
-            + std::to_string(amount) + "</span></div>";
+    auto found = containers_.find(activeContainerKey_);
+    if (found == containers_.end()) {
+        ContainerData fresh{};
+        // Migrate the old nine-slot bonus chest into the new per-position
+        // container format exactly once. Existing MFVOX and .chest saves stay valid.
+        const int starterX = 8;
+        const int starterZ = 6;
+        const int starterY = world_.GetSurfaceHeight(starterX, starterZ) + 1;
+        if (starterChestEnabled_ && x == starterX && y == starterY && z == starterZ) {
+            std::copy(starterChestContents_.begin(), starterChestContents_.end(),
+                      fresh.counts.begin());
+            starterChestContents_.fill(0u);
+        }
+        found = containers_.emplace(activeContainerKey_, std::move(fresh)).first;
+        if (!SaveContainers())
+            ENGINE_LOGW("New chest container could not be persisted immediately");
     }
-    ui_.SetChestContents(markup.empty() ? "<div class='inventory-row'>El cofre está vacío.</div>" : markup);
     starterChestOpen_ = true;
+    RefreshContainerUi();
     ui_.SetPanelVisible("starter-chest-panel", true);
     soundEvents_.fetch_or(131072u, std::memory_order_release);
 }
 
-void Engine::TakeStarterChestContents() {
+void Engine::RefreshContainerUi() {
     if (!starterChestOpen_) return;
-    std::uint32_t taken = 0u;
-    for (std::uint32_t& encoded : starterChestContents_) {
-        if (encoded == 0u) continue;
-        const auto itemId = static_cast<std::uint16_t>(encoded / 1000u);
-        const auto amount = static_cast<std::uint16_t>(encoded % 1000u);
-        if (itemId != 0u && amount != 0u && inventory_.Add(itemId, amount)) {
-            taken += amount;
-            encoded = 0u;
+    const auto found = containers_.find(activeContainerKey_);
+    std::string markup;
+    markup.reserve(7000u);
+    for (std::size_t slot = 0; slot < 27u; ++slot) {
+        const std::uint32_t encoded = found == containers_.end()
+            ? 0u : found->second.counts[slot];
+        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+        const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+        markup += "<button class='container-slot inventory-row' id='container-slot-" +
+            std::to_string(slot) + "'>";
+        if (itemId != 0u && amount != 0u) {
+            const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+            if (definition != nullptr) {
+                markup += "<img class='inventory-icon' src='minefade://block/" +
+                    std::to_string(itemId) + "'/><span>" + definition->nameEs + " × " +
+                    std::to_string(amount) + "</span>";
+                const std::uint16_t durability = found->second.durability[slot];
+                if (durability > 0u)
+                    markup += "<span class='inventory-durability'>Durabilidad " +
+                        std::to_string(durability) + "</span>";
+            } else {
+                markup += "<span>Objeto desconocido</span>";
+            }
+        } else {
+            markup += "<span class='container-empty'>Vacío</span>";
         }
+        markup += "</button>";
     }
-    if (taken == 0u) {
-        ui_.SetChatMessage("No hay espacio libre suficiente en tu inventario.");
+    ui_.SetChestContents(markup);
+}
+
+void Engine::TakeContainerSlot(std::size_t slot) {
+    if (!starterChestOpen_ || slot >= 27u) return;
+    auto found = containers_.find(activeContainerKey_);
+    if (found == containers_.end()) return;
+    ContainerData& container = found->second;
+    const std::uint32_t encoded = container.counts[slot];
+    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+    const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+    if (itemId == 0u || amount == 0u || definition == nullptr) {
+        ui_.SetChatMessage("Ese espacio del cofre está vacío.");
         return;
     }
-    const bool empty = std::all_of(starterChestContents_.begin(), starterChestContents_.end(),
-                                   [](std::uint32_t value) { return value == 0u; });
-    if (empty) {
-        world_.SetBlock(static_cast<int>(starterChestPosition_.x),
-                        static_cast<int>(starterChestPosition_.y),
-                        static_cast<int>(starterChestPosition_.z), BlockId::Air);
-        starterChestOpen_ = false;
-        ui_.SetPanelVisible("starter-chest-panel", false);
-        RebuildWorldMesh();
-        UploadWorldMesh();
-        UploadTransparentWorldMesh();
-        SaveWorld();
-    } else {
-        OpenStarterChest();
+
+    const std::uint16_t storedDurability = container.durability[slot];
+    const std::array<std::uint32_t, Inventory::kSlotCount> before = inventory_.counts;
+    if (!inventory_.Add(itemId, amount)) {
+        ui_.SetChatMessage("No hay espacio suficiente en el inventario.");
+        return;
+    }
+    if (storedDurability > 0u) {
+        // Durable tools/equipment have stack size one. Find the newly occupied
+        // player slot and restore its exact wear value instead of resetting it.
+        bool restored = false;
+        for (std::size_t playerSlot = 0; playerSlot < Inventory::kSlotCount; ++playerSlot) {
+            if (before[playerSlot] == 0u &&
+                inventory_.counts[playerSlot] == static_cast<std::uint32_t>(itemId) * 1000u + 1u) {
+                inventory_.toolDurability[playerSlot] = storedDurability;
+                restored = true;
+                break;
+            }
+        }
+        if (!restored) {
+            // Roll back the insertion if the worn tool cannot be restored safely.
+            inventory_.RemoveFromSlot(Inventory::kSlotCount, 0u, nullptr);
+            ui_.SetChatMessage("No se pudo restaurar la durabilidad de esa herramienta.");
+            return;
+        }
+    }
+
+    container.counts[slot] = 0u;
+    container.durability[slot] = 0u;
+    RefreshInventoryUi();
+    RefreshContainerUi();
+    SaveWorld();
+    ui_.SetChatMessage("Objeto recogido del cofre.");
+}
+
+void Engine::TakeContainerContents() {
+    if (!starterChestOpen_) return;
+    auto found = containers_.find(activeContainerKey_);
+    if (found == containers_.end()) return;
+    ContainerData& container = found->second;
+    std::uint32_t taken = 0u;
+    for (std::size_t slot = 0; slot < container.counts.size(); ++slot) {
+        const std::uint32_t encoded = container.counts[slot];
+        const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+        const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+        if (itemId == 0u || amount == 0u) continue;
+        if (GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr) continue;
+        const std::uint16_t storedDurability = container.durability[slot];
+        const std::array<std::uint32_t, Inventory::kSlotCount> before = inventory_.counts;
+        if (!inventory_.Add(itemId, amount)) continue;
+        if (storedDurability > 0u) {
+            bool restored = false;
+            for (std::size_t playerSlot = 0; playerSlot < Inventory::kSlotCount; ++playerSlot) {
+                if (before[playerSlot] == 0u &&
+                    inventory_.counts[playerSlot] ==
+                        static_cast<std::uint32_t>(itemId) * 1000u + 1u) {
+                    inventory_.toolDurability[playerSlot] = storedDurability;
+                    restored = true;
+                    break;
+                }
+            }
+            if (!restored) {
+                // Keep the chest item untouched if its wear state cannot be restored.
+                inventory_.RemoveFromSlot(Inventory::kSlotCount, 0u, nullptr);
+                continue;
+            }
+        }
+        container.counts[slot] = 0u;
+        container.durability[slot] = 0u;
+        taken += amount;
+    }
+    if (taken == 0u) {
+        ui_.SetChatMessage("No hay espacio suficiente para recoger objetos del cofre.");
+        return;
     }
     RefreshInventoryUi();
+    RefreshContainerUi();
+    SaveWorld();
     ui_.SetChatMessage("Has recogido " + std::to_string(taken) + " objetos del cofre.");
+}
+
+void Engine::DepositSelectedIntoContainer() {
+    if (!starterChestOpen_) return;
+    auto found = containers_.find(activeContainerKey_);
+    if (found == containers_.end()) return;
+    const std::size_t playerSlot = inventory_.selectedSlot;
+    if (playerSlot >= Inventory::kSlotCount || inventory_.counts[playerSlot] == 0u) {
+        ui_.SetChatMessage("Selecciona primero un objeto de la barra rápida.");
+        return;
+    }
+
+    ContainerData& container = found->second;
+    const std::uint32_t encoded = inventory_.counts[playerSlot];
+    const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+    const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+    if (definition == nullptr || amount == 0u) {
+        ui_.SetChatMessage("Ese objeto no se puede guardar.");
+        return;
+    }
+
+    const std::uint16_t maxDurability = inventory_.SlotItemMaxDurability(playerSlot);
+    const std::uint16_t durability = inventory_.SlotItemDurability(playerSlot);
+    std::size_t destination = container.counts.size();
+    if (maxDurability > 0u) {
+        for (std::size_t i = 0; i < container.counts.size(); ++i) {
+            if (container.counts[i] == 0u) { destination = i; break; }
+        }
+    } else {
+        const std::uint16_t limit = definition->stackLimit > 0u ? definition->stackLimit : 64u;
+        for (std::size_t i = 0; i < container.counts.size(); ++i) {
+            const std::uint16_t targetId = static_cast<std::uint16_t>(container.counts[i] / 1000u);
+            const std::uint16_t targetAmount = static_cast<std::uint16_t>(container.counts[i] % 1000u);
+            if (targetId == itemId && targetAmount < limit) {
+                destination = i;
+                break;
+            }
+        }
+        if (destination == container.counts.size()) {
+            for (std::size_t i = 0; i < container.counts.size(); ++i) {
+                if (container.counts[i] == 0u) { destination = i; break; }
+            }
+        }
+    }
+    if (destination == container.counts.size()) {
+        ui_.SetChatMessage("El cofre está lleno.");
+        return;
+    }
+
+    const std::uint16_t currentAmount =
+        static_cast<std::uint16_t>(container.counts[destination] % 1000u);
+    const std::uint16_t targetAmount = static_cast<std::uint16_t>(currentAmount + 1u);
+    container.counts[destination] = static_cast<std::uint32_t>(itemId) * 1000u + targetAmount;
+    container.durability[destination] = maxDurability > 0u ? durability : 0u;
+    if (!inventory_.RemoveFromSlot(playerSlot, 1u, nullptr)) {
+        container.counts[destination] = currentAmount == 0u ? 0u :
+            static_cast<std::uint32_t>(itemId) * 1000u + currentAmount;
+        container.durability[destination] = 0u;
+        ui_.SetChatMessage("No se pudo mover el objeto al cofre.");
+        return;
+    }
+
+    RefreshInventoryUi();
+    RefreshContainerUi();
+    SaveWorld();
+    ui_.SetChatMessage("Has guardado 1 objeto en el cofre.");
+}
+
+bool Engine::LoadContainers() {
+    containers_.clear();
+    if (storagePath_.empty() || (multiplayerMode_ && multiplayerSlot_ != 0)) return true;
+    std::ifstream file(storagePath_ + ".containers", std::ios::binary);
+    if (!file) return true;
+
+    char magic[8]{};
+    std::uint32_t version = 0u;
+    std::uint32_t count = 0u;
+    file.read(magic, sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+    file.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!file || std::memcmp(magic, "MFCNTR01", 8) != 0 ||
+        version != 1u || count > 4096u) {
+        ENGINE_LOGW("Ignored invalid container sidecar header");
+        return false;
+    }
+
+    std::map<std::array<std::int32_t, 3>, ContainerData> loaded;
+    for (std::uint32_t n = 0; n < count; ++n) {
+        std::array<std::int32_t, 3> key{};
+        ContainerData data{};
+        file.read(reinterpret_cast<char*>(key.data()),
+                  static_cast<std::streamsize>(sizeof(key)));
+        file.read(reinterpret_cast<char*>(data.counts.data()),
+                  static_cast<std::streamsize>(sizeof(data.counts)));
+        file.read(reinterpret_cast<char*>(data.durability.data()),
+                  static_cast<std::streamsize>(sizeof(data.durability)));
+        if (!file || key[1] < 0 || key[1] >= VoxelWorld::kWorldHeight ||
+            std::abs(static_cast<std::int64_t>(key[0])) > 10000000LL ||
+            std::abs(static_cast<std::int64_t>(key[2])) > 10000000LL) {
+            ENGINE_LOGW("Ignored truncated or out-of-range container record");
+            return false;
+        }
+        for (std::size_t slot = 0; slot < data.counts.size(); ++slot) {
+            const std::uint32_t encoded = data.counts[slot];
+            if (encoded == 0u) { data.durability[slot] = 0u; continue; }
+            const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
+            const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
+            const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
+            if (definition == nullptr || amount == 0u ||
+                (definition->stackLimit > 0u && amount > definition->stackLimit)) {
+                data.counts[slot] = 0u;
+                data.durability[slot] = 0u;
+                continue;
+            }
+            Inventory probe;
+            probe.counts[0] = encoded;
+            const std::uint16_t maxDurability = probe.SlotItemMaxDurability(0u);
+            if (maxDurability == 0u) data.durability[slot] = 0u;
+            else if (amount != 1u || data.durability[slot] > maxDurability) {
+                data.counts[slot] = 0u;
+                data.durability[slot] = 0u;
+            }
+        }
+        if (!loaded.emplace(key, std::move(data)).second) {
+            ENGINE_LOGW("Ignored duplicate container coordinate in sidecar");
+            return false;
+        }
+    }
+    if (file.peek() != std::char_traits<char>::eof()) {
+        ENGINE_LOGW("Ignored container sidecar with trailing data");
+        return false;
+    }
+    containers_ = std::move(loaded);
+    return true;
+}
+
+bool Engine::SaveContainers() const {
+    if (storagePath_.empty() || (multiplayerMode_ && multiplayerSlot_ != 0)) return true;
+    if (containers_.size() > 4096u) return false;
+    try {
+        const std::string path = storagePath_ + ".containers";
+        const std::string temp = path + ".tmp";
+        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+        if (!file) return false;
+        constexpr char magic[8] = {'M','F','C','N','T','R','0','1'};
+        const std::uint32_t version = 1u;
+        const std::uint32_t count = static_cast<std::uint32_t>(containers_.size());
+        file.write(magic, sizeof(magic));
+        file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        file.write(reinterpret_cast<const char*>(&count), sizeof(count));
+        for (const auto& pair : containers_) {
+            file.write(reinterpret_cast<const char*>(pair.first.data()),
+                       static_cast<std::streamsize>(sizeof(pair.first)));
+            file.write(reinterpret_cast<const char*>(pair.second.counts.data()),
+                       static_cast<std::streamsize>(sizeof(pair.second.counts)));
+            file.write(reinterpret_cast<const char*>(pair.second.durability.data()),
+                       static_cast<std::streamsize>(sizeof(pair.second.durability)));
+        }
+        file.flush();
+        if (!file) { file.close(); std::filesystem::remove(temp); return false; }
+        file.close();
+        std::error_code error;
+        std::filesystem::rename(temp, path, error);
+        if (error) {
+            std::filesystem::remove(path, error);
+            error.clear();
+            std::filesystem::rename(temp, path, error);
+        }
+        if (error) { std::filesystem::remove(temp); return false; }
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 void Engine::SetTargetBlock(const std::string& name, float progress) {
