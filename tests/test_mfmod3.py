@@ -32,6 +32,7 @@ class ModPackV3Tests(unittest.TestCase):
         (self.mod / "data" / "blocks.json").write_text(json.dumps([{
             "id": "content_test:basalt", "name": "Basalto", "shape": "cube",
             "hardness": 2.0, "tool": "pickaxe", "stack_limit": 64,
+            "drop": {"id": "content_test:steel_sword", "min": 1, "max": 2, "chance": 0.75},
             "textures": {
                 "top": "assets/textures/basalt.rgba",
                 "side": "assets/textures/basalt.rgba",
@@ -101,6 +102,20 @@ class ModPackV3Tests(unittest.TestCase):
         blocks[0]["id"] = "other_mod:basalt"
         (self.mod / "data" / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "namespace debe ser"):
+            self.create_valid()
+
+    def test_rejects_invalid_custom_block_drop_range(self):
+        blocks = json.loads((self.mod / "data" / "blocks.json").read_text(encoding="utf-8"))
+        blocks[0]["drop"] = {"id": "content_test:steel_sword", "min": 4, "max": 2}
+        (self.mod / "data" / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "máximo inferior al mínimo"):
+            self.create_valid()
+
+    def test_rejects_unknown_custom_block_drop_item(self):
+        blocks = json.loads((self.mod / "data" / "blocks.json").read_text(encoding="utf-8"))
+        blocks[0]["drop"] = "content_test:missing_item"
+        (self.mod / "data" / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "objeto de drop no definido"):
             self.create_valid()
 
     def test_rejects_recipe_without_ingredients(self):

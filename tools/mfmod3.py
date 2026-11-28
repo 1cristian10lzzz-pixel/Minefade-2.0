@@ -132,6 +132,7 @@ def _resource(value: Any, files: dict[str, bytes], name: str,
 def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
     used_capabilities: set[str] = set()
     seen_ids: set[str] = set()
+    pending_drop_refs: list[tuple[str, str]] = []
 
     blocks = _array(_read_json(files, "data/blocks.json"), "blocks", 256)
     for i, block in enumerate(blocks):
@@ -152,6 +153,26 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
             raise ValueError(f"{identifier}: textures debe contener top/side/bottom")
         for face in ("top", "side", "bottom"):
             _resource(textures.get(face), files, f"{identifier}.textures.{face}", {".rgba"})
+        raw_drops = block.get("drop", identifier)
+        if isinstance(raw_drops, str) or isinstance(raw_drops, dict):
+            drop_entries = [raw_drops]
+        elif isinstance(raw_drops, list) and 1 <= len(raw_drops) <= 4:
+            drop_entries = raw_drops
+        else:
+            raise ValueError(f"{identifier}.drop: se esperaba uno o hasta cuatro resultados")
+        for j, drop in enumerate(drop_entries):
+            if isinstance(drop, str):
+                drop_id = namespaced_reference(drop, mod_id, f"{identifier}.drop[{j}]")
+            elif isinstance(drop, dict):
+                drop_id = namespaced_reference(drop.get("id"), mod_id, f"{identifier}.drop[{j}].id")
+                minimum = _int(drop.get("min", 1), f"{identifier}.drop[{j}].min", 1, 99)
+                maximum = _int(drop.get("max", minimum), f"{identifier}.drop[{j}].max", 1, 99)
+                if maximum < minimum:
+                    raise ValueError(f"{identifier}.drop[{j}]: máximo inferior al mínimo")
+                _number(drop.get("chance", 1.0), f"{identifier}.drop[{j}].chance", 0.0, 1.0)
+            else:
+                raise ValueError(f"{identifier}.drop[{j}]: definición inválida")
+            pending_drop_refs.append((drop_id, f"{identifier}.drop[{j}]"))
         used_capabilities.update({"blocks", "textures"})
 
     items = _array(_read_json(files, "data/items.json"), "items", 256)
@@ -182,6 +203,11 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
             _resource(item["models"], files, f"{identifier}.models", {".mfmodel"})
             used_capabilities.add("models")
 
+    for drop_id, field in pending_drop_refs:
+        namespace = drop_id.split(":", 1)[0]
+        if namespace == mod_id and drop_id not in seen_ids:
+            raise ValueError(f"{field}: objeto de drop no definido en el paquete")
+
     recipes = _array(_read_json(files, "data/recipes.json"), "recipes", 512)
     for i, recipe in enumerate(recipes):
         identifier = namespaced_id(recipe.get("id"), mod_id, f"recipes[{i}].id")
@@ -210,7 +236,7 @@ def validate_definitions(files: dict[str, bytes], mod_id: str) -> set[str]:
             raise ValueError(f"definición duplicada: {identifier}")
         seen_ids.add(identifier)
         _resource(entity.get("model"), files, f"{identifier}.model", {".mfmodel"})
-        _resource(entity.get("texture"), files, f"{identifier}.texture", {".rgba", ".png", ".webp"})
+        _resource(entity.get("texture"), files, f"{identifier}.texture", {".rgba"})
         _number(entity.get("width", 0.8), f"{identifier}.width", 0.1, 16.0)
         _number(entity.get("height", 1.0), f"{identifier}.height", 0.1, 32.0)
         _number(entity.get("eye_height", 0.7), f"{identifier}.eye_height", 0.1, 32.0)

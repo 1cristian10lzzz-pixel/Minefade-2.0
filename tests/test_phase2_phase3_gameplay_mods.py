@@ -11,6 +11,11 @@ PLAYER = (CPP / "game/Player.cpp").read_text(encoding="utf-8")
 PLAYER_H = (CPP / "game/Player.h").read_text(encoding="utf-8")
 RML = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
 MODS = (JAVA / "ModManager.java").read_text(encoding="utf-8")
+MOD_REGISTRY = (CPP / "mods/ModContentRegistry.cpp").read_text(encoding="utf-8")
+BLOCK_REGISTRY = (CPP / "blocks/BlockRegistry.cpp").read_text(encoding="utf-8")
+BLOCK_REGISTRY_H = (CPP / "blocks/BlockRegistry.h").read_text(encoding="utf-8")
+WORLD = (CPP / "world/VoxelWorld.cpp").read_text(encoding="utf-8")
+WORLD_H = (CPP / "world/VoxelWorld.h").read_text(encoding="utf-8")
 LAN = (JAVA / "LanMultiplayerService.java").read_text(encoding="utf-8")
 MAIN = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
 
@@ -80,6 +85,9 @@ def test_worlds_pin_enabled_mod_fingerprint_without_silently_overwriting_it():
     assert "pinOrCompareWorldMods(String worldPath)" in MODS
     assert 'new File(worldPath + ".mods")' in MODS
     assert "if (!pinned.equals(fingerprint))" in MODS
+    assert '"id_mapping", "stable-fnv1a16-v1"' in MODS
+    assert '"sha256", calculateModHash(info)' in MODS
+    assert "savedMods.length() != currentMods.length()" in MODS
     assert "pinOrCompareWorldMods(world.getPath())" in MAIN
 
 
@@ -204,3 +212,32 @@ def test_inventory_and_mobile_hud_labels_match_real_slot_counts():
     assert "width: 34dp; min-width: 34dp; height: 36dp" in RML
     assert "kSlotCount = 9.0f" in RML
     assert 'replaceStyle("right: 24dp; bottom: 126dp;", "left: 24dp; right: auto; bottom: 126dp;");' in RML
+
+
+def test_mod_blocks_support_multiple_custom_drops_with_chance_and_quantity():
+    assert "struct BlockDropRule" in BLOCK_REGISTRY_H
+    assert "std::array<BlockDropRule, 4> drops{};" in BLOCK_REGISTRY_H
+    assert "SetModBlockDrops" in BLOCK_REGISTRY
+    assert "pendingBlockDrops_" in MOD_REGISTRY
+    assert "dropArray->size() > 4u" in MOD_REGISTRY
+    assert "rule.chance" in ENGINE
+    assert "brokenDefinition->dropCount" in ENGINE
+
+
+def test_native_mod_recipes_validate_stations_and_references():
+    assert "validStations" in MOD_REGISTRY
+    assert "ResolveModBlockId(recipe.outputId)" in MOD_REGISTRY
+    assert "ResolveModBlockId(ingredient.itemId)" in MOD_REGISTRY
+
+
+def test_mod_world_data_preserves_unknown_ids_and_records_mapping():
+    assert "rawId < static_cast<std::uint16_t>(BlockId::Count)" in WORLD
+    assert "definition == nullptr && itemId < static_cast<std::uint32_t>(BlockId::Count)" in WORLD
+    assert "UsedModBlocks() const" in WORLD_H
+    assert 'storagePath_ + ".modids"' in ENGINE
+    assert 'path.string() + ".bak"' in WORLD
+
+
+def test_mod_texture_validation_matches_native_rgba_16x16():
+    assert 'compare(textureName.size() - 5u, 5u, ".rgba")' in MOD_REGISTRY
+    assert 'textureBytes.length != 1024' in MODS
