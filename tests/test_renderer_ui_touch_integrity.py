@@ -336,3 +336,23 @@ def test_safe_rml_document_routes_to_full_android_recovery_overlay():
     assert "if (usingSafeDocument_) return false;" in runtime
     assert "Se activaron los controles" not in ACTIVITY
     assert "HUD Android completo activado." in ACTIVITY
+
+
+def test_inventory_supports_full_slot_move_merge_split_and_drop_actions():
+    player_header = (CPP / "game/Player.h").read_text(encoding="utf-8")
+    player_source = (CPP / "game/Player.cpp").read_text(encoding="utf-8")
+    runtime = (CPP / "ui/RmlUiRuntime.cpp").read_text(encoding="utf-8")
+    assert "MoveOrMergeSlot(std::size_t source, std::size_t destination)" in player_header
+    assert "SplitStack(std::size_t source, std::size_t destination)" in player_header
+    assert "RemoveFromSlot(std::size_t slot" in player_header
+    assert "SlotItemMaxDurability(source) > 0u" in player_source
+    assert "std::swap(toolDurability[source], toolDurability[destination])" in player_source
+    assert 'id="inventory-split"' in runtime and 'id="inventory-drop"' in runtime
+    assert 'AttachAction("inventory-split", "inventory-split")' in runtime
+    assert 'AttachAction("inventory-drop", "inventory-drop")' in runtime
+    assert "inventoryCursorSlot_" in ENGINE
+    assert 'action == "inventory-split"' in ENGINE
+    assert 'action == "inventory-drop"' in ENGINE
+    assert "inventory_.MoveOrMergeSlot(source, slot)" in ENGINE
+    assert "inventory_.SplitStack(source, destination)" in ENGINE
+    assert "inventory_.RemoveFromSlot(slot, 1u, &itemId)" in ENGINE
