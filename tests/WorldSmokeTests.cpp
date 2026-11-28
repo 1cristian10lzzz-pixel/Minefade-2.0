@@ -7,6 +7,8 @@
 #include "../app/src/main/cpp/entity/Skeleton.h"
 #include "../app/src/main/cpp/entity/AnimationController.h"
 #include "../app/src/main/cpp/mods/JsonLite.h"
+#include "../app/src/main/cpp/mods/ModContentRegistry.h"
+#include "../app/src/main/cpp/blocks/BlockAtlasManifest.h"
 #include "../app/src/main/cpp/entity/EntityVisualSystem.h"
 
 #include <algorithm>
@@ -34,6 +36,38 @@ int main() {
     assert(parsedModJson.Find("id") != nullptr);
     assert(*parsedModJson.Find("id")->String() == "testmod:basalt");
     assert(!ParseJson(R"({"id":"one","id":"two"})", parsedModJson, jsonDiagnostic));
+
+    // MFMod v3 optional data sections may be absent, but a present malformed
+    // section must fail the load instead of silently disabling that feature.
+    const std::filesystem::path modJsonRoot = "/tmp/minefade-mod-v3-json-test";
+    std::filesystem::remove_all(modJsonRoot);
+    std::filesystem::create_directories(modJsonRoot / "data");
+    {
+        std::ofstream manifest(modJsonRoot / "manifest.json", std::ios::binary);
+        manifest << R"({"format":3,"id":"runtime_test"})";
+        std::ofstream gameplay(modJsonRoot / "data" / "gameplay.mfmod", std::ios::binary);
+        gameplay << "id=runtime_test\nname=Runtime Test\nversion=1.0\nenabled=true\n";
+    }
+    std::vector<std::uint8_t> baseModAtlas(kBlockAtlasByteCount, 0u);
+    std::vector<std::uint8_t> expandedModAtlas;
+    int expandedModAtlasWidth = 0;
+    int expandedModAtlasHeight = 0;
+    std::string modRuntimeError;
+    ModContentRegistry& modRegistry = ModContentRegistry::Instance();
+    assert(modRegistry.Load(modJsonRoot, baseModAtlas.data(), baseModAtlas.size(),
+        static_cast<int>(kBlockAtlasWidth), static_cast<int>(kBlockAtlasHeight),
+        expandedModAtlas, expandedModAtlasWidth, expandedModAtlasHeight, modRuntimeError));
+    modRegistry.Clear();
+    {
+        std::ofstream malformed(modJsonRoot / "data" / "blocks.json", std::ios::binary);
+        malformed << "{ invalid json";
+    }
+    assert(!modRegistry.Load(modJsonRoot, baseModAtlas.data(), baseModAtlas.size(),
+        static_cast<int>(kBlockAtlasWidth), static_cast<int>(kBlockAtlasHeight),
+        expandedModAtlas, expandedModAtlasWidth, expandedModAtlasHeight, modRuntimeError));
+    assert(modRuntimeError.find("data/blocks.json") != std::string::npos);
+    modRegistry.Clear();
+    std::filesystem::remove_all(modJsonRoot);
 
     // Dynamic namespaced block IDs remain outside the 414 stable vanilla IDs.
     // The same registered block must survive mesh generation and MFVOX save/load.
