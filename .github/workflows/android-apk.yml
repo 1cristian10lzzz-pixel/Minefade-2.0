@@ -16,7 +16,8 @@ permissions:
 
 concurrency:
   group: minefade-android-${{ github.ref }}
-  cancel-in-progress: false
+  # A newer push to the same PR supersedes an older Android build.
+  cancel-in-progress: true
 
 jobs:
   build-apk:
@@ -90,13 +91,19 @@ jobs:
             app/src/main/assets/textures/block_atlas.rgba \
             app/src/main/cpp/blocks/BlockRegistry.h \
             app/src/main/cpp/blocks/BlockRegistry.cpp \
+            app/src/main/cpp/blocks/BlockAtlasManifest.h \
             docs/block_atlas_preview.png \
             docs/BLOCK_CATALOG_1_8.md
           if ! git diff --cached --quiet; then
             echo "Generated Minefade assets are stale. Run the generators locally and commit their output before opening a PR." >&2
             git diff --cached --stat
+            git diff --cached --name-only
+            git diff --cached | sed -n "1,180p"
             exit 1
           fi
+
+      - name: Compile MAES external sheep model and texture
+        run: python3 tools/mfmodelc.py
 
       - name: Run Python regression tests
         run: python3 -m pytest -q tests
@@ -105,19 +112,62 @@ jobs:
         shell: bash
         run: bash tests/run-world-tests.sh
 
-      - name: Build installable Android debug APK (ARM64 + ARMv7)
+      - name: Prepare persistent production signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          MINEFADE_RELEASE_KEYSTORE_BASE64: ${{ secrets.MINEFADE_RELEASE_KEYSTORE_BASE64 }}
+          MINEFADE_RELEASE_STORE_PASSWORD: ${{ secrets.MINEFADE_RELEASE_STORE_PASSWORD }}
+          MINEFADE_RELEASE_KEY_ALIAS: ${{ secrets.MINEFADE_RELEASE_KEY_ALIAS }}
+          MINEFADE_RELEASE_KEY_PASSWORD: ${{ secrets.MINEFADE_RELEASE_KEY_PASSWORD }}
+        run: |
+          for secret_name in MINEFADE_RELEASE_KEYSTORE_BASE64 MINEFADE_RELEASE_STORE_PASSWORD MINEFADE_RELEASE_KEY_ALIAS MINEFADE_RELEASE_KEY_PASSWORD; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "::error::Falta el secreto ${secret_name}. Configúralo en Settings > Secrets and variables > Actions."
+              exit 1
+            fi
+          done
+          KEYSTORE="$RUNNER_TEMP/minefade-release.p12"
+          printf '%s' "$MINEFADE_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          keytool -list -storetype PKCS12 -keystore "$KEYSTORE" -storepass "$MINEFADE_RELEASE_STORE_PASSWORD" -alias "$MINEFADE_RELEASE_KEY_ALIAS" >/dev/null
+          chmod 600 "$KEYSTORE"
+          {
+            echo "MINEFADE_RELEASE_KEYSTORE_PATH=$KEYSTORE"
+            echo "MINEFADE_RELEASE_STORE_PASSWORD=$MINEFADE_RELEASE_STORE_PASSWORD"
+            echo "MINEFADE_RELEASE_KEY_ALIAS=$MINEFADE_RELEASE_KEY_ALIAS"
+            echo "MINEFADE_RELEASE_KEY_PASSWORD=$MINEFADE_RELEASE_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build signed production APK (ARM64 + ARMv7)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Build CI validation APK (ARM64 + ARMv7)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Verify APK and create checksum
         shell: bash
         run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            APK="app/build/outputs/apk/release/app-release.apk"
+            BUILD_KIND="release"
+          else
+            APK="app/build/outputs/apk/debug/app-debug.apk"
+            BUILD_KIND="debug"
+          fi
           test -s "$APK"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$APK"
           mkdir -p dist
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" > dist/apk-badging.txt
+          if [[ "$BUILD_KIND" == "release" ]] && grep -q "application-debuggable" dist/apk-badging.txt; then
+            echo "::error::El APK de producción tiene el flag debuggable."
+            exit 1
+          fi
           sed -n "1,8p" dist/apk-badging.txt
-          cp "$APK" "dist/Minefade-2.0-debug-${GITHUB_RUN_NUMBER}.apk"
+          echo "$BUILD_KIND" > dist/build-type.txt
+          cp "$APK" "dist/Minefade-2.0-$BUILD_KIND-${GITHUB_RUN_NUMBER}.apk"
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
           ls -lh dist
 
@@ -156,8 +206,8 @@ jobs:
           body: |
             APK generado automáticamente desde el commit ${{ github.sha }}.
 
-            **Tipo de paquete:** debug firmado por Android Gradle Plugin.
+            **Tipo de paquete:** release de producción, firmado con la clave PKCS#12 persistente del proyecto.
             **ABI incluidas:** arm64-v8a y armeabi-v7a.
-            **Versionado Android:** versionCode 25 / versionName 2.2.0.
+            **Versionado Android:** versionCode 31 / versionName 2.4.0.
 
-            Esta es una compilación de validación. La firma debug generada por un runner no garantiza que pueda instalarse como actualización sobre otro APK firmado con una clave diferente. Antes de declarar una versión estable, configura una clave de distribución persistente y prueba la actualización y los mundos guardados en dispositivos Android reales.
+            Los tags solo se compilan si los cuatro secretos de firma están configurados. Conserva siempre el mismo almacén privado para que las versiones siguientes puedan actualizar esta instalación. Prueba la actualización y los mundos guardados en Android físico antes de declarar estable.

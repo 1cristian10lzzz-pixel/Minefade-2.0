@@ -20,7 +20,36 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - C++20: motor voxel, jugador, meshing y backend OpenGL ES 3.
 - Rust: núcleo de simulación mediante ABI C.
 - RmlUi 6.3 y FreeType 2.13.3.
+- El generador MFMod v3 apunta por defecto al motor Android 2.4.0; los módulos opcionales del paquete se validan de forma estricta al cargarlos.
 - Chunks, greedy meshing, culling por frustum, transparencias y LOD de distancia inicial.
+
+## Actualización técnica 2.2.4 — recuperación de fluidos LOD2
+- El LOD lejano usa alturas separadas de terreno y fluidos y vuelve a construir las superficies de agua/lava.
+- Se añade una prueba nativa para un bloque de agua en LOD2.
+- La firma persistente de distribución sigue siendo necesaria para una actualización in-place.
+
+## Actualización técnica 2.2.4 — creación, LAN y avatar
+- Creación de mundo organizada en pestañas General, Avanzado y Trucos, conectadas al nombre, modo, semilla, cofre y comandos que el juego persiste.
+- Multijugador local: módulos Crear/Unirse junto a Salir y buscador que filtra sesiones NSD descubiertas por nombre/anfitrión.
+- Editor de avatar con acciones Aleatorio y Restablecer, miniaturas más legibles y el mismo modelo 3D interactivo.
+- La búsqueda es solo para partidas LAN descubiertas; no hay aún un backend de servidores públicos.
+
+## Actualización técnica 2.2.3 — renderer voxel y carga de terreno
+
+- La oclusión de bloques ahora respeta formas parciales: una losa, escalera o valla ya no oculta una cara completa del cubo vecino.
+- La malla de cada chunk del camino móvil se compila en segundo plano a partir de una copia inmutable; solo se publica si la revisión del terreno no ha cambiado.
+- Las nuevas mallas GPU se cargan en buffers temporales y se intercambian juntas tras validar las capas opaca y transparente. Un fallo de subida mantiene la versión visible anterior.
+- Se conserva la vegetación en el LOD cercano y se corrige el caso de chunks que contienen solo geometría transparente.
+- Se incorporan pruebas de regresión para oclusión parcial y meshing asíncrono.
+
+**Versión Android:** versionCode 27 / versionName 2.2.3. La compilación CI y las pruebas físicas siguen siendo obligatorias antes de declarar una Release estable.
+
+## Actualización técnica 2.2.2 — interfaz, controles y fabricación
+- Se corrige el error Android de descubrimiento NSD leyendo los atributos TXT desde sus bytes y validando sus valores.
+- La fabricación ahora es transaccional: ingredientes y resultado se confirman juntos, sin pérdidas por fallos parciales.
+- Se amplía el recetario con objetos de supervivencia, construcción y mecanismos.
+- Se compacta la barra rápida, se mejora el contraste y se amplían los paneles táctiles de inventario y fabricación.
+- Se corrige el texto para mostrar las 36 casillas reales y se refleja el botón de ataque para el perfil zurdo.
 
 ## Actualización técnica 2.2 — sistema MFMod ampliado
 
@@ -37,7 +66,7 @@ Los tags `v*` generan un borrador de prerelease con el APK y su SHA-256. Se publ
 - Diagnóstico del HUD con chunks pendientes y recursos GPU residentes/pendientes.
 - GitHub Actions valida los pull requests y no crea commits automáticos de recursos.
 
-**Versión Android:** versionCode 25 / versionName 2.2.0. Es una compilación de validación hasta probarla en dispositivos Android reales.
+**Versión Android:** versionCode 28 / versionName 2.2.4. Es una compilación de validación hasta probarla en dispositivos Android reales.
 
 ## Sistemas presentes
 
@@ -49,7 +78,7 @@ El cargador reconoce `MFVOX001`, `MFVOX002` y `MFVOX003`; la escritura actual pr
 
 ## Estado del renderer
 
-La caché por chunk y buffers GPU incrementales ya existen. Faltan snapshots inmutables, cola de meshing persistente, cancelación por revisión y presupuesto adaptativo de uploads. El LOD lejano actual es una aproximación por altura, no el renderer completo de Distant Horizons. Véase [el plan técnico](docs/RENDERER_UPGRADE_PLAN_2_0.md).
+La caché por chunk y buffers GPU incrementales siguen siendo la base. La compilación de un chunk del camino móvil ahora usa snapshots y un trabajador en segundo plano, con validación de revisión y publicación segura; el upload GPU conserva la malla anterior hasta tener listas ambas capas. El LOD lejano sigue siendo una aproximación por altura, no una implementación de Distant Horizons. Véase [el plan técnico](docs/RENDERER_UPGRADE_PLAN_2_0.md).
 
 ## Organización
 

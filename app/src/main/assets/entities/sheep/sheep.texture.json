@@ -1,0 +1,111 @@
+{
+  "width": 64,
+  "height": 32,
+  "regions": [
+    {
+      "name": "wool",
+      "rect": [
+        0,
+        0,
+        8,
+        8
+      ],
+      "base": [
+        224,
+        219,
+        204
+      ],
+      "variation": 12
+    },
+    {
+      "name": "hoof",
+      "rect": [
+        16,
+        0,
+        8,
+        8
+      ],
+      "base": [
+        77,
+        70,
+        63
+      ],
+      "variation": 8
+    },
+    {
+      "name": "face",
+      "rect": [
+        8,
+        0,
+        8,
+        8
+      ],
+      "base": [
+        166,
+        129,
+        107
+      ],
+      "variation": 10
+    },
+    {
+      "name": "nose",
+      "rect": [
+        24,
+        0,
+        8,
+        8
+      ],
+      "base": [
+        117,
+        75,
+        72
+      ],
+      "variation": 8
+    },
+    {
+      "name": "ear",
+      "rect": [
+        32,
+        0,
+        8,
+        8
+      ],
+      "base": [
+        190,
+        144,
+        130
+      ],
+      "variation": 9
+    },
+    {
+      "name": "eye",
+      "rect": [
+        40,
+        0,
+        4,
+        4
+      ],
+      "base": [
+        36,
+        29,
+        27
+      ],
+      "variation": 0
+    },
+    {
+      "name": "wool_highlight",
+      "rect": [
+        0,
+        16,
+        8,
+        8
+      ],
+      "base": [
+        240,
+        236,
+        225
+      ],
+      "variation": 6
+    }
+  ]
+}

@@ -3,14 +3,19 @@ package com.minefade.nativeengine;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.AssetManager;
+import android.graphics.Bitmap;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.MotionEvent;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,11 +34,14 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
     private volatile boolean nativeReady;
     private final InitializationListener initializationListener;
     private final SharedPreferences preferences;
+    private final Object blockIconLock = new Object();
+    private final SparseArray<Bitmap> blockIconCache = new SparseArray<>();
+    private volatile byte[] cachedBlockAtlasRgba;
 
     public MinefadeSurfaceView(Context context, SoundEffects soundEffects, float displayDensity,
                                boolean multiplayerMode, int playerSlot, String storagePath,
                                String modsDirectory, long worldSeed, int gameMode,
-                               boolean allowCheats, boolean starterChest,
+                               boolean allowCheats, boolean starterChest, boolean flatWorld, int difficulty, boolean generateStructures,
                                LanMultiplayerService multiplayer, InitializationListener listener) {
         super(context);
         initializationListener = listener;
@@ -43,7 +51,7 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         setPreserveEGLContextOnPause(true);
         setRenderer(new EngineRenderer(context, soundEffects, displayDensity,
                 multiplayerMode, playerSlot, storagePath, modsDirectory, worldSeed,
-                gameMode, allowCheats, starterChest, multiplayer));
+                gameMode, allowCheats, starterChest, flatWorld, difficulty, generateStructures, multiplayer));
         setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         setFocusable(true);
         setFocusableInTouchMode(true);
@@ -60,12 +68,13 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
     }
 
     /** Pause and save on the GL thread; Engine/world state is not thread-safe. */
-    public void pauseNativeEngine() {
-        if (!nativeReady) return;
+    public boolean pauseNativeEngine() {
+        if (!nativeReady) return true;
         final CountDownLatch completed = new CountDownLatch(1);
+        final boolean[] saveSucceeded = {false};
         queueEvent(() -> {
             try {
-                NativeBridge.nativePause();
+                saveSucceeded[0] = NativeBridge.nativePause();
             } catch (LinkageError | RuntimeException error) {
                 Log.e(TAG, "Could not pause native engine", error);
             } finally {
@@ -75,10 +84,99 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         try {
             if (!completed.await(5, TimeUnit.SECONDS)) {
                 Log.w(TAG, "Timed out waiting for native save on GL thread");
+                return false;
             }
+            if (!saveSucceeded[0]) {
+                Log.e(TAG, "Native engine reported that the world could not be saved");
+                return false;
+            }
+            return true;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             Log.w(TAG, "Interrupted while waiting for native pause", interrupted);
+            return false;
+        }
+    }
+
+    /**
+     * Capture the last rendered world view before the GL surface is paused.
+     * The frame is read on the GL thread, cropped to 16:9 and stored atomically
+     * as a small JPEG next to that world's save file.
+     */
+    public boolean captureWorldPreview(File destination) {
+        if (!nativeReady || destination == null) return false;
+        final int sourceWidth = getWidth();
+        final int sourceHeight = getHeight();
+        if (sourceWidth < 2 || sourceHeight < 2) return false;
+        final CountDownLatch completed = new CountDownLatch(1);
+        final boolean[] saved = {false};
+        queueEvent(() -> {
+            Bitmap bitmap = null;
+            try {
+                if (!nativeReady) return;
+                NativeBridge.nativeRender();
+                GLES20.glFinish();
+                ByteBuffer rgba = ByteBuffer.allocateDirect(sourceWidth * sourceHeight * 4);
+                GLES20.glReadPixels(0, 0, sourceWidth, sourceHeight,
+                        GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, rgba);
+                final int glError = GLES20.glGetError();
+                if (glError != GLES20.GL_NO_ERROR) {
+                    Log.w(TAG, "World preview readback failed: 0x" + Integer.toHexString(glError));
+                    return;
+                }
+
+                final int outputWidth = 320;
+                final int outputHeight = 180;
+                final float targetRatio = outputWidth / (float) outputHeight;
+                final float sourceRatio = sourceWidth / (float) sourceHeight;
+                final int cropWidth = sourceRatio > targetRatio
+                        ? Math.max(2, Math.round(sourceHeight * targetRatio)) : sourceWidth;
+                final int cropHeight = sourceRatio > targetRatio
+                        ? sourceHeight : Math.max(2, Math.round(sourceWidth / targetRatio));
+                final int cropLeft = (sourceWidth - cropWidth) / 2;
+                final int cropTop = (sourceHeight - cropHeight) / 2;
+                final int[] pixels = new int[outputWidth * outputHeight];
+                for (int y = 0; y < outputHeight; y++) {
+                    final int sampleY = cropTop + Math.min(cropHeight - 1,
+                            (int) ((long) y * cropHeight / outputHeight));
+                    final int glY = sourceHeight - 1 - sampleY;
+                    for (int x = 0; x < outputWidth; x++) {
+                        final int sampleX = cropLeft + Math.min(cropWidth - 1,
+                                (int) ((long) x * cropWidth / outputWidth));
+                        final int index = (glY * sourceWidth + sampleX) * 4;
+                        final int red = rgba.get(index) & 0xff;
+                        final int green = rgba.get(index + 1) & 0xff;
+                        final int blue = rgba.get(index + 2) & 0xff;
+                        pixels[y * outputWidth + x] = 0xff000000 | (red << 16) | (green << 8) | blue;
+                    }
+                }
+                bitmap = Bitmap.createBitmap(pixels, outputWidth, outputHeight, Bitmap.Config.ARGB_8888);
+                File parent = destination.getParentFile();
+                if (parent == null || (!parent.exists() && !parent.mkdirs())) return;
+                File temporary = new File(destination.getAbsolutePath() + ".tmp");
+                try (FileOutputStream output = new FileOutputStream(temporary)) {
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 86, output)) return;
+                    output.flush();
+                    output.getFD().sync();
+                }
+                if (destination.exists() && !destination.delete()) {
+                    temporary.delete();
+                    return;
+                }
+                saved[0] = temporary.renameTo(destination);
+                if (!saved[0]) temporary.delete();
+            } catch (LinkageError | IOException | RuntimeException error) {
+                Log.w(TAG, "Could not save world preview", error);
+            } finally {
+                if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+                completed.countDown();
+            }
+        });
+        try {
+            return completed.await(1800, TimeUnit.MILLISECONDS) && saved[0];
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
@@ -149,6 +247,25 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             return true;
         }
 
+        if (action == MotionEvent.ACTION_CANCEL) {
+            final int pointerCount = event.getPointerCount();
+            final int[] pointerIds = new int[pointerCount];
+            final float[] pointerXs = new float[pointerCount];
+            final float[] pointerYs = new float[pointerCount];
+            for (int i = 0; i < pointerCount; ++i) {
+                pointerIds[i] = event.getPointerId(i);
+                pointerXs[i] = event.getX(i);
+                pointerYs[i] = event.getY(i);
+            }
+            queueEvent(() -> {
+                if (!nativeReady) return;
+                for (int i = 0; i < pointerIds.length; ++i) {
+                    NativeBridge.nativeTouch(3, pointerIds[i], pointerXs[i], pointerYs[i]);
+                }
+            });
+            return true;
+        }
+
         final int pointerId = event.getPointerId(actionIndex);
         final float x = event.getX(actionIndex);
         final float y = event.getY(actionIndex);
@@ -174,6 +291,136 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         return true;
     }
 
+    /** Read the real nine-slot quickbar on the GL thread without racing the native inventory. */
+    public void requestQuickbarSnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetQuickbarSnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "Quickbar snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
+    /** Read the full 36-slot inventory while executing on the native GL thread. */
+    public void requestInventorySnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetInventorySnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "Inventory snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
+    /** Read compact live survival/HUD state on the simulation thread. */
+    public void requestHudSnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetHudSnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "HUD snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
+    /** Select or move a real inventory slot; all mutation stays on the GL thread. */
+    public void selectInventorySlot(int slot) {
+        if (!nativeReady || slot < 0 || slot >= 36) return;
+        queueEvent(() -> {
+            if (nativeReady) NativeBridge.nativeSelectInventorySlot(slot);
+        });
+    }
+
+    private void cacheBlockAtlas(byte[] atlas) {
+        synchronized (blockIconLock) {
+            cachedBlockAtlasRgba = atlas;
+            blockIconCache.clear();
+        }
+    }
+
+    /** Crop a true 16x16 RGBA block icon from the very atlas used by the 3D world. */
+    public Bitmap createBlockIcon(int tileIndex) {
+        if (tileIndex < 0 || tileIndex >= ATLAS_TILE_COUNT) return null;
+        synchronized (blockIconLock) {
+            Bitmap cached = blockIconCache.get(tileIndex);
+            if (cached != null && !cached.isRecycled()) return cached;
+            byte[] atlas = cachedBlockAtlasRgba;
+            if (atlas == null || atlas.length < ATLAS_WIDTH * ATLAS_HEIGHT * 4) return null;
+            final int tileSize = 16;
+            final int cellSize = 18;
+            final int columns = 32;
+            final int x0 = (tileIndex % columns) * cellSize + 1;
+            final int y0 = (tileIndex / columns) * cellSize + 1;
+            if (x0 + tileSize > ATLAS_WIDTH || y0 + tileSize > ATLAS_HEIGHT) return null;
+            int[] pixels = new int[tileSize * tileSize];
+            for (int y = 0; y < tileSize; ++y) {
+                for (int x = 0; x < tileSize; ++x) {
+                    int offset = ((y0 + y) * ATLAS_WIDTH + x0 + x) * 4;
+                    int red = atlas[offset] & 0xff;
+                    int green = atlas[offset + 1] & 0xff;
+                    int blue = atlas[offset + 2] & 0xff;
+                    int alpha = atlas[offset + 3] & 0xff;
+                    pixels[y * tileSize + x] = (alpha << 24) | (red << 16) | (green << 8) | blue;
+                }
+            }
+            Bitmap icon = Bitmap.createBitmap(pixels, tileSize, tileSize, Bitmap.Config.ARGB_8888);
+            blockIconCache.put(tileIndex, icon);
+            return icon;
+        }
+    }
+
+    /** Read per-world XP and achievement counters without racing the native simulation. */
+    public void requestProgressionSnapshot(java.util.function.Consumer<String> callback) {
+        if (callback == null) return;
+        if (!nativeReady) {
+            post(() -> callback.accept(""));
+            return;
+        }
+        queueEvent(() -> {
+            String snapshot;
+            try {
+                snapshot = NativeBridge.nativeGetProgressionSnapshot();
+                if (snapshot == null) snapshot = "";
+            } catch (LinkageError | RuntimeException error) {
+                Log.w(TAG, "Progression snapshot unavailable", error);
+                snapshot = "";
+            }
+            final String value = snapshot;
+            post(() -> callback.accept(value));
+        });
+    }
+
     /** Run a typed command on the native simulation thread and return its Spanish response. */
     public String executeCommand(String command) {
         if (!nativeReady) return "El mundo no está listo.";
@@ -197,6 +444,51 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             return "Se interrumpió la ejecución del comando.";
         }
         return result.get();
+    }
+
+    private static byte[] readOptionalSheepModel(AssetManager assets) {
+        final int maxBytes = 8 * 1024 * 1024;
+        try (InputStream input = assets.open("entities/sheep/sheep.mfmodel");
+             ByteArrayOutputStream output = new ByteArrayOutputStream(64 * 1024)) {
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > maxBytes) {
+                    Log.w(TAG, "MAES sheep model exceeds 8 MiB; using the legacy sheep renderer");
+                    return new byte[0];
+                }
+                output.write(buffer, 0, read);
+            }
+            byte[] result = output.toByteArray();
+            if (result.length >= 64) return result;
+            Log.w(TAG, "MAES sheep model is empty or truncated; using the legacy sheep renderer");
+        } catch (IOException error) {
+            // Optional during staged migration: resource/model errors must not block world startup.
+            Log.w(TAG, "MAES sheep model is not packaged; using the legacy sheep renderer", error);
+        }
+        return new byte[0];
+    }
+
+    private static byte[] readOptionalSheepTexture(AssetManager assets) {
+        final int expectedBytes = 64 * 32 * 4;
+        try (InputStream input = assets.open("entities/sheep/sheep.texture.rgba");
+             ByteArrayOutputStream output = new ByteArrayOutputStream(expectedBytes)) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > expectedBytes) {
+                    Log.w(TAG, "MAES sheep texture exceeds its declared dimensions; using baked face-colour fallback");
+                    return new byte[0];
+                }
+                output.write(buffer, 0, read);
+            }
+            byte[] result = output.toByteArray();
+            if (result.length == expectedBytes) return result;
+            Log.w(TAG, "MAES sheep texture has invalid size: " + result.length);
+        } catch (IOException error) {
+            Log.w(TAG, "MAES sheep texture is not packaged; using baked face-colour fallback", error);
+        }
+        return new byte[0];
     }
 
     private static byte[] readBlockAtlas(AssetManager assets) {
@@ -313,12 +605,18 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
         private final int gameMode;
         private final boolean allowCheats;
         private final boolean starterChest;
+        private final boolean flatWorld;
+        private final int difficulty;
+        private final boolean generateStructures;
         private final LanMultiplayerService multiplayer;
+        // Retains the session flag across GLSurfaceView surface recreation.
+        private boolean nativeSessionInitialised;
 
         EngineRenderer(Context context, SoundEffects soundEffects, float displayDensity,
                        boolean multiplayerMode, int playerSlot, String storagePath,
                        String modsDirectory, long worldSeed, int gameMode,
-                       boolean allowCheats, boolean starterChest,
+                       boolean allowCheats, boolean starterChest, boolean flatWorld,
+                       int difficulty, boolean generateStructures,
                        LanMultiplayerService multiplayer) {
             assetManager = context.getAssets();
             this.soundEffects = soundEffects;
@@ -331,58 +629,84 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
             this.gameMode = Math.max(0, Math.min(2, gameMode));
             this.allowCheats = allowCheats;
             this.starterChest = starterChest;
+            this.flatWorld = flatWorld;
+            this.difficulty = Math.max(0, Math.min(3, difficulty));
+            this.generateStructures = generateStructures;
             this.multiplayer = multiplayer;
         }
 
         @Override
         public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,
                                      javax.microedition.khronos.egl.EGLConfig config) {
+            final boolean restoringSession = nativeSessionInitialised;
             nativeReady = false;
             GLES20.glClearColor(0.035f, 0.055f, 0.08f, 1.0f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
             try {
                 byte[] atlas = readBlockAtlas(assetManager);
-                // Set mode and storage on the same GL thread as nativeInit/render.
-                NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
-                NativeBridge.nativeSetStoragePath(storagePath);
-                NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed);
-                NativeBridge.nativeSetModsDirectory(modsDirectory);
-                int quality = Math.max(0, Math.min(2, preferences.getInt("graphics_quality", 1)));
-                int renderDistance = Math.max(1, Math.min(3,
-                        preferences.getInt("render_distance", 1) + 1));
-                boolean waterWaves = preferences.getBoolean("water_waves", true);
-                float fieldOfView = preferences.getInt("field_of_view", 68);
-                boolean contactShadows = preferences.getBoolean("contact_shadows", true);
-                int legacySensitivity = preferences.getInt("touch_sensitivity", 100);
-                float sensitivityX = preferences.getInt("touch_sensitivity_x", legacySensitivity) / 100.0f;
-                float sensitivityY = preferences.getInt("touch_sensitivity_y", legacySensitivity) / 100.0f;
-                float joystickDeadzone = preferences.getInt("joystick_deadzone", 12) / 100.0f;
-                boolean invertLookY = preferences.getBoolean("invert_look_y", false);
-                boolean leftHanded = preferences.getBoolean("left_handed_controls", false);
-                int controlMode = Math.max(0, Math.min(2, preferences.getInt("control_mode", 0)));
-                boolean showHudStats = preferences.getBoolean("show_hud_stats", true);
-                float hudScale = preferences.getInt("hud_scale", 100) / 100.0f;
-                NativeBridge.nativeSetGraphicsOptions(quality, renderDistance, waterWaves,
-                        fieldOfView, contactShadows);
-                NativeBridge.nativeSetShaderOptions(
-                        preferences.getBoolean("lava_animations", true),
-                        preferences.getBoolean("leaf_wind", true),
-                        preferences.getInt("leaf_wind_strength", 4) / 100.0f);
-                NativeBridge.nativeSetInputOptions(sensitivityX, sensitivityY, joystickDeadzone, invertLookY, leftHanded, controlMode, preferences.getBoolean("auto_jump", true));
-                NativeBridge.nativeSetHudOptions(showHudStats);
-                int animationQuality = Math.max(0, Math.min(2, preferences.getInt("animation_quality", 2)));
-                boolean worldAnimations = preferences.getBoolean("world_animations", true);
-                NativeBridge.nativeSetAnimationOptions(animationQuality, worldAnimations);
-                int[] avatarChoices = {
-                        preferences.getInt("avatar_piel", 0),
-                        preferences.getInt("avatar_cabello", 0),
-                        preferences.getInt("avatar_ojos", 0),
-                        preferences.getInt("avatar_ropa", 0),
-                        preferences.getInt("avatar_armadura", 0),
-                        preferences.getInt("avatar_accesorios", 0)
-                };
-                NativeBridge.nativeSetAvatarAppearance(avatarChoices);
-                nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT);
+                MinefadeSurfaceView.this.cacheBlockAtlas(atlas);
+                byte[] sheepModel = readOptionalSheepModel(assetManager);
+                byte[] sheepTexture = readOptionalSheepTexture(assetManager);
+                // The first EGL context configures gameplay. Later contexts only rebuild GL resources.
+                final float hudScale = preferences.getInt("hud_scale", 100) / 100.0f;
+                final float fieldOfView = preferences.getInt("field_of_view", 68);
+                if (!restoringSession) {
+                    NativeBridge.nativeSetMultiplayerMode(multiplayerMode, playerSlot);
+                    NativeBridge.nativeSetStoragePath(storagePath);
+                    NativeBridge.nativeSetPlayerIdentity(multiplayer == null
+                            ? "local-device" : multiplayer.getLocalPlayerIdentity());
+                    NativeBridge.nativeSetWorldOptions(gameMode, allowCheats, starterChest, worldSeed, flatWorld, difficulty, generateStructures);
+                    NativeBridge.nativeSetModsDirectory(modsDirectory);
+                    int quality = Math.max(0, Math.min(2, preferences.getInt("graphics_quality", 1)));
+                    int renderDistance = Math.max(1, Math.min(3,
+                            preferences.getInt("render_distance", 1) + 1));
+                    boolean waterWaves = preferences.getBoolean("water_waves", true);
+                    boolean contactShadows = preferences.getBoolean("contact_shadows", true);
+                    int legacySensitivity = preferences.getInt("touch_sensitivity", 100);
+                    float sensitivityX = preferences.getInt("touch_sensitivity_x", legacySensitivity) / 100.0f;
+                    float sensitivityY = preferences.getInt("touch_sensitivity_y", legacySensitivity) / 100.0f;
+                    float joystickDeadzone = preferences.getInt("joystick_deadzone", 12) / 100.0f;
+                    boolean invertLookY = preferences.getBoolean("invert_look_y", false);
+                    boolean leftHanded = preferences.getBoolean("left_handed_controls", false);
+                    int controlMode = 0;
+                    preferences.edit().putInt("control_mode", 0).apply();
+                    int minimapShape = Math.max(0, Math.min(1, preferences.getInt("minimap_shape", 0)));
+                    NativeBridge.nativeSetMinimapShape(minimapShape);
+                    boolean showHudStats = preferences.getBoolean("show_hud_stats", true);
+                    NativeBridge.nativeSetGraphicsOptions(quality, renderDistance, waterWaves,
+                            fieldOfView, contactShadows);
+                    NativeBridge.nativeSetShaderOptions(
+                            preferences.getBoolean("lava_animations", true),
+                            preferences.getBoolean("leaf_wind", true),
+                            preferences.getInt("leaf_wind_strength", 4) / 100.0f);
+                    NativeBridge.nativeSetInputOptions(sensitivityX, sensitivityY, joystickDeadzone,
+                            invertLookY, leftHanded, controlMode,
+                            preferences.getBoolean("auto_jump", true));
+                    NativeBridge.nativeSetHudOptions(showHudStats);
+                    int animationQuality = Math.max(0, Math.min(2, preferences.getInt("animation_quality", 2)));
+                    boolean worldAnimations = preferences.getBoolean("world_animations", true);
+                    NativeBridge.nativeSetAnimationOptions(animationQuality, worldAnimations);
+                    int[] avatarChoices = {
+                            preferences.getInt("avatar_piel", 0),
+                            preferences.getInt("avatar_cabello", 0),
+                            preferences.getInt("avatar_ojos", 0),
+                            preferences.getInt("avatar_ropa", 0),
+                            preferences.getInt("avatar_armadura", 0),
+                            preferences.getInt("avatar_accesorios", 0)
+                    };
+                    NativeBridge.nativeSetAvatarAppearance(avatarChoices);
+                }
+                nativeReady = restoringSession
+                        ? NativeBridge.nativeRestoreGlContext(displayDensity * hudScale, atlas,
+                                ATLAS_WIDTH, ATLAS_HEIGHT, sheepTexture)
+                        : NativeBridge.nativeInit(displayDensity * hudScale, atlas,
+                                ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
+                if (!nativeReady && restoringSession) {
+                    final String restoreFailure = readNativeInitError();
+                    Log.w(TAG, "GL resource recovery failed; reopening the last saved world: " + restoreFailure);
+                    nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas,
+                            ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
+                }
                 if (!nativeReady) {
                     final String firstFailure = readNativeInitError();
                     // Retry once with a smaller workload only for resource-allocation failures.
@@ -391,10 +715,10 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                             || firstFailure.contains("malla")
                             || firstFailure.contains("OUT_OF_MEMORY")
                             || firstFailure.contains("0x0505");
-                    if (retryable) {
+                    if (retryable && !restoringSession) {
                         Log.w(TAG, "Retrying with conservative graphics settings: " + firstFailure);
                         NativeBridge.nativeSetGraphicsOptions(0, 1, false, fieldOfView, false);
-                        nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT);
+                        nativeReady = NativeBridge.nativeInit(displayDensity * hudScale, atlas, ATLAS_WIDTH, ATLAS_HEIGHT, sheepModel, sheepTexture);
                         if (nativeReady) {
                             preferences.edit().putInt("graphics_quality", 0)
                                     .putInt("render_distance", 0)
@@ -409,13 +733,16 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                         notifyError(buildStartupDiagnostic(firstFailure));
                     }
                 }
+                if (!nativeReady && restoringSession) nativeSessionInitialised = false;
                 if (nativeReady) {
+                    nativeSessionInitialised = true;
                     preferences.edit().putBoolean("achievement_world_entered", true).apply();
                     Log.i(TAG, "Native renderer initialised successfully");
                     notifyReady();
                 }
             } catch (LinkageError | RuntimeException error) {
                 nativeReady = false;
+                nativeSessionInitialised = false;
                 Log.e(TAG, "Native engine is unavailable", error);
                 notifyError("No se pudo cargar el motor nativo: " + error.getClass().getSimpleName());
             }
@@ -452,6 +779,13 @@ public final class MinefadeSurfaceView extends GLSurfaceView {
                     NativeBridge.nativeConsumeBlockEdits();
                 }
                 NativeBridge.nativeRender();
+                if (NativeBridge.nativeConsumeChatRequest()) {
+                    MinefadeSurfaceView.this.post(() -> {
+                        if (MinefadeSurfaceView.this.getContext() instanceof MainActivity) {
+                            ((MainActivity) MinefadeSurfaceView.this.getContext()).showCommandDialog();
+                        }
+                    });
+                }
                 if (NativeBridge.nativeConsumeEngineFailure()) {
                     nativeReady = false;
                     Log.e(TAG, "Native engine reported a recoverable render failure");

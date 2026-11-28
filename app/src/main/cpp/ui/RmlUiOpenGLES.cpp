@@ -1,8 +1,12 @@
 #include "RmlUiOpenGLES.h"
+#include "../blocks/BlockRegistry.h"
+#include "../blocks/BlockAtlasManifest.h"
 
 #include <android/log.h>
 
 #include <algorithm>
+#include <charconv>
+#include <limits>
 #include <cstddef>
 #include <string>
 #include <cstring>
@@ -158,10 +162,11 @@ void RmlUiOpenGLES::Shutdown() {
     for (auto& item : geometries_) ReleaseGeometryObject(item.second);
     geometries_.clear();
     for (const auto& item : textures_) {
-        const GLuint texture = item.second;
+        const GLuint texture = item.second.object;
         if (texture != 0) glDeleteTextures(1, &texture);
     }
     textures_.clear();
+    textureCache_.clear();
     blockAtlasPixels_.clear();
     blockAtlasWidth_=blockAtlasHeight_=0;
     if (program_ != 0) glDeleteProgram(program_);
@@ -176,22 +181,26 @@ void RmlUiOpenGLES::SetViewport(int width, int height) {
 
 void RmlUiOpenGLES::SetBlockAtlas(const std::uint8_t* pixels,std::size_t bytes,
                                   int width,int height) {
-    if(pixels==nullptr||width<=0||height<=0) {
+    ++blockAtlasVersion_;
+    if (pixels == nullptr ||
+        width != static_cast<int>(kBlockAtlasWidth) ||
+        height != static_cast<int>(kBlockAtlasHeight)) {
+        UI_LOGE("RmlUi atlas dimensions do not match the generated manifest: %dx%d",
+                width, height);
         blockAtlasPixels_.clear();
-        blockAtlasWidth_=blockAtlasHeight_=0;
+        blockAtlasWidth_ = blockAtlasHeight_ = 0;
         return;
     }
-    const std::size_t expected=static_cast<std::size_t>(width)*
-        static_cast<std::size_t>(height)*4u;
-    if(bytes<expected) {
-        UI_LOGE("RmlUi block atlas is truncated: %zu < %zu",bytes,expected);
+    if (bytes < kBlockAtlasByteCount) {
+        UI_LOGE("RmlUi block atlas is truncated: %zu < %zu",
+                bytes, kBlockAtlasByteCount);
         blockAtlasPixels_.clear();
-        blockAtlasWidth_=blockAtlasHeight_=0;
+        blockAtlasWidth_ = blockAtlasHeight_ = 0;
         return;
     }
-    blockAtlasPixels_.assign(pixels,pixels+expected);
-    blockAtlasWidth_=width;
-    blockAtlasHeight_=height;
+    blockAtlasPixels_.assign(pixels, pixels + kBlockAtlasByteCount);
+    blockAtlasWidth_ = width;
+    blockAtlasHeight_ = height;
 }
 
 Rml::CompiledGeometryHandle RmlUiOpenGLES::CompileGeometry(
@@ -251,7 +260,7 @@ void RmlUiOpenGLES::RenderGeometry(Rml::CompiledGeometryHandle handle, Rml::Vect
     GLuint texture = 0;
     if (textureHandle != 0) {
         const auto found = textures_.find(static_cast<std::uintptr_t>(textureHandle));
-        if (found != textures_.end()) texture = found->second;
+        if (found != textures_.end()) texture = found->second.object;
     }
 
     glUseProgram(program_);
@@ -279,65 +288,184 @@ void RmlUiOpenGLES::ReleaseGeometry(Rml::CompiledGeometryHandle handle) {
 }
 
 Rml::TextureHandle RmlUiOpenGLES::LoadTexture(Rml::Vector2i& textureDimensions,const Rml::String& source) {
-    // Block thumbnails are cropped from Minefade's runtime atlas; other external
-    // bitmap paths remain intentionally unsupported until an asset decoder is added.
-    constexpr const char* prefix="minefade://block/";
-    const std::string uri=source;
-    if(uri.rfind(prefix,0)!=0) {
-        UI_LOGE("External RmlUi texture is not supported: %s",source.c_str());
+    // Only registered block IDs are accepted. Item/entity/UI assets get their
+    // own URI namespaces when their dedicated resource loaders are introduced.
+    constexpr char prefix[] = "minefade://block/";
+    const std::string uri = source;
+    if (uri.rfind(prefix, 0) != 0) {
+        UI_LOGE("Unsupported RmlUi texture URI: %s", source.c_str());
         return 0;
     }
-    if(blockAtlasPixels_.empty()||blockAtlasWidth_<576||blockAtlasHeight_<18)return 0;
-    int blockId=-1;
-    try {
-        std::size_t parsed=0;
-        blockId=std::stoi(uri.substr(std::strlen(prefix)),&parsed);
-        if(parsed!=uri.size()-std::strlen(prefix)||blockId<0||blockId>=306)return 0;
-    } catch(...) { return 0; }
-    constexpr int columns=32,cell=18,tileSize=16;
-    const int tile=blockId*3+1; // side-facing thumbnail for the block.
-    const int column=tile%columns,row=tile/columns;
-    const int x0=column*cell+1,y0=row*cell+1;
-    if(x0+tileSize>blockAtlasWidth_||y0+tileSize>blockAtlasHeight_)return 0;
-    std::vector<Rml::byte> pixels(static_cast<std::size_t>(tileSize*tileSize*4));
-    for(int y=0;y<tileSize;++y) {
-        const std::size_t sourceOffset=(static_cast<std::size_t>(y0+y)*
-            static_cast<std::size_t>(blockAtlasWidth_)+static_cast<std::size_t>(x0))*4u;
-        const std::size_t destinationOffset=static_cast<std::size_t>(y*tileSize*4);
-        std::memcpy(pixels.data()+destinationOffset,
-                    blockAtlasPixels_.data()+sourceOffset,static_cast<std::size_t>(tileSize*4));
+    if (blockAtlasPixels_.empty() ||
+        blockAtlasWidth_ != static_cast<int>(kBlockAtlasWidth) ||
+        blockAtlasHeight_ != static_cast<int>(kBlockAtlasHeight)) {
+        UI_LOGE("RmlUi block icon requested without a valid atlas manifest-backed texture");
+        return 0;
     }
-    textureDimensions={tileSize,tileSize};
-    return GenerateTexture(Rml::Span<const Rml::byte>(pixels.data(),pixels.size()),textureDimensions);
+
+    const char* begin = uri.data() + (sizeof(prefix) - 1u);
+    const char* end = uri.data() + uri.size();
+    int blockId = -1;
+    const auto parsed = std::from_chars(begin, end, blockId);
+    if (begin == end || parsed.ec != std::errc{} || parsed.ptr != end || blockId < 0) {
+        UI_LOGE("Invalid block ID in RmlUi texture URI: %s", source.c_str());
+        return 0;
+    }
+
+    const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(blockId));
+    if (definition == nullptr) {
+        UI_LOGE("RmlUi block icon references unknown BlockId %d", blockId);
+        return 0;
+    }
+
+    const std::size_t tile = definition->tileSide;
+    const std::size_t tileLimit = GetBlockDefinitionCount() * 3u;
+    if (tile >= tileLimit || tile >= kBlockAtlasTileCount) {
+        UI_LOGE("Block %d maps to invalid atlas tile %zu", blockId, tile);
+        return 0;
+    }
+
+    const std::string cacheKey = std::to_string(blockAtlasVersion_) + "|" + uri;
+    const auto cached = textureCache_.find(cacheKey);
+    if (cached != textureCache_.end()) {
+        const auto resource = textures_.find(cached->second);
+        if (resource != textures_.end()) {
+            ++resource->second.references;
+            textureDimensions = {
+                static_cast<int>(kBlockAtlasTileSize),
+                static_cast<int>(kBlockAtlasTileSize)
+            };
+            return static_cast<Rml::TextureHandle>(cached->second);
+        }
+        textureCache_.erase(cached);
+    }
+
+    const std::size_t column = tile % kBlockAtlasColumns;
+    const std::size_t row = tile / kBlockAtlasColumns;
+    const std::size_t x0 = column * kBlockAtlasCellSize + kBlockAtlasPadding;
+    const std::size_t y0 = row * kBlockAtlasCellSize + kBlockAtlasPadding;
+    const std::size_t tileSize = kBlockAtlasTileSize;
+    if (x0 + tileSize > static_cast<std::size_t>(blockAtlasWidth_) ||
+        y0 + tileSize > static_cast<std::size_t>(blockAtlasHeight_)) {
+        UI_LOGE("Block %d atlas tile %zu exceeds manifest dimensions", blockId, tile);
+        return 0;
+    }
+
+    std::vector<Rml::byte> pixels(tileSize * tileSize * 4u);
+    for (std::size_t y = 0; y < tileSize; ++y) {
+        const std::size_t sourceOffset =
+            ((y0 + y) * static_cast<std::size_t>(blockAtlasWidth_) + x0) * 4u;
+        const std::size_t destinationOffset = y * tileSize * 4u;
+        std::memcpy(pixels.data() + destinationOffset,
+                    blockAtlasPixels_.data() + sourceOffset, tileSize * 4u);
+    }
+
+    textureDimensions = {
+        static_cast<int>(tileSize),
+        static_cast<int>(tileSize)
+    };
+    const Rml::TextureHandle handle = CreateTexture(
+        Rml::Span<const Rml::byte>(pixels.data(), pixels.size()),
+        textureDimensions, GL_NEAREST);
+    if (handle == 0) return 0;
+
+    const auto resource = textures_.find(static_cast<std::uintptr_t>(handle));
+    if (resource != textures_.end()) {
+        resource->second.cacheKey = cacheKey;
+        textureCache_[cacheKey] = static_cast<std::uintptr_t>(handle);
+    }
+    return handle;
 }
 
-Rml::TextureHandle RmlUiOpenGLES::GenerateTexture(Rml::Span<const Rml::byte> source,
-                                                   Rml::Vector2i sourceDimensions) {
+Rml::TextureHandle RmlUiOpenGLES::GenerateTexture(
+    Rml::Span<const Rml::byte> source, Rml::Vector2i sourceDimensions) {
+    return CreateTexture(source, sourceDimensions, GL_LINEAR);
+}
+
+Rml::TextureHandle RmlUiOpenGLES::CreateTexture(
+    Rml::Span<const Rml::byte> source, Rml::Vector2i sourceDimensions, GLint filter) {
     if (source.empty() || sourceDimensions.x <= 0 || sourceDimensions.y <= 0) return 0;
-    const std::size_t expected = static_cast<std::size_t>(sourceDimensions.x) *
-                                 static_cast<std::size_t>(sourceDimensions.y) * 4u;
+    const std::size_t width = static_cast<std::size_t>(sourceDimensions.x);
+    const std::size_t height = static_cast<std::size_t>(sourceDimensions.y);
+    if (width > std::numeric_limits<std::size_t>::max() / height / 4u) return 0;
+    const std::size_t expected = width * height * 4u;
     if (source.size() < expected) return 0;
+
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousTexture = 0;
+    GLint previousUnpackAlignment = 4;
+    GLint previousUnpackRowLength = 0;
+    GLint previousUnpackSkipPixels = 0;
+    GLint previousUnpackSkipRows = 0;
+    GLint previousPixelUnpackBuffer = 0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH, &previousUnpackRowLength);
+    glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &previousUnpackSkipPixels);
+    glGetIntegerv(GL_UNPACK_SKIP_ROWS, &previousUnpackSkipRows);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousPixelUnpackBuffer);
+
+    // RmlUi supplies a CPU pointer. A stale pixel-unpack buffer would make GLES
+    // interpret that pointer as an offset into the buffer instead.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     GLuint texture = 0;
     glGenTextures(1, &texture);
-    if (texture == 0) return 0;
+    if (texture == 0) {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousPixelUnpackBuffer));
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, previousUnpackRowLength);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, previousUnpackSkipPixels);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, previousUnpackSkipRows);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+        glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+        return 0;
+    }
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sourceDimensions.x, sourceDimensions.y,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, source.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
+    const GLenum uploadError = glGetError();
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(previousPixelUnpackBuffer));
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, previousUnpackRowLength);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, previousUnpackSkipPixels);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, previousUnpackSkipRows);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+    if (uploadError != GL_NO_ERROR) {
+        UI_LOGE("RmlUi texture upload failed with GLES error 0x%04X",
+                static_cast<unsigned int>(uploadError));
+        glDeleteTextures(1, &texture);
+        return 0;
+    }
+
     const std::uintptr_t id = nextTexture_++;
-    textures_.emplace(id, texture);
+    textures_.emplace(id, TextureResource{texture, 1u, {}});
     return static_cast<Rml::TextureHandle>(id);
 }
 
 void RmlUiOpenGLES::ReleaseTexture(Rml::TextureHandle handle) {
     const auto found = textures_.find(static_cast<std::uintptr_t>(handle));
     if (found == textures_.end()) return;
-    glDeleteTextures(1, &found->second);
+    if (found->second.references > 1u) {
+        --found->second.references;
+        return;
+    }
+    if (!found->second.cacheKey.empty()) {
+        const auto cached = textureCache_.find(found->second.cacheKey);
+        if (cached != textureCache_.end() && cached->second == found->first)
+            textureCache_.erase(cached);
+    }
+    if (found->second.object != 0) glDeleteTextures(1, &found->second.object);
     textures_.erase(found);
 }
 

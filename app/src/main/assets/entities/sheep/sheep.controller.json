@@ -1,0 +1,20 @@
+{
+  "initial_state": "idle",
+  "states": {
+    "idle": {
+      "clip": "idle",
+      "condition": "idle",
+      "blend_duration": 0.18
+    },
+    "walk": {
+      "clip": "walk",
+      "condition": "moving",
+      "blend_duration": 0.14
+    },
+    "eat": {
+      "clip": "eat",
+      "condition": "eating",
+      "blend_duration": 0.18
+    }
+  }
+}

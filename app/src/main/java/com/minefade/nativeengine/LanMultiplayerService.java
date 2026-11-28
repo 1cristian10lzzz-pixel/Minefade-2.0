@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -40,7 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class LanMultiplayerService implements Closeable {
     private static final String TAG = "MinefadeLAN";
     private static final String SERVICE_TYPE = "_minefade._tcp.";
-    private static final int PROTOCOL_VERSION = 2;
+    private static final int PROTOCOL_VERSION = 4;
     private static final int MAX_PLAYERS = 8;
     private static final long STATE_INTERVAL_NS = 50_000_000L;
     private static final long INTERPOLATION_DELAY_NS = 110_000_000L;
@@ -50,17 +52,36 @@ public final class LanMultiplayerService implements Closeable {
         void onGamesChanged(List<GameInfo> games);
         void onConnected(int localPlayerId);
         void onDisconnected(String reason);
+        default void onChatMessage(String player, String message) { }
     }
 
     public static final class GameInfo {
         public final String name;
         public final String host;
         public final int port;
+        public final String contentFingerprint;
+        public final long worldSeed;
+        public final int gameMode;
+        public final boolean allowCheats;
+        public final boolean starterChest;
+        public final boolean flatWorld;
+        public final int difficulty;
+        public final boolean generateStructures;
 
-        GameInfo(String name, String host, int port) {
+        GameInfo(String name, String host, int port, String contentFingerprint,
+                 long worldSeed, int gameMode, boolean allowCheats, boolean starterChest,
+                 boolean flatWorld, int difficulty, boolean generateStructures) {
             this.name = name == null || name.isEmpty() ? "Partida Minefade" : name;
             this.host = host;
             this.port = port;
+            this.contentFingerprint = contentFingerprint == null ? "" : contentFingerprint;
+            this.worldSeed = worldSeed;
+            this.gameMode = Math.max(WorldManager.SURVIVAL, Math.min(WorldManager.ADVENTURE, gameMode));
+            this.allowCheats = allowCheats;
+            this.starterChest = starterChest;
+            this.flatWorld = flatWorld;
+            this.difficulty = Math.max(0, Math.min(3, difficulty));
+            this.generateStructures = generateStructures;
         }
 
         @Override public String toString() {
@@ -147,12 +168,14 @@ public final class LanMultiplayerService implements Closeable {
     private static final class Peer {
         final int id;
         final String name;
+        final String identity;
         final Socket socket;
         final BufferedWriter writer;
 
-        Peer(int id, String name, Socket socket, BufferedWriter writer) {
+        Peer(int id, String name, String identity, Socket socket, BufferedWriter writer) {
             this.id = id;
             this.name = name;
+            this.identity = identity;
             this.socket = socket;
             this.writer = writer;
         }
@@ -169,6 +192,7 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private final Context appContext;
+    private final String localPlayerIdentity;
     private final NsdManager nsdManager;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
@@ -178,6 +202,7 @@ public final class LanMultiplayerService implements Closeable {
     private final Map<Integer, String> playerNames = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<int[]> inboundBlockEdits = new ConcurrentLinkedQueue<>();
     private final AtomicInteger nextPlayerId = new AtomicInteger(1);
+    private final AtomicInteger discoveryGeneration = new AtomicInteger();
     private final Object clientWriteLock = new Object();
 
     private volatile Listener listener;
@@ -194,10 +219,57 @@ public final class LanMultiplayerService implements Closeable {
     private volatile long lastStateSentNs;
     private volatile String playerName = "Jugador";
     private volatile String advertisedName = "Minefade";
+    private volatile String contentFingerprint = "";
+    private volatile long advertisedWorldSeed = 0x4D464445L;
+    private volatile int advertisedGameMode = WorldManager.SURVIVAL;
+    private volatile boolean advertisedAllowCheats;
+    private volatile boolean advertisedStarterChest;
+    private volatile boolean advertisedFlatWorld;
+    private volatile int advertisedDifficulty = 2;
+    private volatile boolean advertisedGenerateStructures = true;
 
     public LanMultiplayerService(Context context) {
         appContext = context.getApplicationContext();
+        android.content.SharedPreferences preferences = appContext.getSharedPreferences(
+                "minefade_security", Context.MODE_PRIVATE);
+        String identity = preferences.getString("player_identity", "");
+        if (!identity.matches("[0-9a-f]{32}")) {
+            identity = UUID.randomUUID().toString().replace("-", "").toLowerCase(Locale.ROOT);
+            preferences.edit().putString("player_identity", identity).apply();
+        }
+        localPlayerIdentity = identity;
         nsdManager = (NsdManager) appContext.getSystemService(Context.NSD_SERVICE);
+    }
+
+    public String getLocalPlayerIdentity() {
+        return localPlayerIdentity;
+    }
+
+    private static boolean validPlayerIdentity(String identity) {
+        return identity != null && identity.matches("[0-9a-f]{32}");
+    }
+
+    public void setContentFingerprint(String fingerprint) {
+        // Fail closed: a calculation error must never masquerade as a valid empty-mod set.
+        contentFingerprint = validFingerprint(fingerprint)
+                ? fingerprint.toLowerCase(Locale.ROOT) : "";
+    }
+
+    private static boolean validFingerprint(String fingerprint) {
+        return fingerprint != null && fingerprint.matches("[0-9a-f]{64}");
+    }
+
+    /**
+     * Android NSD exposes TXT attributes as byte arrays, not Strings.
+     * Bound and decode them explicitly so malformed advertisements fail closed.
+     */
+    private static String readNsdAttribute(NsdServiceInfo service, String key) {
+        if (service == null || key == null) return "";
+        Map<String, byte[]> attributes = service.getAttributes();
+        if (attributes == null) return "";
+        byte[] value = attributes.get(key);
+        if (value == null || value.length == 0 || value.length > 128) return "";
+        return new String(value, StandardCharsets.UTF_8).trim();
     }
 
     public boolean isConnected() {
@@ -213,6 +285,14 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     public void startHost(String nickname, Listener callback) {
+        startHost(nickname, 0x4D464445L, WorldManager.SURVIVAL, false, false,
+                false, 2, true, callback);
+    }
+
+    public void startHost(String nickname, long worldSeed, int gameMode, boolean allowCheats,
+                          boolean starterChest, boolean flatWorld, int difficulty,
+                          boolean generateStructures, Listener callback) {
+        stopDiscovery();
         stopSession();
         listener = callback;
         playerName = safeField(nickname, "Jugador");
@@ -221,6 +301,13 @@ public final class LanMultiplayerService implements Closeable {
         localPlayerId = 0;
         playerNames.clear();
         playerNames.put(0, playerName);
+        advertisedWorldSeed = worldSeed;
+        advertisedGameMode = Math.max(WorldManager.SURVIVAL, Math.min(WorldManager.ADVENTURE, gameMode));
+        advertisedAllowCheats = allowCheats;
+        advertisedStarterChest = starterChest;
+        advertisedFlatWorld = flatWorld;
+        advertisedDifficulty = Math.max(0, Math.min(3, difficulty));
+        advertisedGenerateStructures = generateStructures;
         remotePlayers.clear();
         inboundBlockEdits.clear();
         postStatus("Preparando partida local…");
@@ -240,6 +327,14 @@ public final class LanMultiplayerService implements Closeable {
                 service.setServiceType(SERVICE_TYPE);
                 service.setPort(server.getLocalPort());
                 service.setAttribute("protocol", String.valueOf(PROTOCOL_VERSION));
+                service.setAttribute("content", contentFingerprint);
+                service.setAttribute("seed", Long.toString(advertisedWorldSeed));
+                service.setAttribute("mode", Integer.toString(advertisedGameMode));
+                service.setAttribute("cheats", Boolean.toString(advertisedAllowCheats));
+                service.setAttribute("chest", Boolean.toString(advertisedStarterChest));
+                service.setAttribute("flat", Boolean.toString(advertisedFlatWorld));
+                service.setAttribute("difficulty", Integer.toString(advertisedDifficulty));
+                service.setAttribute("structures", Boolean.toString(advertisedGenerateStructures));
                 NsdManager.RegistrationListener registration = new NsdManager.RegistrationListener() {
                     @Override public void onRegistrationFailed(NsdServiceInfo info, int errorCode) {
                         Log.e(TAG, "NSD registration failed: " + errorCode);
@@ -276,56 +371,84 @@ public final class LanMultiplayerService implements Closeable {
         listener = callback;
         discoveredGames.clear();
         notifyGames();
-        acquireMulticastLock();
         if (nsdManager == null) {
             postStatus("Este dispositivo no ofrece descubrimiento de servicios de red.");
             return;
         }
+
+        // A resolved mDNS callback can arrive after stopDiscovery() or after a
+        // newer search starts. Tie every callback to this discovery generation.
+        final int discoveryEpoch = discoveryGeneration.get();
+        acquireMulticastLock();
         NsdManager.DiscoveryListener discovery = new NsdManager.DiscoveryListener() {
             @Override public void onDiscoveryStarted(String type) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 postStatus("Buscando partidas cercanas…");
             }
             @Override public void onServiceFound(NsdServiceInfo service) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 if (!SERVICE_TYPE.equals(service.getServiceType())) return;
                 if (advertisedName.equals(service.getServiceName())) return;
                 try {
                     nsdManager.resolveService(service, new NsdManager.ResolveListener() {
                         @Override public void onResolveFailed(NsdServiceInfo info, int errorCode) {
+                            if (discoveryEpoch != discoveryGeneration.get()) return;
                             Log.w(TAG, "Could not resolve " + info.getServiceName() + ": " + errorCode);
                         }
                         @Override public void onServiceResolved(NsdServiceInfo info) {
-                            byte[] advertisedProtocol = info.getAttributes().get("protocol");
-                            String protocol = advertisedProtocol == null ? "" :
-                                    new String(advertisedProtocol, StandardCharsets.UTF_8);
+                            if (discoveryEpoch != discoveryGeneration.get()) return;
+                            String protocol = readNsdAttribute(info, "protocol");
                             if (!String.valueOf(PROTOCOL_VERSION).equals(protocol)) {
                                 Log.i(TAG, "Ignoring incompatible LAN protocol " + protocol);
                                 return;
                             }
+                            String fingerprint = readNsdAttribute(info, "content");
+                            if (!validFingerprint(fingerprint)) {
+                                Log.i(TAG, "Ignoring LAN game without a valid content fingerprint");
+                                return;
+                            }
+                            if (!contentFingerprint.equals(fingerprint)) {
+                                Log.i(TAG, "Ignoring LAN game with different active mods");
+                                return;
+                            }
                             InetAddress address = info.getHost();
                             if (address == null || info.getPort() <= 0) return;
-                            GameInfo game = new GameInfo(info.getServiceName(),
-                                    address.getHostAddress(), info.getPort());
+                            long worldSeed = parseLong(readNsdAttribute(info, "seed"), 0x4D464445L);
+                            int gameMode = parseInt(readNsdAttribute(info, "mode"), WorldManager.SURVIVAL);
+                            boolean allowCheats = Boolean.parseBoolean(readNsdAttribute(info, "cheats"));
+                            boolean starterChest = Boolean.parseBoolean(readNsdAttribute(info, "chest"));
+                            boolean flatWorld = Boolean.parseBoolean(readNsdAttribute(info, "flat"));
+                            int difficulty = parseInt(readNsdAttribute(info, "difficulty"), 2);
+                            boolean generateStructures = !"false".equalsIgnoreCase(readNsdAttribute(info, "structures"));
+                            GameInfo game = new GameInfo(info.getServiceName(), address.getHostAddress(),
+                                    info.getPort(), fingerprint, worldSeed, gameMode, allowCheats,
+                                    starterChest, flatWorld, difficulty, generateStructures);
                             discoveredGames.put(game.name, game);
                             notifyGames();
                         }
                     });
                 } catch (RuntimeException error) {
-                    Log.w(TAG, "NSD resolve request failed", error);
+                    if (discoveryEpoch == discoveryGeneration.get())
+                        Log.w(TAG, "NSD resolve request failed", error);
                 }
             }
             @Override public void onServiceLost(NsdServiceInfo service) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 discoveredGames.remove(service.getServiceName());
                 notifyGames();
             }
             @Override public void onDiscoveryStopped(String type) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 Log.i(TAG, "LAN discovery stopped");
             }
             @Override public void onStartDiscoveryFailed(String type, int errorCode) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 Log.e(TAG, "Discovery start failed: " + errorCode);
                 stopDiscovery();
                 postStatus("No se pudo buscar partidas (" + errorCode + ").");
             }
             @Override public void onStopDiscoveryFailed(String type, int errorCode) {
+                if (discoveryEpoch != discoveryGeneration.get()) return;
                 Log.w(TAG, "Discovery stop failed: " + errorCode);
             }
         };
@@ -334,6 +457,7 @@ public final class LanMultiplayerService implements Closeable {
             nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discovery);
         } catch (RuntimeException error) {
             Log.e(TAG, "NSD discovery failed", error);
+            if (discoveryEpoch == discoveryGeneration.get()) stopDiscovery();
             postStatus("No se pudo iniciar la búsqueda de partidas.");
         }
     }
@@ -341,6 +465,11 @@ public final class LanMultiplayerService implements Closeable {
     public void join(GameInfo game, String nickname, Listener callback) {
         if (game == null) {
             postStatus("Selecciona una partida de la lista.");
+            return;
+        }
+        if (!validFingerprint(game.contentFingerprint) ||
+                !contentFingerprint.equals(game.contentFingerprint)) {
+            postStatus("Los mods activos no coinciden con los de esa partida. Instala la misma versión y vuelve a buscar.");
             return;
         }
         stopDiscovery();
@@ -361,7 +490,8 @@ public final class LanMultiplayerService implements Closeable {
                         new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                 clientWriter = writer;
                 synchronized (clientWriteLock) {
-                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + playerName);
+                    writer.write("HELLO|" + PROTOCOL_VERSION + "|" + contentFingerprint + "|" + playerName
+                            + "|" + localPlayerIdentity);
                     writer.newLine();
                     writer.flush();
                 }
@@ -370,7 +500,8 @@ public final class LanMultiplayerService implements Closeable {
                 while (!closed && (line = reader.readLine()) != null) {
                     if (line.startsWith("WELCOME|")) {
                         String[] fields = line.split("\\|", -1);
-                        if (fields.length >= 4 && parseInt(fields[1], -1) == PROTOCOL_VERSION) {
+                        if (fields.length == 5 && parseInt(fields[1], -1) == PROTOCOL_VERSION &&
+                                contentFingerprint.equals(fields[4])) {
                             localPlayerId = parseInt(fields[2], -1);
                             playerNames.put(0, fields[3]);
                             connected = localPlayerId > 0;
@@ -442,20 +573,28 @@ public final class LanMultiplayerService implements Closeable {
                 return;
             }
             String[] helloFields = hello.split("\\|", -1);
-            if (helloFields.length != 3 || !"HELLO".equals(helloFields[0]) ||
-                    parseInt(helloFields[1], -1) != PROTOCOL_VERSION) {
+            if (helloFields.length != 5 || !"HELLO".equals(helloFields[0]) ||
+                    parseInt(helloFields[1], -1) != PROTOCOL_VERSION ||
+                    !validPlayerIdentity(helloFields[4])) {
                 writer.write("ERROR|VERSION");
                 writer.newLine();
                 writer.flush();
                 socket.close();
                 return;
             }
+            if (!validFingerprint(helloFields[2]) || !contentFingerprint.equals(helloFields[2])) {
+                writer.write("ERROR|CONTENT");
+                writer.newLine();
+                writer.flush();
+                socket.close();
+                return;
+            }
             id = nextPlayerId.getAndIncrement();
-            String name = safeField(helloFields[2], "Jugador");
-            peer = new Peer(id, name, socket, writer);
+            String name = safeField(helloFields[3], "Jugador");
+            peer = new Peer(id, name, helloFields[4], socket, writer);
             peers.put(id, peer);
             playerNames.put(id, name);
-            peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName);
+            peer.send("WELCOME|" + PROTOCOL_VERSION + "|" + id + "|" + playerName + "|" + contentFingerprint);
             peer.send("PLAYER|0|" + playerName);
             for (Map.Entry<Integer, String> entry : playerNames.entrySet()) {
                 if (entry.getKey() != 0 && entry.getKey() != id)
@@ -479,8 +618,28 @@ public final class LanMultiplayerService implements Closeable {
                 } else if (line.startsWith("BLOCK|")) {
                     int[] edit = parseBlock(line);
                     if (edit != null) {
+                        final boolean allowed;
+                        try {
+                            allowed = NativeBridge.nativeCanModifyBlockForIdentity(
+                                    peer.identity, edit[0], edit[2]);
+                        } catch (LinkageError | RuntimeException error) {
+                            Log.e(TAG, "Protection check failed; rejecting remote block edit", error);
+                            peer.send("BLOCK_DENIED");
+                            continue;
+                        }
+                        if (!allowed) {
+                            peer.send("BLOCK_DENIED");
+                            continue;
+                        }
                         inboundBlockEdits.offer(edit);
                         broadcast(line, peer);
+                    }
+                } else if (line.startsWith("CHAT|")) {
+                    String message = sanitizeChat(line.substring(5));
+                    if (!message.isEmpty()) {
+                        String chat = "CHAT|" + id + "|" + safeField(name, "Jugador") + "|" + message;
+                        broadcast(chat, peer);
+                        postChatMessage(name, message);
                     }
                 } else if (line.startsWith("PING|")) {
                     peer.send("PONG|" + line.substring(5));
@@ -501,7 +660,12 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private void handleClientMessage(String line) {
-        if (line.startsWith("PLAYER|")) {
+        if ("BLOCK_DENIED".equals(line)) {
+            postChatMessage("Protección", "El anfitrión rechazó una modificación: la zona está protegida.");
+        } else if (line.startsWith("CHAT|")) {
+            String[] f = line.split("\\|", 4);
+            if (f.length == 4) postChatMessage(f[2], f[3]);
+        } else if (line.startsWith("PLAYER|")) {
             String[] f = line.split("\\|", -1);
             if (f.length >= 3) playerNames.put(parseInt(f[1], -1), f[2]);
         } else if (line.startsWith("STATE|")) {
@@ -532,6 +696,47 @@ public final class LanMultiplayerService implements Closeable {
                 Log.w(TAG, "Could not forward LAN event to " + peer.name, error);
             }
         }
+    }
+
+    /** Sends a bounded player message to the LAN session. */
+    public void sendChat(String rawMessage) {
+        if (!isConnected()) return;
+        String message = sanitizeChat(rawMessage);
+        if (message.isEmpty()) return;
+        if (hosting) {
+            broadcast("CHAT|0|" + safeField(playerName, "Jugador") + "|" + message, null);
+            return;
+        }
+        synchronized (clientWriteLock) {
+            BufferedWriter writer = clientWriter;
+            if (writer == null) return;
+            try {
+                writer.write("CHAT|" + message);
+                writer.newLine();
+                writer.flush();
+            } catch (IOException error) {
+                Log.w(TAG, "Could not send LAN chat", error);
+                connected = false;
+                postDisconnected("Se perdió la conexión con el servidor.");
+            }
+        }
+    }
+
+    private void postChatMessage(String player, String message) {
+        Listener current = listener;
+        if (current != null) main.post(() -> current.onChatMessage(
+                safeField(player, "Jugador"), sanitizeChat(message)));
+    }
+
+    private static String sanitizeChat(String raw) {
+        if (raw == null) return "";
+        StringBuilder clean = new StringBuilder(Math.min(120, raw.length()));
+        for (int i = 0; i < raw.length() && clean.length() < 120; ++i) {
+            char c = raw.charAt(i);
+            if (c == '|' || c == '\n' || c == '\r' || Character.isISOControl(c)) continue;
+            clean.append(c);
+        }
+        return clean.toString().trim();
     }
 
     /** Called from the GL thread. Sends twenty movement snapshots per second. */
@@ -679,6 +884,11 @@ public final class LanMultiplayerService implements Closeable {
         return Float.isFinite(value) ? Float.toString(value) : "0";
     }
 
+    private static long parseLong(String value, long fallback) {
+        try { return Long.parseLong(value); }
+        catch (NumberFormatException ignored) { return fallback; }
+    }
+
     private static int parseInt(String value, int fallback) {
         try { return Integer.parseInt(value); }
         catch (NumberFormatException ignored) { return fallback; }
@@ -706,6 +916,8 @@ public final class LanMultiplayerService implements Closeable {
     }
 
     private void stopDiscovery() {
+        // Invalidate outstanding NSD/resolve callbacks before releasing resources.
+        discoveryGeneration.incrementAndGet();
         NsdManager.DiscoveryListener current = discoveryListener;
         discoveryListener = null;
         if (current != null && nsdManager != null) {
@@ -748,9 +960,11 @@ public final class LanMultiplayerService implements Closeable {
     private void notifyGames() {
         Listener current = listener;
         if (current == null) return;
+        final int discoveryEpoch = discoveryGeneration.get();
         List<GameInfo> snapshot = new ArrayList<>(discoveredGames.values());
         Collections.sort(snapshot, (a, b) -> a.name.compareToIgnoreCase(b.name));
         main.post(() -> {
+            if (discoveryEpoch != discoveryGeneration.get()) return;
             Listener latest = listener;
             if (latest != null) latest.onGamesChanged(snapshot);
         });

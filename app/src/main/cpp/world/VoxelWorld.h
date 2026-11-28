@@ -21,6 +21,11 @@ struct Vec3 {
 };
 
 // Interleaved vertex format for the OpenGL ES world renderer.
+struct UsedModBlockId {
+    std::uint16_t runtimeId{0u};
+    std::string namespacedId;
+};
+
 struct WorldVertex {
     float x, y, z;
     float nx, ny, nz;
@@ -81,9 +86,15 @@ public:
     static constexpr std::size_t kChunkVolume =
         static_cast<std::size_t>(kChunkSize * kWorldHeight * kChunkSize);
 
-    explicit VoxelWorld(std::uint32_t seed = 0x4D464445u);
+    explicit VoxelWorld(std::uint32_t seed = 0x4D464445u, bool flatWorld = false, bool generateStructures = true);
 
     void GenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
+    // Restore per-world terrain settings after loading an existing save so
+    // subsequently generated chunks keep the world's original terrain rules.
+    void SetGenerationOptions(bool flatWorld, bool generateStructures) noexcept {
+        flatWorld_ = flatWorld;
+        generateStructures_ = generateStructures;
+    }
     void RequestGenerateAround(int worldX, int worldZ, int radiusInChunks = 1);
     bool PumpChunkGeneration();
     void WaitForChunkGeneration();
@@ -97,6 +108,8 @@ public:
                            Vec3* targetBlock = nullptr, BlockId* targetType = nullptr) const;
     bool BreakRay(const Vec3& origin, const Vec3& direction, float maxDistance,
                   Vec3* brokenBlock = nullptr, BlockId* brokenType = nullptr);
+    bool GetPlacementTargetBlock(const Vec3& origin, const Vec3& direction, float maxDistance,
+                                 Vec3* placementBlock = nullptr) const;
     bool PlaceRay(const Vec3& origin, const Vec3& direction, float maxDistance, BlockId block,
                   Vec3* placedBlock = nullptr);
 
@@ -116,14 +129,21 @@ public:
               std::array<std::uint32_t, 36>& inventory);
 
     std::uint32_t Seed() const { return seed_; }
+    bool IsFlatWorld() const { return flatWorld_; }
     std::size_t ChunkCount() const { return chunks_.size(); }
     std::size_t CountNonAirBlocks() const;
+    std::vector<UsedModBlockId> UsedModBlocks() const;
+    // Approximate CPU residency; save files and block IDs are unchanged.
+    std::size_t ChunkStorageBytes() const noexcept;
+    std::size_t MeshCacheMemoryBytes() const noexcept;
 
 private:
     struct Chunk {
         int x{0};
         int z{0};
         std::array<BlockId, kChunkVolume> blocks{};
+        // Runtime-only revision. It is deliberately not serialized to MFVOX.
+        std::uint64_t revision{1};
     };
 
     struct ChunkMeshCache {
@@ -134,6 +154,12 @@ private:
         std::uint64_t revision{0};
         float minY{0.0f};
         float maxY{0.0f};
+    };
+
+    struct AsyncMeshBuildResult {
+        std::pair<int, int> key;
+        std::uint64_t sourceRevision{0};
+        ChunkMeshCache mesh;
     };
 
     enum class Biome : std::uint8_t {
@@ -151,12 +177,15 @@ private:
     int TerrainHeight(int x, int z) const;
     Chunk MakeChunk(int chunkX, int chunkZ) const;
     void StartNextChunkJob();
+    void DiscardPendingMeshBuild();
     const Chunk* FindChunk(int chunkX, int chunkZ) const;
     Chunk* FindChunk(int chunkX, int chunkZ);
     void InvalidateChunkMesh(int chunkX, int chunkZ);
     void InvalidateChunkAndNeighbors(int chunkX, int chunkZ);
 
     std::uint32_t seed_;
+    bool flatWorld_{false};
+    bool generateStructures_{true};
     std::map<std::pair<int, int>, Chunk> chunks_;
     mutable std::map<std::pair<int, int>, ChunkMeshCache> chunkMeshCache_;
     mutable std::set<std::pair<int, int>> dirtyChunkMeshes_;
@@ -166,9 +195,12 @@ private:
         std::pair<int, int> key;
         std::future<Chunk> future;
     };
+    // Reserve CPU for the renderer and the background mesher on mobile devices.
     static constexpr std::size_t kChunkWorkerCount = 2;
     static constexpr std::size_t kMeshWorkerCount = 2;
     std::vector<ChunkJob> pendingChunkJobs_;
+    mutable std::future<AsyncMeshBuildResult> pendingMeshBuild_;
+    mutable bool asyncMeshBuildDisabled_{false};
     bool asyncGenerationDisabled_{false};
 };
 

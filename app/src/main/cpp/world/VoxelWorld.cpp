@@ -1,4 +1,5 @@
 #include "VoxelWorld.h"
+#include "../mods/ModContentRegistry.h"
 
 #include <algorithm>
 #include <array>
@@ -10,6 +11,7 @@
 #include <limits>
 #include <set>
 #include <system_error>
+#include <stdexcept>
 #include <utility>
 
 namespace minefade {
@@ -34,7 +36,7 @@ std::uint32_t Hash(std::uint32_t x) {
 float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 bool IsValidBlock(BlockId block) {
-    return static_cast<std::size_t>(block) < GetBlockDefinitionCount();
+    return GetBlockDefinition(block) != nullptr;
 }
 
 bool IsTargetable(BlockId block) {
@@ -46,7 +48,16 @@ bool ShouldHideFace(BlockId current, BlockId neighbor) {
     const BlockDefinition* currentDef = GetBlockDefinition(current);
     const BlockDefinition* neighborDef = GetBlockDefinition(neighbor);
     if (neighborDef == nullptr || currentDef == nullptr) return false;
-    if ((neighborDef->flags & BlockOpaque) != 0u) return true;
+
+    // Only a complete opaque cube can hide the whole adjacent cube face.
+    // Partial voxels (slabs, stairs, fences, panes, doors, etc.) do not occupy
+    // the full neighbouring cell and must not make its entire face disappear.
+    const bool fullyOccludingCube = neighborDef->shape == BlockShape::Cube &&
+        (neighborDef->flags & BlockOpaque) != 0u &&
+        (neighborDef->flags & (BlockTransparent | BlockFluid)) == 0u;
+    if (fullyOccludingCube) return true;
+
+    // Suppress the internal shared face between identical transparent blocks.
     return current == neighbor && (currentDef->flags & BlockTransparent) != 0u;
 }
 
@@ -237,7 +248,8 @@ std::uint16_t RemapLegacyInventoryId(std::uint16_t oldId) {
 
 } // namespace
 
-VoxelWorld::VoxelWorld(std::uint32_t seed) : seed_(seed) {}
+VoxelWorld::VoxelWorld(std::uint32_t seed, bool flatWorld, bool generateStructures)
+    : seed_(seed), flatWorld_(flatWorld), generateStructures_(generateStructures) {}
 
 int VoxelWorld::FloorDiv(int value,int divisor) {
     int quotient=value/divisor; const int remainder=value%divisor;
@@ -291,6 +303,7 @@ float VoxelWorld::FractalNoise2D(float x,float z,int octaves,float persistence,f
 }
 
 VoxelWorld::Biome VoxelWorld::GetBiome(int x,int z) const {
+    if (flatWorld_) return Biome::Plains;
     // Climate, erosion and continentalness are sampled at independent scales.
     // Broad fields define biome provinces; ridged and detail fields only modify
     // local shape so boundaries do not dissolve into noisy checkerboard patches.
@@ -329,6 +342,7 @@ VoxelWorld::Biome VoxelWorld::GetBiome(int x,int z) const {
 }
 
 int VoxelWorld::TerrainHeight(int x,int z) const {
+    if (flatWorld_) return 3;
     const float fx=static_cast<float>(x),fz=static_cast<float>(z);
     const float continental=FractalNoise2D(fx*0.0019f+901.0f,fz*0.0019f+401.0f,4,0.56f,2.0f);
     const float erosion=FractalNoise2D(fx*0.0075f+31.0f,fz*0.0075f-17.0f,3,0.48f,2.1f);
@@ -360,9 +374,30 @@ int VoxelWorld::TerrainHeight(int x,int z) const {
 
 VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
     Chunk chunk; chunk.x=chunkX;chunk.z=chunkZ;chunk.blocks.fill(BlockId::Air);
+    if (flatWorld_) {
+        // Classic Flat preset: one grass layer, two dirt layers and bedrock.
+        // No caves, oceans, trees or structures are generated in this preset.
+        for (int z = 0; z < kChunkSize; ++z) {
+            for (int x = 0; x < kChunkSize; ++x) {
+                chunk.blocks[Index(x, 0, z)] = BlockId::Bedrock;
+                chunk.blocks[Index(x, 1, z)] = BlockId::Dirt;
+                chunk.blocks[Index(x, 2, z)] = BlockId::Dirt;
+                chunk.blocks[Index(x, 3, z)] = BlockId::Grass;
+            }
+        }
+        return chunk;
+    }
     for(int z=0;z<kChunkSize;++z)for(int x=0;x<kChunkSize;++x) {
         const int wx=chunkX*kChunkSize+x,wz=chunkZ*kChunkSize+z;
         const Biome biome=GetBiome(wx,wz); const int height=TerrainHeight(wx,wz);
+        const float climateTemperature = FractalNoise2D(
+            static_cast<float>(wx) * 0.0028f + 217.0f,
+            static_cast<float>(wz) * 0.0028f - 71.0f, 3, 0.52f, 2.0f);
+        const float climateHumidity = FractalNoise2D(
+            static_cast<float>(wx) * 0.0042f - 493.0f,
+            static_cast<float>(wz) * 0.0042f + 119.0f, 3, 0.54f, 2.0f);
+        const ModBiomeDefinition* customBiome =
+            FindModBiomeForClimate(climateTemperature, climateHumidity);
         for(int y=0;y<=height;++y) {
             BlockId block = y < 17 ? BlockId::Deepslate : BlockId::Stone;
             if(y==height) {
@@ -387,11 +422,11 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
                                            static_cast<float>(wz)*0.086f-static_cast<float>(y)*0.033f);
                 const float caveB=Noise2D(static_cast<float>(wx)*0.047f-static_cast<float>(y)*0.018f+45.0f,
                                            static_cast<float>(wz)*0.047f+static_cast<float>(y)*0.023f-12.0f);
-                const float caveGate=0.63f+static_cast<float>(y)*0.0007f;
+                const float caveGate=0.70f+static_cast<float>(y)*0.0007f;
                 const float cavern=Noise2D(static_cast<float>(wx)*0.031f+static_cast<float>(y)*0.014f+81.0f,
                                            static_cast<float>(wz)*0.031f-static_cast<float>(y)*0.016f-46.0f);
-                const bool broadCavern=y>10&&cavern>0.57f&&caveB>-0.20f;
-                const bool windingTunnel=y>6&&caveA>caveGate&&caveB>0.08f;
+                const bool broadCavern=y>14&&y<height-10&&cavern>0.73f&&caveB>0.05f;
+                const bool windingTunnel=y>8&&y<height-6&&caveA>caveGate&&caveB>0.16f;
                 if(broadCavern||windingTunnel) {
                     block=BlockId::Air;
                     const float caveClimate=Noise2D(static_cast<float>(wx)*0.013f+49.0f,
@@ -423,6 +458,19 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
                         else if(y<31 && ore>0.76f && caveB<-0.4f)block=BlockId::RedstoneOre;
                         else if(y<39 && ore<-0.83f && caveB>0.55f)block=BlockId::LapisOre;
                         else if(y<58 && ore>0.69f && ore<0.73f)block=BlockId::CopperOre;
+                    }
+                }
+            }
+            if (customBiome != nullptr && (y == height || y >= height - 3)) {
+                const std::string& customKey = y == height
+                    ? customBiome->surfaceBlock : customBiome->fillerBlock;
+                if (!customKey.empty()) {
+                    const BlockId customBlock = ResolveModBlockId(customKey);
+                    const BlockDefinition* customDefinition = GetBlockDefinition(customBlock);
+                    if (customBlock != BlockId::Air && customDefinition != nullptr &&
+                        customDefinition->shape == BlockShape::Cube &&
+                        (customDefinition->flags & BlockOpaque) != 0u) {
+                        block = customBlock;
                     }
                 }
             }
@@ -505,7 +553,7 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
         (static_cast<std::uint32_t>(chunkX) * 0x9e3779b9u) ^
         (static_cast<std::uint32_t>(chunkZ) * 0x85ebca6bu) ^ 0x5255494eu);
     const int ruinBaseY = TerrainHeight(ruinCenterX, ruinCenterZ);
-    if (dryLand && ruinBaseY > kSeaLevel + 2 && ruinHash % 9u == 0u &&
+    if (generateStructures_ && dryLand && ruinBaseY > kSeaLevel + 2 && ruinHash % 9u == 0u &&
         ruinBaseY + 4 < kWorldHeight) {
         constexpr int kMin = 5;
         constexpr int kMax = 11;
@@ -549,6 +597,48 @@ VoxelWorld::Chunk VoxelWorld::MakeChunk(int chunkX,int chunkZ) const {
         }
     }
 
+    // Custom structures are generated deterministically from the world seed,
+    // chunk coordinates and namespaced structure id. A structure is placed only
+    // when every block remains inside its owning chunk, preventing streaming
+    // order from leaving half-built structures across chunk borders.
+    if (generateStructures_) {
+        const int anchorWorldX = chunkX * kChunkSize + kChunkSize / 2;
+        const int anchorWorldZ = chunkZ * kChunkSize + kChunkSize / 2;
+        const int anchorY = TerrainHeight(anchorWorldX, anchorWorldZ);
+        for (const ModStructureDefinition& structure :
+             ModContentRegistry::Instance().Structures()) {
+            if (structure.blocks.empty() || structure.chance <= 0.0f) continue;
+            std::uint32_t structureHash = seed_ ^
+                static_cast<std::uint32_t>(chunkX) * 0x9e3779b9u ^
+                static_cast<std::uint32_t>(chunkZ) * 0x85ebca6bu;
+            for (const unsigned char value : structure.id) {
+                structureHash ^= static_cast<std::uint32_t>(value);
+                structureHash *= 16777619u;
+            }
+            const float roll = static_cast<float>(Hash(structureHash)) /
+                static_cast<float>(std::numeric_limits<std::uint32_t>::max());
+            if (roll >= structure.chance) continue;
+            bool fitsChunk = true;
+            for (const ModStructureBlock& block : structure.blocks) {
+                if (block.x < -7 || block.x > 7 || block.z < -7 || block.z > 7 ||
+                    anchorY + block.y < 0 || anchorY + block.y >= kWorldHeight ||
+                    ResolveModBlockId(block.blockId) == BlockId::Air) {
+                    fitsChunk = false;
+                    break;
+                }
+            }
+            if (!fitsChunk) continue;
+            for (const ModStructureBlock& block : structure.blocks) {
+                const int x = kChunkSize / 2 + block.x;
+                const int z = kChunkSize / 2 + block.z;
+                const int y = anchorY + block.y;
+                const BlockId existing = chunk.blocks[Index(x, y, z)];
+                if (existing != BlockId::Air && !structure.replaceExisting) continue;
+                chunk.blocks[Index(x, y, z)] = ResolveModBlockId(block.blockId);
+            }
+        }
+    }
+
     return chunk;
 }
 
@@ -561,6 +651,13 @@ VoxelWorld::Chunk* VoxelWorld::FindChunk(int chunkX,int chunkZ) {
 
 void VoxelWorld::InvalidateChunkMesh(int chunkX, int chunkZ) {
     dirtyChunkMeshes_.insert({chunkX, chunkZ});
+    // Neighbour edits affect this mesh too. Advance every resident chunk's
+    // revision so asynchronous results based on older neighbour voxels are
+    // rejected, not just results for the chunk containing the edited block.
+    if (Chunk* chunk = FindChunk(chunkX, chunkZ)) {
+        chunk->revision = chunk->revision == std::numeric_limits<std::uint64_t>::max()
+            ? 1u : chunk->revision + 1u;
+    }
 }
 
 void VoxelWorld::InvalidateChunkAndNeighbors(int chunkX, int chunkZ) {
@@ -716,7 +813,20 @@ std::size_t VoxelWorld::PendingChunkCount() const {
     return generationQueue_.size() + pendingChunkJobs_.size();
 }
 
+void VoxelWorld::DiscardPendingMeshBuild() {
+    if (!pendingMeshBuild_.valid()) return;
+    // World replacement must not publish a result built from the previous
+    // world, even when the new world happens to reuse the same chunk revision.
+    pendingMeshBuild_.wait();
+    try {
+        (void)pendingMeshBuild_.get();
+    } catch (...) {
+        // A failed background build is safely discarded with the old world.
+    }
+}
+
 void VoxelWorld::GenerateAround(int worldX,int worldZ,int radiusInChunks) {
+    DiscardPendingMeshBuild();
     WaitForChunkGeneration();
     generationQueue_.clear();
     queuedChunks_.clear();
@@ -743,7 +853,9 @@ bool VoxelWorld::SetBlock(int x,int y,int z,BlockId block) {
     Chunk* chunk=FindChunk(FloorDiv(x,kChunkSize),FloorDiv(z,kChunkSize));if(chunk==nullptr)return false;
     const int localX = PositiveMod(x, kChunkSize);
     const int localZ = PositiveMod(z, kChunkSize);
-    chunk->blocks[Index(localX, y, localZ)] = block;
+    BlockId& stored = chunk->blocks[Index(localX, y, localZ)];
+    if (stored == block) return true;
+    stored = block;
     InvalidateChunkMesh(chunk->x, chunk->z);
     if (localX == 0) InvalidateChunkMesh(chunk->x - 1, chunk->z);
     if (localX == kChunkSize - 1) InvalidateChunkMesh(chunk->x + 1, chunk->z);
@@ -788,14 +900,27 @@ bool VoxelWorld::BreakRay(const Vec3& origin,const Vec3& direction,float maxDist
     if(brokenType)*brokenType=block;
     return true;
 }
+bool VoxelWorld::GetPlacementTargetBlock(const Vec3& origin,const Vec3& direction,float maxDistance,
+                                         Vec3* placementBlock) const {
+    if (maxDistance <= 0.0f) return false;
+    const RayHit hit = TraceVoxelRay(*this, origin, direction, maxDistance);
+    if (!hit.hit || hit.previousY < 0 || hit.previousY >= kWorldHeight ||
+        IsSolid(hit.previousX, hit.previousY, hit.previousZ)) return false;
+    if (placementBlock != nullptr)
+        *placementBlock = {static_cast<float>(hit.previousX), static_cast<float>(hit.previousY),
+                           static_cast<float>(hit.previousZ)};
+    return true;
+}
+
 bool VoxelWorld::PlaceRay(const Vec3& origin,const Vec3& direction,float maxDistance,BlockId block,
                           Vec3* placedBlock) {
     const BlockDefinition* definition=GetBlockDefinition(block);
     if(maxDistance<=0.0f||definition==nullptr||(definition->flags&BlockPlaceable)==0u)return false;
-    const RayHit hit=TraceVoxelRay(*this,origin,direction,maxDistance);if(!hit.hit)return false;
-    if(hit.previousY<0||hit.previousY>=kWorldHeight||IsSolid(hit.previousX,hit.previousY,hit.previousZ))return false;
-    if(!SetBlock(hit.previousX,hit.previousY,hit.previousZ,block))return false;
-    if(placedBlock!=nullptr)*placedBlock={static_cast<float>(hit.previousX),static_cast<float>(hit.previousY),static_cast<float>(hit.previousZ)};
+    Vec3 target{};
+    if (!GetPlacementTargetBlock(origin, direction, maxDistance, &target)) return false;
+    const int x = static_cast<int>(target.x), y = static_cast<int>(target.y), z = static_cast<int>(target.z);
+    if(!SetBlock(x,y,z,block))return false;
+    if(placedBlock!=nullptr)*placedBlock=target;
     return true;
 }
 
@@ -807,6 +932,179 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
     output.clear();
     if (transparentOutput != nullptr) transparentOutput->clear();
     if (chunkRanges != nullptr) chunkRanges->clear();
+
+    // The gameplay path builds one dirty chunk every mesh tick. Do not perform
+    // that greedy-meshing pass on the GL thread: snapshot only the source chunk
+    // and its four neighbours, then compile one immutable mesh in the background.
+    const bool useBackgroundSingleChunk = meshBuildBudget == 1u && !collectMergedMesh &&
+        transparentOutput == nullptr && chunkRanges == nullptr &&
+        !asyncMeshBuildDisabled_;
+    if (useBackgroundSingleChunk) {
+        const int centerChunkX = FloorDiv(centerWorldX, kChunkSize);
+        const int centerChunkZ = FloorDiv(centerWorldZ, kChunkSize);
+        const auto pruneOutsideRadius = [this, centerChunkX, centerChunkZ, radiusInChunks]() {
+            if (radiusInChunks < 0) return;
+            for (auto it = chunkMeshCache_.begin(); it != chunkMeshCache_.end();) {
+                if (std::abs(it->first.first - centerChunkX) > radiusInChunks ||
+                    std::abs(it->first.second - centerChunkZ) > radiusInChunks) {
+                    it = chunkMeshCache_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            for (auto it = dirtyChunkMeshes_.begin(); it != dirtyChunkMeshes_.end();) {
+                if (std::abs(it->first - centerChunkX) > radiusInChunks ||
+                    std::abs(it->second - centerChunkZ) > radiusInChunks) {
+                    it = dirtyChunkMeshes_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        };
+
+        if (pendingMeshBuild_.valid()) {
+            if (pendingMeshBuild_.wait_for(std::chrono::seconds(0)) !=
+                std::future_status::ready) {
+                pruneOutsideRadius();
+                return;
+            }
+            try {
+                AsyncMeshBuildResult completed = pendingMeshBuild_.get();
+                const Chunk* current = FindChunk(completed.key.first, completed.key.second);
+                if (current != nullptr && current->revision == completed.sourceRevision) {
+                    chunkMeshCache_[completed.key] = std::move(completed.mesh);
+                    dirtyChunkMeshes_.erase(completed.key);
+                } else if (current != nullptr) {
+                    // A block edit or newly generated neighbour changed the
+                    // source revision while the worker was running.
+                    dirtyChunkMeshes_.insert(completed.key);
+                }
+            } catch (...) {
+                // Retain the safe synchronous builder as a last-resort fallback
+                // for devices that cannot create background worker threads.
+                asyncMeshBuildDisabled_ = true;
+            }
+        }
+
+        if (!asyncMeshBuildDisabled_ && !pendingMeshBuild_.valid()) {
+            std::vector<const Chunk*> candidates;
+            candidates.reserve(chunks_.size());
+            for (const auto& entry : chunks_) {
+                const int cx = entry.first.first;
+                const int cz = entry.first.second;
+                if (radiusInChunks >= 0 &&
+                    (std::abs(cx - centerChunkX) > radiusInChunks ||
+                     std::abs(cz - centerChunkZ) > radiusInChunks)) continue;
+                candidates.push_back(&entry.second);
+            }
+            std::sort(candidates.begin(), candidates.end(),
+                [centerChunkX, centerChunkZ](const Chunk* a, const Chunk* b) {
+                    const int da = std::max(std::abs(a->x - centerChunkX),
+                                            std::abs(a->z - centerChunkZ));
+                    const int db = std::max(std::abs(b->x - centerChunkX),
+                                            std::abs(b->z - centerChunkZ));
+                    if (da != db) return da < db;
+                    if (a->x != b->x) return a->x < b->x;
+                    return a->z < b->z;
+                });
+
+            const Chunk* target = nullptr;
+            int targetLod = 0;
+            bool targetOuterBorder = false;
+            for (const Chunk* chunk : candidates) {
+                const int distance = std::max(std::abs(chunk->x - centerChunkX),
+                                              std::abs(chunk->z - centerChunkZ));
+                const int expectedLod = distance <= 2 ? 0 : (distance == 3 ? 1 : 2);
+                const bool outerBorder = radiusInChunks >= 0 && distance >= radiusInChunks;
+                const auto key = std::make_pair(chunk->x, chunk->z);
+                const auto cached = chunkMeshCache_.find(key);
+                const bool needsBuild = cached == chunkMeshCache_.end() ||
+                    dirtyChunkMeshes_.find(key) != dirtyChunkMeshes_.end() ||
+                    cached->second.lod != expectedLod ||
+                    cached->second.outerBorder != outerBorder;
+                if (needsBuild) {
+                    target = chunk;
+                    targetLod = expectedLod;
+                    targetOuterBorder = outerBorder;
+                    break;
+                }
+            }
+
+            if (target != nullptr) {
+                const auto targetKey = std::make_pair(target->x, target->z);
+                const std::uint64_t sourceRevision = target->revision;
+                std::map<std::pair<int, int>, Chunk> snapshotChunks;
+                std::map<std::pair<int, int>, ChunkMeshCache> snapshotCaches;
+                std::set<std::pair<int, int>> snapshotDirty;
+                const std::array<std::pair<int, int>, 5> neighbourhood{{
+                    targetKey,
+                    {target->x - 1, target->z},
+                    {target->x + 1, target->z},
+                    {target->x, target->z - 1},
+                    {target->x, target->z + 1}
+                }};
+
+                for (const auto& key : neighbourhood) {
+                    const int distance = std::max(std::abs(key.first - centerChunkX),
+                                                  std::abs(key.second - centerChunkZ));
+                    if (radiusInChunks >= 0 && distance > radiusInChunks) continue;
+                    const Chunk* source = FindChunk(key.first, key.second);
+                    if (source == nullptr) continue;
+                    snapshotChunks.emplace(key, *source);
+
+                    ChunkMeshCache placeholder;
+                    const int neighbourLod = distance <= 2 ? 0 : (distance == 3 ? 1 : 2);
+                    const bool neighbourOuter = radiusInChunks >= 0 && distance >= radiusInChunks;
+                    const auto previous = chunkMeshCache_.find(key);
+                    placeholder.lod = neighbourLod;
+                    placeholder.outerBorder = neighbourOuter;
+                    placeholder.revision = previous == chunkMeshCache_.end()
+                        ? 0u : previous->second.revision;
+                    snapshotCaches.emplace(key, std::move(placeholder));
+                    if (key == targetKey) snapshotDirty.insert(key);
+                }
+
+                if (snapshotChunks.find(targetKey) != snapshotChunks.end()) {
+                    const std::uint32_t snapshotSeed = seed_;
+                    try {
+                        pendingMeshBuild_ = std::async(std::launch::async,
+                            [snapshotSeed, targetKey, sourceRevision, centerWorldX, centerWorldZ,
+                             radiusInChunks, targetLod, targetOuterBorder,
+                             snapshotChunks = std::move(snapshotChunks),
+                             snapshotCaches = std::move(snapshotCaches),
+                             snapshotDirty = std::move(snapshotDirty)]() mutable {
+                                VoxelWorld snapshot(snapshotSeed);
+                                snapshot.chunks_ = std::move(snapshotChunks);
+                                snapshot.chunkMeshCache_ = std::move(snapshotCaches);
+                                snapshot.dirtyChunkMeshes_ = std::move(snapshotDirty);
+                                // The worker must execute the original one-chunk
+                                // mesher, not schedule a nested task of its own.
+                                snapshot.asyncMeshBuildDisabled_ = true;
+                                std::vector<WorldVertex> unusedMergedMesh;
+                                snapshot.BuildMesh(unusedMergedMesh, centerWorldX, centerWorldZ,
+                                                   radiusInChunks, nullptr, nullptr, 1u, false);
+                                const auto built = snapshot.chunkMeshCache_.find(targetKey);
+                                if (built == snapshot.chunkMeshCache_.end() ||
+                                    snapshot.dirtyChunkMeshes_.find(targetKey) !=
+                                        snapshot.dirtyChunkMeshes_.end() ||
+                                    built->second.lod != targetLod ||
+                                    built->second.outerBorder != targetOuterBorder) {
+                                    throw std::runtime_error("background mesh did not produce a valid chunk");
+                                }
+                                return AsyncMeshBuildResult{
+                                    targetKey, sourceRevision, std::move(built->second)};
+                            });
+                    } catch (const std::system_error&) {
+                        asyncMeshBuildDisabled_ = true;
+                    }
+                }
+            }
+        }
+
+        pruneOutsideRadius();
+        if (!asyncMeshBuildDisabled_ || pendingMeshBuild_.valid()) return;
+        // If worker creation is unavailable, fall through to the legacy safe path.
+    }
 
     const int centerChunkX=FloorDiv(centerWorldX,kChunkSize);
     const int centerChunkZ=FloorDiv(centerWorldZ,kChunkSize);
@@ -832,19 +1130,6 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         if (a->x != b->x) return a->x < b->x;
         return a->z < b->z;
     });
-
-    // Neighbour queries outside the rendered radius must behave as air.
-    // Otherwise already-generated off-screen chunks can hide boundary faces
-    // belonging to the last visible ring and create holes at the view-distance edge.
-    const auto getMeshBlock = [&](int x,int y,int z) {
-        if (y<0 || y>=kWorldHeight) return BlockId::Air;
-        const int cx=FloorDiv(x,kChunkSize);
-        const int cz=FloorDiv(z,kChunkSize);
-        if (radiusInChunks>=0 &&
-            (std::abs(cx-centerChunkX)>radiusInChunks ||
-             std::abs(cz-centerChunkZ)>radiusInChunks)) return BlockId::Air;
-        return GetBlock(x,y,z);
-    };
 
     std::vector<ChunkMeshData> built(selected.size());
     std::vector<bool> needsBuild(selected.size(), false);
@@ -872,6 +1157,56 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
             }
         }
     }
+
+    // Snapshot only chunks that a scheduled mesh can read: the source chunk and
+    // its four horizontal neighbours. Copying every loaded chunk on each render
+    // pass caused avoidable RAM traffic on phones with a wider view distance.
+    // Snapshots are immutable while workers run, so they never race live edits.
+    constexpr std::size_t kNoSnapshot = std::numeric_limits<std::size_t>::max();
+    std::set<std::pair<int, int>> requiredSnapshotKeys;
+    for (std::size_t i = 0; i < selected.size(); ++i) {
+        if (!needsBuild[i]) continue;
+        const int cx = selected[i]->x;
+        const int cz = selected[i]->z;
+        requiredSnapshotKeys.insert({cx, cz});
+        requiredSnapshotKeys.insert({cx - 1, cz});
+        requiredSnapshotKeys.insert({cx + 1, cz});
+        requiredSnapshotKeys.insert({cx, cz - 1});
+        requiredSnapshotKeys.insert({cx, cz + 1});
+    }
+
+    std::vector<Chunk> snapshots;
+    snapshots.reserve(requiredSnapshotKeys.size());
+    std::map<std::pair<int, int>, std::size_t> snapshotIndices;
+    for (const Chunk* chunk : selected) {
+        const auto key = std::make_pair(chunk->x, chunk->z);
+        if (requiredSnapshotKeys.find(key) == requiredSnapshotKeys.end()) continue;
+        snapshotIndices.emplace(key, snapshots.size());
+        snapshots.push_back(*chunk);
+    }
+
+    std::vector<std::size_t> selectedSnapshotIndices(selected.size(), kNoSnapshot);
+    for (std::size_t i = 0; i < selected.size(); ++i) {
+        if (!needsBuild[i]) continue;
+        const auto key = std::make_pair(selected[i]->x, selected[i]->z);
+        const auto snapshot = snapshotIndices.find(key);
+        if (snapshot != snapshotIndices.end()) selectedSnapshotIndices[i] = snapshot->second;
+    }
+
+    // Neighbour queries outside the rendered radius behave as air. Inside it,
+    // workers use only this reduced immutable source/halo snapshot set.
+    const auto getMeshBlock = [&](int x,int y,int z) {
+        if (y<0 || y>=kWorldHeight) return BlockId::Air;
+        const int cx=FloorDiv(x,kChunkSize);
+        const int cz=FloorDiv(z,kChunkSize);
+        if (radiusInChunks>=0 &&
+            (std::abs(cx-centerChunkX)>radiusInChunks ||
+             std::abs(cz-centerChunkZ)>radiusInChunks)) return BlockId::Air;
+        const auto snapshot = snapshotIndices.find({cx, cz});
+        if (snapshot == snapshotIndices.end()) return BlockId::Air;
+        const Chunk& source = snapshots[snapshot->second];
+        return source.blocks[Index(PositiveMod(x,kChunkSize), y, PositiveMod(z,kChunkSize))];
+    };
     static constexpr int neighborOffsets[6][3] = {
         {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}
     };
@@ -886,7 +1221,7 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
 
     const auto buildOneChunk = [&](std::size_t index) {
         if (!needsBuild[index]) return;
-        const Chunk& chunk=*selected[index];
+        const Chunk& chunk=snapshots[selectedSnapshotIndices[index]];
         ChunkMeshData& result=built[index];
         const int baseX=chunk.x*kChunkSize, baseZ=chunk.z*kChunkSize;
         const int chunkDistance=std::max(std::abs(chunk.x-centerChunkX),
@@ -897,28 +1232,40 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
         result.lod = chunkDistance<=2 ? 0 : (chunkDistance==3 ? 1 : 2);
         result.outerBorder = radiusInChunks >= 0 && chunkDistance >= radiusInChunks;
 
-        // Distant-Horizons-inspired far terrain path: store a compact height/material
-        // view for distant chunks instead of retaining every hidden voxel face.
+        // Far LOD keeps separate height fields for terrain and fluids. Water and
+        // lava use BlockShape::Fluid (not Cube); omitting them here exposed the sky
+        // across distant oceans and rivers even though their chunks were generated.
         if (result.lod >= 2) {
             constexpr int kGridSize = kChunkSize + 2;
             std::array<int, kGridSize * kGridSize> heights{};
             std::array<BlockId, kGridSize * kGridSize> surfaceBlocks{};
+            std::array<int, kGridSize * kGridSize> fluidHeights{};
+            std::array<BlockId, kGridSize * kGridSize> fluidBlocks{};
             heights.fill(-1);
             surfaceBlocks.fill(BlockId::Air);
+            fluidHeights.fill(-1);
+            fluidBlocks.fill(BlockId::Air);
             const auto gridIndex = [](int x, int z) {
                 return static_cast<std::size_t>((z + 1) * kGridSize + (x + 1));
             };
             for (int z = -1; z <= kChunkSize; ++z) {
                 for (int x = -1; x <= kChunkSize; ++x) {
+                    const std::size_t cell = gridIndex(x, z);
                     for (int y = kWorldHeight - 1; y >= 0; --y) {
                         const BlockId candidate = getMeshBlock(baseX + x, y, baseZ + z);
                         if (candidate == BlockId::Air) continue;
                         const BlockDefinition* def = GetBlockDefinition(candidate);
-                        if (def == nullptr || def->shape != BlockShape::Cube ||
-                            (def->flags & (BlockOpaque | BlockFluid | BlockTransparent)) == 0u) continue;
-                        heights[gridIndex(x, z)] = y;
-                        surfaceBlocks[gridIndex(x, z)] = candidate;
-                        break;
+                        if (def == nullptr) continue;
+                        if (fluidHeights[cell] < 0 && def->shape == BlockShape::Fluid &&
+                            (def->flags & (BlockFluid | BlockTransparent)) != 0u) {
+                            fluidHeights[cell] = y;
+                            fluidBlocks[cell] = candidate;
+                        } else if (heights[cell] < 0 && def->shape == BlockShape::Cube &&
+                            (def->flags & (BlockOpaque | BlockTransparent)) != 0u) {
+                            heights[cell] = y;
+                            surfaceBlocks[cell] = candidate;
+                        }
+                        if (fluidHeights[cell] >= 0 && heights[cell] >= 0) break;
                     }
                 }
             }
@@ -926,35 +1273,71 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
                 for (int x = 0; x < kChunkSize; ++x) {
                     const std::size_t cell = gridIndex(x, z);
                     const int topY = heights[cell];
-                    if (topY < 0) continue;
-                    const BlockId topBlock = surfaceBlocks[cell];
-                    const BlockDefinition* def = GetBlockDefinition(topBlock);
-                    if (def == nullptr) continue;
-                    const bool transparent = (def->flags & (BlockTransparent | BlockFluid)) != 0u;
-                    std::vector<WorldVertex>& target = transparent ? result.transparent : result.opaque;
+                    if (topY >= 0) {
+                        const BlockDefinition* def = GetBlockDefinition(surfaceBlocks[cell]);
+                        if (def != nullptr) {
+                            const float wx = static_cast<float>(baseX + x);
+                            const float wz = static_cast<float>(baseZ + z);
+                            const float top = static_cast<float>(topY + 1);
+                            const std::array<Vec3,4> topPoints{{
+                                {wx,top,wz+1.0f},{wx+1.0f,top,wz+1.0f},
+                                {wx+1.0f,top,wz},{wx,top,wz}
+                            }};
+                            AddFace(result.opaque, topPoints, FaceShade(2), TileForFace(*def, 2));
+                            for (int face : {0,1,4,5}) {
+                                int nx=x, nz=z;
+                                if (face==0) ++nx;
+                                else if (face==1) --nx;
+                                else if (face==4) ++nz;
+                                else --nz;
+                                const int neighborY = heights[gridIndex(nx,nz)];
+                                if (neighborY >= topY) continue;
+                                const float bottom = static_cast<float>(neighborY + 1);
+                                std::array<Vec3,4> points{};
+                                for (std::size_t v=0;v<4;++v) {
+                                    const Vec3& p=faces[static_cast<std::size_t>(face)][v];
+                                    points[v]={wx+p.x, bottom+p.y*(top-bottom), wz+p.z};
+                                }
+                                AddFace(result.opaque, points, FaceShade(face), TileForFace(*def, face));
+                            }
+                        }
+                    }
+                    const int fluidY = fluidHeights[cell];
+                    if (fluidY < 0 || fluidY <= topY) continue;
+                    const BlockId fluidBlock = fluidBlocks[cell];
+                    const BlockDefinition* fluidDef = GetBlockDefinition(fluidBlock);
+                    if (fluidDef == nullptr) continue;
+                    const bool lava = fluidBlock == BlockId::Lava || fluidBlock == BlockId::FlowingLava;
+                    const std::array<float,3> fluidShade = lava
+                        ? std::array<float,3>{-2.0f,0.0f,0.0f}
+                        : std::array<float,3>{-1.0f,0.0f,0.0f};
                     const float wx = static_cast<float>(baseX + x);
                     const float wz = static_cast<float>(baseZ + z);
-                    const float top = static_cast<float>(topY + 1);
-                    const std::array<Vec3,4> topPoints{{
+                    const float top = static_cast<float>(fluidY + 1);
+                    const std::array<Vec3,4> fluidTop{{
                         {wx,top,wz+1.0f},{wx+1.0f,top,wz+1.0f},
                         {wx+1.0f,top,wz},{wx,top,wz}
                     }};
-                    AddFace(target, topPoints, FaceShade(2), TileForFace(*def, 2));
+                    AddFace(result.transparent, fluidTop, fluidShade, TileForFace(*fluidDef, 2));
                     for (int face : {0,1,4,5}) {
                         int nx=x, nz=z;
                         if (face==0) ++nx;
                         else if (face==1) --nx;
                         else if (face==4) ++nz;
                         else --nz;
-                        const int neighborY = heights[gridIndex(nx,nz)];
-                        if (neighborY >= topY) continue;
-                        const float bottom = static_cast<float>(neighborY + 1);
+                        const std::size_t neighbourCell = gridIndex(nx,nz);
+                        const int neighbourFluid = fluidHeights[neighbourCell];
+                        if (neighbourFluid >= fluidY) continue;
+                        const int neighbourSolid = heights[neighbourCell];
+                        const int bottomY = std::max({topY, neighbourFluid, neighbourSolid});
+                        if (bottomY >= fluidY) continue;
+                        const float bottom = static_cast<float>(bottomY + 1);
                         std::array<Vec3,4> points{};
                         for (std::size_t v=0;v<4;++v) {
                             const Vec3& p=faces[static_cast<std::size_t>(face)][v];
                             points[v]={wx+p.x, bottom+p.y*(top-bottom), wz+p.z};
                         }
-                        AddFace(target, points, FaceShade(face), TileForFace(*def, face));
+                        AddFace(result.transparent, points, fluidShade, TileForFace(*fluidDef, face));
                     }
                 }
             }
@@ -1081,8 +1464,8 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
                         (def->flags&(BlockTransparent|BlockFluid))==0u;
                     if (opaqueCube) continue;
 
-                    if (result.lod>=1 && def->shape==BlockShape::CrossPlant) continue;
-                    if (result.lod>=2 && def->shape==BlockShape::Thin) continue;
+                    if (result.lod>=2 &&
+                        (def->shape==BlockShape::CrossPlant || def->shape==BlockShape::Thin)) continue;
 
                     const int wx=baseX+x, wz=baseZ+z;
                     const bool transparent=(def->flags&(BlockTransparent|BlockFluid))!=0u;
@@ -1142,6 +1525,12 @@ void VoxelWorld::BuildMesh(std::vector<WorldVertex>& output,int centerWorldX,int
     for (std::size_t i = 0; i < selected.size(); ++i) {
         const auto key = std::make_pair(selected[i]->x, selected[i]->z);
         if (!needsBuild[i]) continue;
+        // A future persistent scheduler may finish after a block edit. Never
+        // publish a mesh from a snapshot older than the current chunk revision.
+        if (selected[i]->revision != snapshots[selectedSnapshotIndices[i]].revision) {
+            dirtyChunkMeshes_.insert(key);
+            continue;
+        }
         ChunkMeshData& fresh = built[i];
         fresh.minY = static_cast<float>(kWorldHeight);
         fresh.maxY = 0.0f;
@@ -1252,6 +1641,47 @@ std::size_t VoxelWorld::CountNonAirBlocks() const {
     std::size_t total=0;for(const auto& pair:chunks_)for(BlockId id:pair.second.blocks)if(id!=BlockId::Air)++total;return total;
 }
 
+std::size_t VoxelWorld::ChunkStorageBytes() const noexcept {
+    if (chunks_.size() > std::numeric_limits<std::size_t>::max() /
+            (kChunkVolume * sizeof(BlockId))) {
+        return std::numeric_limits<std::size_t>::max();
+    }
+    return chunks_.size() * kChunkVolume * sizeof(BlockId);
+}
+
+std::size_t VoxelWorld::MeshCacheMemoryBytes() const noexcept {
+    std::size_t total = 0u;
+    const auto addBytes = [&total](std::size_t count, std::size_t elementSize) {
+        if (count > (std::numeric_limits<std::size_t>::max() - total) / elementSize) {
+            total = std::numeric_limits<std::size_t>::max();
+            return;
+        }
+        total += count * elementSize;
+    };
+    for (const auto& entry : chunkMeshCache_) {
+        addBytes(entry.second.opaque.capacity(), sizeof(WorldVertex));
+        addBytes(entry.second.transparent.capacity(), sizeof(WorldVertex));
+    }
+    return total;
+}
+
+std::vector<UsedModBlockId> VoxelWorld::UsedModBlocks() const {
+    std::map<std::uint16_t, std::string> used;
+    for (const auto& entry : chunks_) {
+        for (BlockId block : entry.second.blocks) {
+            const BlockDefinition* definition = GetBlockDefinition(block);
+            if (definition == nullptr || definition->key == nullptr) continue;
+            const std::string_view key(definition->key);
+            if (key.find(':') == std::string_view::npos) continue;
+            used.emplace(static_cast<std::uint16_t>(definition->id), std::string(key));
+        }
+    }
+    std::vector<UsedModBlockId> result;
+    result.reserve(used.size());
+    for (const auto& entry : used) result.push_back({entry.first, entry.second});
+    return result;
+}
+
 bool VoxelWorld::Save(const std::string& filePath,const Vec3& playerPosition,
                       const std::array<std::uint32_t,36>& inventory) const {
     if(chunks_.size()>kMaxSavedChunks||!std::isfinite(playerPosition.x)||!std::isfinite(playerPosition.y)||!std::isfinite(playerPosition.z))return false;
@@ -1271,15 +1701,41 @@ bool VoxelWorld::Save(const std::string& filePath,const Vec3& playerPosition,
             file.write(reinterpret_cast<const char*>(chunk.blocks.data()),static_cast<std::streamsize>(chunk.blocks.size()*sizeof(BlockId)));
         }
         file.flush();if(!file){file.close();std::filesystem::remove(temp);return false;}file.close();
-        std::error_code ec;std::filesystem::rename(temp,path,ec);
-        if(ec){std::filesystem::remove(path,ec);ec.clear();std::filesystem::rename(temp,path,ec);}
-        if(ec){std::filesystem::remove(temp);return false;}
+        std::error_code ec;
+        std::filesystem::rename(temp,path,ec);
+        if (ec) {
+            ec.clear();
+            const std::filesystem::path backup = path.string() + ".bak";
+            std::filesystem::remove(backup, ec);
+            if (ec) { std::filesystem::remove(temp); return false; }
+            ec.clear();
+            const bool hadOriginal = std::filesystem::exists(path, ec) && !ec;
+            if (ec) { std::filesystem::remove(temp); return false; }
+            if (hadOriginal) {
+                std::filesystem::rename(path, backup, ec);
+                if (ec) { std::filesystem::remove(temp); return false; }
+            }
+            std::filesystem::rename(temp, path, ec);
+            if (ec) {
+                if (hadOriginal) {
+                    std::error_code restoreError;
+                    std::filesystem::rename(backup, path, restoreError);
+                }
+                std::filesystem::remove(temp);
+                return false;
+            }
+            if (hadOriginal) {
+                std::error_code cleanupError;
+                std::filesystem::remove(backup, cleanupError);
+            }
+        }
         return true;
     } catch(...) { return false; }
 }
 
 bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
                       std::array<std::uint32_t,36>& inventory) {
+    DiscardPendingMeshBuild();
     WaitForChunkGeneration();
     generationQueue_.clear();
     queuedChunks_.clear();
@@ -1310,7 +1766,11 @@ bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
             for(std::size_t n=0;n<oldBlocks.size();++n)chunk.blocks[n]=static_cast<BlockId>(RemapLegacyBlock(oldBlocks[n]));
         } else {
             file.read(reinterpret_cast<char*>(chunk.blocks.data()),static_cast<std::streamsize>(chunk.blocks.size()*sizeof(BlockId)));if(!file)return false;
-            for(BlockId& block:chunk.blocks)if(!IsValidBlock(block))block=BlockId::Air;
+            for (BlockId& block : chunk.blocks) {
+                const auto rawId = static_cast<std::uint16_t>(block);
+                if (!IsValidBlock(block) && rawId < static_cast<std::uint16_t>(BlockId::Count))
+                    block = BlockId::Air;
+            }
         }
         if(!loadedChunks.emplace(std::make_pair(chunk.x,chunk.z),std::move(chunk)).second)return false;
     }
@@ -1319,9 +1779,11 @@ bool VoxelWorld::Load(const std::string& filePath,Vec3& playerPosition,
         if (encoded == 0u) continue;
         const std::uint32_t itemId = encoded / 1000u;
         const std::uint32_t quantity = encoded % 1000u;
-        const BlockDefinition* definition = itemId < GetBlockDefinitionCount()
-            ? GetBlockDefinition(static_cast<BlockId>(itemId)) : nullptr;
-        if (definition == nullptr || quantity == 0u || (definition->stackLimit > 0u && quantity > definition->stackLimit)) {
+        const BlockDefinition* definition =
+            GetBlockDefinition(static_cast<BlockId>(itemId));
+        if (itemId == 0u || quantity == 0u || quantity > 99u ||
+            (definition == nullptr && itemId < static_cast<std::uint32_t>(BlockId::Count)) ||
+            (definition != nullptr && definition->stackLimit > 0u && quantity > definition->stackLimit)) {
             encoded = 0u;
         }
     }

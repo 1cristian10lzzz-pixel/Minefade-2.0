@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "identifier": "minefade:sheep",
+  "legacy_kind": 0,
+  "model": "sheep.mfmodel",
+  "texture": "sheep.png",
+  "animation": "sheep.animations.json",
+  "controller": "sheep.controller.json",
+  "physics": {
+    "width": 0.95,
+    "height": 0.9,
+    "eye_height": 0.67
+  },
+  "render": {
+    "shadow": true,
+    "casts_shadow": true,
+    "receives_shadow": true,
+    "mode": "AUTO"
+  }
+}
