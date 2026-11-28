@@ -528,7 +528,7 @@ def main() -> int:
     create.add_argument("root", type=Path)
     create.add_argument("output", type=Path)
     create.add_argument("--engine-min", default=ENGINE_VERSION)
-    create.add_argument("--engine-max", default="2.3.99")
+    create.add_argument("--engine-max", default="2.4.99")
     create.add_argument("--version", default="1.0.0")
     create.add_argument("--description", default="")
     validate = sub.add_parser("validate")
