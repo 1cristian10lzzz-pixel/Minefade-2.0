@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -3240,25 +3241,30 @@ void Engine::TakeContainerSlot(std::size_t slot) {
     if (!starterChestOpen_ || slot >= 27u) return;
     auto found = containers_.find(activeContainerKey_);
     if (found == containers_.end()) return;
+
+    const ContainerData previousContainer = found->second;
+    const Inventory previousInventory = inventory_;
     ContainerData& container = found->second;
     const std::uint32_t encoded = container.counts[slot];
     const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
     const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
     const BlockDefinition* definition = GetBlockDefinition(static_cast<BlockId>(itemId));
     if (itemId == 0u || amount == 0u || definition == nullptr) {
-        ui_.SetChatMessage("Ese espacio del cofre está vacío.");
+        ui_.SetChatMessage("Ese espacio del cofre está vacío o contiene un objeto desconocido.");
         return;
     }
 
     const std::uint16_t storedDurability = container.durability[slot];
-    const std::array<std::uint32_t, Inventory::kSlotCount> before = inventory_.counts;
+    if (storedDurability > 0u && amount != 1u) {
+        ui_.SetChatMessage("El desgaste del objeto del cofre no es válido.");
+        return;
+    }
+    const auto before = inventory_.counts;
     if (!inventory_.Add(itemId, amount)) {
         ui_.SetChatMessage("No hay espacio suficiente en el inventario.");
         return;
     }
     if (storedDurability > 0u) {
-        // Durable tools/equipment have stack size one. Find the newly occupied
-        // player slot and restore its exact wear value instead of resetting it.
         bool restored = false;
         for (std::size_t playerSlot = 0; playerSlot < Inventory::kSlotCount; ++playerSlot) {
             if (before[playerSlot] == 0u &&
@@ -3269,18 +3275,24 @@ void Engine::TakeContainerSlot(std::size_t slot) {
             }
         }
         if (!restored) {
-            // Roll back the insertion if the worn tool cannot be restored safely.
-            inventory_.RemoveFromSlot(Inventory::kSlotCount, 0u, nullptr);
-            ui_.SetChatMessage("No se pudo restaurar la durabilidad de esa herramienta.");
+            inventory_ = previousInventory;
+            ui_.SetChatMessage("No se pudo restaurar la durabilidad; el objeto sigue en el cofre.");
             return;
         }
     }
 
     container.counts[slot] = 0u;
     container.durability[slot] = 0u;
+    if (!SaveWorld()) {
+        inventory_ = previousInventory;
+        containers_[activeContainerKey_] = previousContainer;
+        RefreshInventoryUi();
+        RefreshContainerUi();
+        ui_.SetChatMessage("No se pudo guardar el traslado; el objeto se ha devuelto al cofre.");
+        return;
+    }
     RefreshInventoryUi();
     RefreshContainerUi();
-    SaveWorld();
     ui_.SetChatMessage("Objeto recogido del cofre.");
 }
 
@@ -3288,32 +3300,38 @@ void Engine::TakeContainerContents() {
     if (!starterChestOpen_) return;
     auto found = containers_.find(activeContainerKey_);
     if (found == containers_.end()) return;
+
+    const ContainerData previousContainer = found->second;
+    const Inventory previousInventory = inventory_;
     ContainerData& container = found->second;
     std::uint32_t taken = 0u;
     for (std::size_t slot = 0; slot < container.counts.size(); ++slot) {
         const std::uint32_t encoded = container.counts[slot];
         const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
         const std::uint16_t amount = static_cast<std::uint16_t>(encoded % 1000u);
-        if (itemId == 0u || amount == 0u) continue;
-        if (GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr) continue;
+        if (itemId == 0u || amount == 0u ||
+            GetBlockDefinition(static_cast<BlockId>(itemId)) == nullptr) continue;
+
         const std::uint16_t storedDurability = container.durability[slot];
-        const std::array<std::uint32_t, Inventory::kSlotCount> before = inventory_.counts;
+        if (storedDurability > 0u && amount != 1u) continue;
+        const auto before = inventory_.counts;
         if (!inventory_.Add(itemId, amount)) continue;
         if (storedDurability > 0u) {
             bool restored = false;
             for (std::size_t playerSlot = 0; playerSlot < Inventory::kSlotCount; ++playerSlot) {
                 if (before[playerSlot] == 0u &&
-                    inventory_.counts[playerSlot] ==
-                        static_cast<std::uint32_t>(itemId) * 1000u + 1u) {
+                    inventory_.counts[playerSlot] == static_cast<std::uint32_t>(itemId) * 1000u + 1u) {
                     inventory_.toolDurability[playerSlot] = storedDurability;
                     restored = true;
                     break;
                 }
             }
             if (!restored) {
-                // Keep the chest item untouched if its wear state cannot be restored.
+                // Keep this item in the chest and undo only its attempted insertion.
                 inventory_.RemoveFromSlot(Inventory::kSlotCount, 0u, nullptr);
-                continue;
+                inventory_ = previousInventory;
+                ui_.SetChatMessage("No se pudo restaurar una herramienta; se canceló Recoger todo.");
+                return;
             }
         }
         container.counts[slot] = 0u;
@@ -3324,9 +3342,16 @@ void Engine::TakeContainerContents() {
         ui_.SetChatMessage("No hay espacio suficiente para recoger objetos del cofre.");
         return;
     }
+    if (!SaveWorld()) {
+        inventory_ = previousInventory;
+        containers_[activeContainerKey_] = previousContainer;
+        RefreshInventoryUi();
+        RefreshContainerUi();
+        ui_.SetChatMessage("No se pudo guardar el traslado; se han devuelto los objetos al cofre.");
+        return;
+    }
     RefreshInventoryUi();
     RefreshContainerUi();
-    SaveWorld();
     ui_.SetChatMessage("Has recogido " + std::to_string(taken) + " objetos del cofre.");
 }
 
@@ -3340,6 +3365,8 @@ void Engine::DepositSelectedIntoContainer() {
         return;
     }
 
+    const ContainerData previousContainer = found->second;
+    const Inventory previousInventory = inventory_;
     ContainerData& container = found->second;
     const std::uint32_t encoded = inventory_.counts[playerSlot];
     const std::uint16_t itemId = static_cast<std::uint16_t>(encoded / 1000u);
@@ -3353,10 +3380,16 @@ void Engine::DepositSelectedIntoContainer() {
     const std::uint16_t maxDurability = inventory_.SlotItemMaxDurability(playerSlot);
     const std::uint16_t durability = inventory_.SlotItemDurability(playerSlot);
     std::size_t destination = container.counts.size();
+    std::uint16_t transferAmount = 0u;
     if (maxDurability > 0u) {
+        if (amount != 1u) {
+            ui_.SetChatMessage("No se puede guardar una pila inválida de herramientas.");
+            return;
+        }
         for (std::size_t i = 0; i < container.counts.size(); ++i) {
             if (container.counts[i] == 0u) { destination = i; break; }
         }
+        transferAmount = 1u;
     } else {
         const std::uint16_t limit = definition->stackLimit > 0u ? definition->stackLimit : 64u;
         for (std::size_t i = 0; i < container.counts.size(); ++i) {
@@ -3364,37 +3397,49 @@ void Engine::DepositSelectedIntoContainer() {
             const std::uint16_t targetAmount = static_cast<std::uint16_t>(container.counts[i] % 1000u);
             if (targetId == itemId && targetAmount < limit) {
                 destination = i;
+                transferAmount = std::min<std::uint16_t>(
+                    amount, static_cast<std::uint16_t>(limit - targetAmount));
                 break;
             }
         }
         if (destination == container.counts.size()) {
             for (std::size_t i = 0; i < container.counts.size(); ++i) {
-                if (container.counts[i] == 0u) { destination = i; break; }
+                if (container.counts[i] == 0u) {
+                    destination = i;
+                    transferAmount = std::min<std::uint16_t>(amount, limit);
+                    break;
+                }
             }
         }
     }
-    if (destination == container.counts.size()) {
+    if (destination == container.counts.size() || transferAmount == 0u) {
         ui_.SetChatMessage("El cofre está lleno.");
         return;
     }
 
     const std::uint16_t currentAmount =
         static_cast<std::uint16_t>(container.counts[destination] % 1000u);
-    const std::uint16_t targetAmount = static_cast<std::uint16_t>(currentAmount + 1u);
-    container.counts[destination] = static_cast<std::uint32_t>(itemId) * 1000u + targetAmount;
+    container.counts[destination] = static_cast<std::uint32_t>(itemId) * 1000u +
+        static_cast<std::uint32_t>(currentAmount + transferAmount);
     container.durability[destination] = maxDurability > 0u ? durability : 0u;
-    if (!inventory_.RemoveFromSlot(playerSlot, 1u, nullptr)) {
-        container.counts[destination] = currentAmount == 0u ? 0u :
-            static_cast<std::uint32_t>(itemId) * 1000u + currentAmount;
-        container.durability[destination] = 0u;
+    if (!inventory_.RemoveFromSlot(playerSlot, transferAmount, nullptr)) {
+        inventory_ = previousInventory;
+        container = previousContainer;
         ui_.SetChatMessage("No se pudo mover el objeto al cofre.");
         return;
     }
 
+    if (!SaveWorld()) {
+        inventory_ = previousInventory;
+        containers_[activeContainerKey_] = previousContainer;
+        RefreshInventoryUi();
+        RefreshContainerUi();
+        ui_.SetChatMessage("No se pudo guardar el traslado; el objeto sigue en tu inventario.");
+        return;
+    }
     RefreshInventoryUi();
     RefreshContainerUi();
-    SaveWorld();
-    ui_.SetChatMessage("Has guardado 1 objeto en el cofre.");
+    ui_.SetChatMessage("Has guardado " + std::to_string(transferAmount) + " objetos en el cofre.");
 }
 
 bool Engine::LoadContainers() {
@@ -3491,13 +3536,15 @@ bool Engine::SaveContainers() const {
         if (!file) { file.close(); std::filesystem::remove(temp); return false; }
         file.close();
         std::error_code error;
+        // On Android/POSIX, rename over an existing file is atomic. Never delete
+        // the previous container file as a fallback: a failed replacement must
+        // preserve the last complete copy.
         std::filesystem::rename(temp, path, error);
         if (error) {
-            std::filesystem::remove(path, error);
-            error.clear();
-            std::filesystem::rename(temp, path, error);
+            ENGINE_LOGE("Container sidecar replacement failed: %s", error.message().c_str());
+            std::filesystem::remove(temp);
+            return false;
         }
-        if (error) { std::filesystem::remove(temp); return false; }
         return true;
     } catch (...) {
         return false;
@@ -4067,6 +4114,10 @@ bool Engine::SaveWorld() {
                     }
                     if (error) std::filesystem::remove(tempPath);
                 }
+            }
+            if (!SaveContainers()) {
+                ENGINE_LOGE("Could not atomically save world containers");
+                return false;
             }
         }
     } catch (const std::exception& error) {
