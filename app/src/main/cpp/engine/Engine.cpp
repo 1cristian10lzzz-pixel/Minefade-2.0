@@ -709,6 +709,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     player_ = Player();
     player_.SetAppearance(avatarAppearance_);
     inventory_ = Inventory();
+    inventoryCursorSlot_ = -1;
     lastQuickbarSelection_ = 0xffffu;
     selectedItemToastUntil_ = 0.0;
     firstPersonItemId_ = 0xffffu;
@@ -2283,6 +2284,7 @@ void Engine::HandleUiAction(const std::string& action) {
         CyclePerspective();
     } else if (action == "inventory") {
         inventoryVisible_ = !inventoryVisible_;
+        inventoryCursorSlot_ = -1;
         if (inventoryVisible_) RefreshInventoryUi();
         craftingVisible_ = false;
         ui_.SetPanelVisible("crafting-panel", false);
@@ -2297,12 +2299,14 @@ void Engine::HandleUiAction(const std::string& action) {
         }
     } else if (action == "inventory-close") {
         inventoryVisible_ = false;
+        inventoryCursorSlot_ = -1;
         craftingVisible_ = false;
         ui_.SetPanelVisible("inventory-panel", false);
         ui_.SetPanelVisible("crafting-panel", false);
         paused_ = pauseVisible_;
     } else if (action == "crafting-open") {
         inventoryVisible_ = false;
+        inventoryCursorSlot_ = -1;
         craftingVisible_ = true;
         ui_.SetPanelVisible("inventory-panel", false);
         ui_.SetPanelVisible("pause-panel", false);
@@ -2312,6 +2316,7 @@ void Engine::HandleUiAction(const std::string& action) {
         ui_.SetPanelVisible("crafting-panel", true);
     } else if (action == "crafting-close") {
         craftingVisible_ = false;
+        inventoryCursorSlot_ = -1;
         ui_.SetPanelVisible("crafting-panel", false);
         inventoryVisible_ = true;
         paused_ = true;
@@ -2401,6 +2406,7 @@ void Engine::HandleUiAction(const std::string& action) {
         paused_ = pauseVisible_;
         if (pauseVisible_) {
             inventoryVisible_ = false;
+            inventoryCursorSlot_ = -1;
             ui_.SetPanelVisible("inventory-panel", false);
             player_.SetMovement(0.0f, 0.0f);
         }
@@ -2456,23 +2462,101 @@ void Engine::HandleUiAction(const std::string& action) {
             if (inventory_.UnequipArmor(slot)) RefreshInventoryUi();
             else ui_.SetChatMessage("No hay espacio para guardar la pieza de armadura.");
         } catch (...) { ui_.SetChatMessage("No se pudo quitar la armadura."); }
+    } else if (action == "inventory-split") {
+        if (inventoryCursorSlot_ < 0 ||
+            inventoryCursorSlot_ >= static_cast<int>(Inventory::kSlotCount)) {
+            ui_.SetChatMessage("Selecciona primero una pila del inventario.");
+        } else {
+            const std::size_t source = static_cast<std::size_t>(inventoryCursorSlot_);
+            std::size_t destination = Inventory::kSlotCount;
+            for (std::size_t i = Inventory::kHotbarSlotCount; i < Inventory::kSlotCount; ++i) {
+                if (i != source && inventory_.counts[i] == 0u) { destination = i; break; }
+            }
+            if (destination == Inventory::kSlotCount) {
+                for (std::size_t i = 0; i < Inventory::kHotbarSlotCount; ++i) {
+                    if (i != source && inventory_.counts[i] == 0u) { destination = i; break; }
+                }
+            }
+            if (destination == Inventory::kSlotCount ||
+                !inventory_.SplitStack(source, destination)) {
+                ui_.SetChatMessage("No se puede dividir: selecciona una pila de objetos y deja un espacio vacío.");
+            } else {
+                inventoryCursorSlot_ = static_cast<int>(destination);
+                ui_.SetChatMessage("Pila dividida en dos espacios.");
+                RefreshInventoryUi();
+            }
+        }
+    } else if (action == "inventory-drop") {
+        if (inventoryCursorSlot_ < 0 ||
+            inventoryCursorSlot_ >= static_cast<int>(Inventory::kSlotCount)) {
+            ui_.SetChatMessage("Selecciona primero un objeto del inventario.");
+        } else {
+            const std::size_t slot = static_cast<std::size_t>(inventoryCursorSlot_);
+            const std::uint16_t maximum = inventory_.SlotItemMaxDurability(slot);
+            const std::uint16_t remaining = inventory_.SlotItemDurability(slot);
+            if (maximum > 0u && remaining != maximum) {
+                ui_.SetChatMessage("No se puede soltar una herramienta dañada sin perder su durabilidad.");
+            } else {
+                std::uint16_t itemId = 0u;
+                if (inventory_.RemoveFromSlot(slot, 1u, &itemId)) {
+                    const Vec3 forward = player_.Forward();
+                    droppedItems_.Spawn({
+                        player_.position.x + forward.x * 0.85f,
+                        player_.position.y + 1.0f,
+                        player_.position.z + forward.z * 0.85f
+                    }, itemId, 1u);
+                    soundEvents_.fetch_or(8u, std::memory_order_release);
+                    ui_.SetChatMessage("Has soltado 1 objeto.");
+                    RefreshInventoryUi();
+                } else {
+                    ui_.SetChatMessage("No hay ningún objeto en ese espacio para soltar.");
+                }
+            }
+        }
     } else if (action.rfind("inventory-slot-", 0) == 0) {
         try {
             const std::size_t slot = static_cast<std::size_t>(std::stoul(action.substr(15)));
-            if (slot < inventory_.counts.size()) {
+            if (slot >= inventory_.counts.size()) return;
+            if (inventoryCursorSlot_ < 0) {
                 if (inventory_.EquipArmorFromSlot(slot)) {
                     RefreshInventoryUi();
-                } else if (slot < Inventory::kHotbarSlotCount) {
-                    inventory_.selectedSlot = static_cast<std::uint16_t>(slot);
-                    RefreshInventoryUi();
-                } else {
-                    std::swap(inventory_.counts[slot], inventory_.counts[inventory_.selectedSlot]);
-                    std::swap(inventory_.toolDurability[slot],
-                              inventory_.toolDurability[inventory_.selectedSlot]);
-                    RefreshInventoryUi();
+                    return;
                 }
+                inventoryCursorSlot_ = static_cast<int>(slot);
+                if (slot < Inventory::kHotbarSlotCount)
+                    inventory_.selectedSlot = static_cast<std::uint16_t>(slot);
+                RefreshInventoryUi();
+                return;
             }
-        } catch (...) { ui_.SetChatMessage("No se pudo mover ese objeto."); }
+
+            const std::size_t source = static_cast<std::size_t>(inventoryCursorSlot_);
+            if (source == slot) {
+                inventoryCursorSlot_ = -1;
+                RefreshInventoryUi();
+                return;
+            }
+            if (!inventory_.MoveOrMergeSlot(source, slot)) {
+                ui_.SetChatMessage("No se pudo combinar esa pila. Puede estar llena o tener durabilidad.");
+                RefreshInventoryUi();
+                return;
+            }
+            if (source < Inventory::kHotbarSlotCount &&
+                inventory_.selectedSlot == source && inventory_.counts[source] == 0u &&
+                slot >= Inventory::kHotbarSlotCount) {
+                std::size_t replacement = 0u;
+                for (std::size_t hotbar = 0; hotbar < Inventory::kHotbarSlotCount; ++hotbar) {
+                    if (inventory_.counts[hotbar] != 0u) { replacement = hotbar; break; }
+                }
+                inventory_.selectedSlot = static_cast<std::uint16_t>(replacement);
+            } else if (slot < Inventory::kHotbarSlotCount) {
+                inventory_.selectedSlot = static_cast<std::uint16_t>(slot);
+            }
+            inventoryCursorSlot_ = -1;
+            ui_.SetChatMessage("Inventario actualizado.");
+            RefreshInventoryUi();
+        } catch (...) {
+            ui_.SetChatMessage("No se pudo mover ese objeto.");
+        }
     } else if (action.rfind("slot-", 0) == 0 && action.size() == 6) {
         const char digit = action[5];
         if (digit >= '0' && digit <= '8') {
@@ -3310,7 +3394,9 @@ void Engine::RefreshInventoryUi() {
         } else {
             icon="<span class='inventory-icon empty-icon'>—</span>";
         }
-        markup+="<button class='inventory-row' id='inventory-slot-"+std::to_string(i)+"'>"+icon+"<span>";
+        markup += "<button class='inventory-row";
+        if (static_cast<int>(i) == inventoryCursorSlot_) markup += " inventory-cursor";
+        markup += "' id='inventory-slot-" + std::to_string(i) + "'>" + icon + "<span>";
         markup+=name;
         if(quantity>0u)markup+=" × "+std::to_string(quantity);
         const std::uint16_t itemMaxDurability = inventory_.SlotItemMaxDurability(i);
