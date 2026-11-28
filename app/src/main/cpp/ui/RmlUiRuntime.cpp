@@ -239,28 +239,34 @@ button:active { background: #47789b; }
 .slot img { width: 31dp; height: 31dp; }
 .slot .slot-count { right: 2dp; bottom: 0dp; font-size: 10dp; text-shadow: 0dp 1dp 2dp #000000; }
 #selected-item { bottom: 108dp; min-height: 30dp; padding: 5dp 10dp; background: #101a27ed; border: 1dp #d4e3eeaa; border-radius: 6dp; font-size: 11dp; }
-#inventory-panel { width: 94%; height: 90%; margin-left: -47%; margin-top: -45%; padding: 10dp; background: #293f5ff5; border: 2dp #c2d4e5dd; border-radius: 13dp; }
-.inventory-layout { gap: 8dp; }
-.inventory-left, .inventory-right { background: #1b2c43f5; border: 1dp #c0d0e077; border-radius: 8dp; padding: 8dp; }
-.inventory-heading { font-size: 13dp; color: #f7fbff; padding: 5dp 6dp 8dp 6dp; border-bottom: 1dp #9cc9e877; }
-.equipment-slot { width: 48dp; height: 42dp; background: #17263a; border: 1dp #a6c4e2aa; border-radius: 5dp; font-size: 9dp; color: #ebf7ff; }
-.inventory-grid { gap: 4dp; padding-top: 7dp; }
-.inventory-row { width: 44dp; height: 46dp; background: #233a55; border: 1dp #9fb9d3cc; border-radius: 5dp; font-size: 9dp; padding: 3dp; }
-.inventory-icon { width: 29dp; height: 29dp; }
-.material-row { font-size: 11dp; }
-#crafting-panel { width: 94%; height: 90%; margin-left: -47%; margin-top: -45%; padding: 10dp; background: #293f5ff5; border: 2dp #c2d4e5dd; border-radius: 13dp; }
-#crafting-panel .recipe-title { font-size: 14dp; color: #f4f9ff; margin-bottom: 6dp; padding-bottom: 5dp; border-bottom: 1dp #9cc9e877; }
-.crafting-workbench { width: 100%; height: 132dp; display: flex; flex-direction: column; background: #1a2b42f5; border: 1dp #9ebbd8aa; border-radius: 8dp; padding: 7dp; margin-bottom: 7dp; }
-.workbench-title { color: #eff7ff; font-size: 12dp; margin-bottom: 5dp; }
-.workbench-layout { width: 100%; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 13dp; }
-.crafting-input-grid { width: 100dp; height: 100dp; display: flex; flex-direction: row; flex-wrap: wrap; gap: 4dp; }
-.craft-slot { width: 48dp; height: 48dp; background: #0d1b2d; border: 2dp #7897b8; border-radius: 3dp; }
-.craft-arrow { color: #c9d9e7; font-size: 30dp; width: 36dp; text-align: center; }
-.craft-output { width: 54dp; height: 54dp; background: #0d1b2d; border: 2dp #d2dfeb; border-radius: 4dp; }
-.crafting-note { color: #b8c9d8; font-size: 9dp; text-align: center; margin-top: 4dp; }
-#crafting-recipes { height: 53%; overflow-y: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 5dp; }
-#crafting-panel button { min-height: 40dp; background: #244363; border: 1dp #9db9d5cc; border-radius: 6dp; font-size: 10dp; }
-.recipe-category { color: #c7ee91; border-bottom: 1dp #c7ee9177; }
+#inventory-panel { z-index: 9; width: 96%; height: 91%; margin-left: -48%; margin-top: -45.5%; padding: 7dp; background: #111f31f8; border: 2dp #d5e1ee; border-radius: 9dp; overflow: hidden; }
+.inventory-layout { width: 100%; height: 100%; display: flex; flex-direction: row; gap: 6dp; }
+.inventory-left { width: 30%; min-width: 88dp; height: 100%; display: flex; flex-direction: column; gap: 5dp; background: #192b40; border: 1dp #69839a; border-radius: 6dp; padding: 6dp; overflow-y: auto; }
+.inventory-right { width: 68%; height: 100%; display: flex; flex-direction: column; gap: 5dp; background: #192b40; border: 1dp #69839a; border-radius: 6dp; padding: 6dp; overflow-y: auto; }
+.inventory-heading { color: #e9f1f7; font-size: 10dp; font-weight: bold; padding: 4dp 3dp; border-bottom: 1dp #d2dfeb66; }
+.inventory-hint { color: #aebfd0; font-size: 7dp; padding: 2dp; }
+.inventory-equipment { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4dp; align-content: flex-start; }
+.equipment-slot { width: 46%; height: 43dp; background: #233c55; border: 1dp #b0c4d7; border-radius: 4dp; font-size: 7dp; color: #ebf7ff; padding: 2dp; }
+.equipment-slot img { width: 28dp; height: 28dp; }
+.inventory-grid { display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 3dp; padding-top: 4dp; overflow-y: auto; }
+.inventory-row { width: 29dp; height: 39dp; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #213a54; border: 1dp #829db6; border-radius: 3dp; font-size: 6dp; padding: 1dp; }
+.inventory-row.inventory-cursor { border: 2dp #f1d17c; background: #3b536d; }
+.inventory-icon { width: 23dp; height: 23dp; }
+.inventory-row span { max-width: 100%; font-size: 6dp; color: #eaf1f7; overflow: hidden; }
+.inventory-durability { width: 23dp; height: 3dp; background: #071321; border-radius: 2dp; overflow: hidden; }
+.inventory-durability span { display: block; height: 3dp; background: #9ad27d; }
+.material-row { display: flex; flex-direction: row; align-items: center; gap: 5dp; min-height: 25dp; font-size: 8dp; color: #e2ebf2; }
+.material-row .inventory-icon { width: 20dp; height: 20dp; }
+#crafting-panel { z-index: 10; width: 96%; height: 91%; margin-left: -48%; margin-top: -45.5%; padding: 8dp; background: #111f31f8; border: 2dp #d5e1ee; border-radius: 9dp; overflow: hidden; }
+#crafting-panel .recipe-title { color: #e9f1f7; font-size: 12dp; padding: 4dp 3dp 7dp 3dp; border-bottom: 1dp #d2dfeb66; }
+.crafting-workbench { width: 100%; min-height: 58dp; display: flex; flex-direction: column; justify-content: center; background: #1b3047; border: 1dp #8099b2; border-radius: 5dp; padding: 6dp; margin-bottom: 6dp; }
+.workbench-title { color: #dceaf5; font-size: 10dp; font-weight: bold; }
+.crafting-note { color: #aebfd0; font-size: 8dp; margin-top: 4dp; }
+#crafting-recipes { height: 76%; overflow-y: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 4dp; }
+#crafting-panel button { width: 48%; min-height: 40dp; background: #203b56; border: 1dp #91a9c1; border-radius: 4dp; font-size: 8dp; padding: 4dp; }
+#crafting-panel .inventory-actions button { width: auto; min-width: 104dp; }
+.craft-recipe-icon { width: 24dp; height: 24dp; margin-right: 5dp; }
+.recipe-category { width: 100%; color: #d8f0a4; font-size: 9dp; padding: 4dp 2dp; border-bottom: 1dp #d8f0a455; }
 
 </style>
 </head>
@@ -296,29 +302,27 @@ button:active { background: #47789b; }
 <div id="inventory-panel" class="panel">
   <div class="inventory-layout" id="inventory-layout">
     <div class="inventory-left" id="inventory-left">
-      <div class="inventory-heading">PERSONAJE · EQUIPO</div>
+      <div class="inventory-heading">PERSONAJE</div>
+      <div class="inventory-hint">Equipo y protección</div>
       <div class="inventory-equipment" id="equipment-items"></div>
-      <div class="inventory-heading">INVENTARIO · 36 ESPACIOS</div>
-      <div class="inventory-hint">Toca un espacio y luego otro para mover o combinar. Divide o suelta la pila seleccionada.</div>
-      <div id="inventory-items" class="inventory-grid"></div>
-      <div class="inventory-actions"><button id="inventory-split">Dividir pila</button><button id="inventory-drop">Soltar 1</button></div>
-      <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="eat">Comer</button><button id="inventory-close">Cerrar</button></div>
+      <div class="inventory-heading">ACCIONES</div>
+      <div class="inventory-actions"><button id="eat">Comer</button></div>
+      <div class="inventory-actions"><button id="crafting-open">Fabricar</button><button id="inventory-close">Cerrar</button></div>
     </div>
     <div class="inventory-right" id="inventory-right">
-      <div class="inventory-heading">CATÁLOGO · OBJETOS</div>
-      <div id="inventory-catalog" class="inventory-grid"></div>
+      <div class="inventory-heading">MOCHILA · 36 ESPACIOS</div>
+      <div class="inventory-hint">Toca un espacio y después otro para mover o combinar. Selecciona una pila para dividirla o soltarla.</div>
+      <div id="inventory-items" class="inventory-grid"></div>
+      <div class="inventory-actions"><button id="inventory-split">Dividir pila</button><button id="inventory-drop">Soltar 1</button></div>
+      <div class="inventory-heading">MATERIALES</div>
+      <div id="inventory-catalog" class="inventory-materials"></div>
     </div>
   </div>
 </div>
 <div id="crafting-panel" class="panel">
   <div class="crafting-workbench">
-    <div class="workbench-title">FABRICACIÓN · CUADRÍCULA 2 × 2</div>
-    <div class="workbench-layout">
-      <div class="crafting-input-grid"><div class="craft-slot"></div><div class="craft-slot"></div><div class="craft-slot"></div><div class="craft-slot"></div></div>
-      <div class="craft-arrow">➜</div>
-      <div class="craft-output"></div>
-    </div>
-    <div class="crafting-note">Selecciona una receta disponible para fabricar</div>
+    <div class="workbench-title">FABRICACIÓN · RECETAS REALES</div>
+    <div class="crafting-note">Selecciona una receta para comprobar ingredientes, estación y espacio libre. La fabricación se confirma en tu inventario.</div>
   </div>
   <div class="recipe-title">RECETAS DISPONIBLES</div>
   <div id="crafting-recipes"></div>
