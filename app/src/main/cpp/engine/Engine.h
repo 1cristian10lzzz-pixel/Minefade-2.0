@@ -104,7 +104,12 @@ private:
     bool SaveWorld();
     void LoadEnabledMods();
     void OpenStarterChest();
-    void TakeStarterChestContents();
+    void TakeContainerContents();
+    void TakeContainerSlot(std::size_t slot);
+    void DepositSelectedIntoContainer();
+    void RefreshContainerUi();
+    bool LoadContainers();
+    bool SaveContainers() const;
     void RefreshInventoryUi();
     void RefreshCraftingUi();
     bool HasNearbyBlock(const std::string& blockKey) const;
@@ -230,9 +235,15 @@ private:
     float hostileDamageCooldown_{0.0f};
     float hostileSpawnTimer_{0.0f};
     std::uint32_t hostileSpawnSequence_{0u};
+    struct ContainerData {
+        std::array<std::uint32_t, 27> counts{};
+        std::array<std::uint16_t, 27> durability{};
+    };
     bool starterChestEnabled_{false};
     bool starterChestOpen_{false};
     Vec3 starterChestPosition_{};
+    std::array<std::int32_t, 3> activeContainerKey_{{0, 0, 0}};
+    std::map<std::array<std::int32_t, 3>, ContainerData> containers_;
     std::uint32_t requestedWorldSeed_{0x4D464445u};
     std::string modsDirectory_;
     int modSheepSpawns_{0};
