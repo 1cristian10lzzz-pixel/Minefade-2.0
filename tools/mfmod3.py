@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-ENGINE_VERSION = "2.3.1"
+ENGINE_VERSION = "2.4.0"  # Target the current Minefade Android engine
 MAX_ENTRIES = 256
 MAX_MANIFEST = 64 * 1024
 MAX_JSON = 1024 * 1024
