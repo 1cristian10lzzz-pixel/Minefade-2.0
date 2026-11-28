@@ -235,6 +235,9 @@ def test_mod_world_data_preserves_unknown_ids_and_records_mapping():
     assert "definition == nullptr && itemId < static_cast<std::uint32_t>(BlockId::Count)" in WORLD
     assert "UsedModBlocks() const" in WORLD_H
     assert 'storagePath_ + ".modids"' in ENGINE
+    assert "std::ifstream existingIds(idsPath, std::ios::binary)" in ENGINE
+    assert "usedModIds.emplace(runtimeId, key)" in ENGINE
+    assert "preserving previous mapping file" in ENGINE
     assert 'path.string() + ".bak"' in WORLD
 
 
