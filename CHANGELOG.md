@@ -1,5 +1,11 @@
 # Registro de cambios — Minefade 2.0
 
+## Mantenimiento MFMod para Minefade 2.4.0
+- El generador y validador MFMod v3 usan 2.4.0 como versión actual del motor; los paquetes de prueba declaran compatibilidad 2.4.x.
+- El runtime nativo permite omitir módulos de contenido opcionales, pero rechaza módulos JSON presentes que estén vacíos, dañados, sean enlaces simbólicos o no sean archivos regulares.
+- Se añaden pruebas Python para el rango de compatibilidad 2.4.0 y una prueba nativa para la carga de paquetes con secciones ausentes/JSON corrupto.
+- Esta corrección no cambia el versionCode ni versionName del APK 2.4.0; prepara el sistema MFMod para esa versión.
+
 ## Actualización 2.4.0 — inventario jugable
 - Los 36 espacios del inventario pueden seleccionarse y transferirse entre sí; el movimiento no queda limitado a intercambiar con la casilla activa.
 - Las pilas del mismo objeto se combinan hasta el límite definido en el registro de bloques.
