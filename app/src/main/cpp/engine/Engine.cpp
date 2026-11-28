@@ -915,6 +915,8 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     }
 
     starterChestOpen_ = false;
+    activeContainerKey_ = {{0, 0, 0}};
+    containers_.clear();
     starterChestContents_ = {{1064u, 5064u, 64016u, 6004u, 3064u, 0u, 0u, 0u, 0u}};
     bool loadedExistingWorld = false;
     if (multiplayerMode_) {
@@ -1075,6 +1077,9 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
                 starterChestContents_ = saved;
         }
     }
+    if (!LoadContainers()) {
+        ENGINE_LOGW("Container sidecar was invalid; keeping the safe empty-container state");
+    }
     if (!player_.ResolveSafeSpawn(world_)) {
         ENGINE_LOGE("Saved spawn is obstructed and no nearby safe position was found");
         world_.GenerateAround(8, 8, 0);
@@ -1166,7 +1171,7 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     fallbackMovementButtons_.fill(false);
     ui_.SetPerspectiveEnabled(false);
     ui_.SetMinimapShape(minimapShape_);
-    ui_.SetChestButtonVisible(starterChestEnabled_ && !multiplayerMode_);
+    ui_.SetChestButtonVisible(false);
     RefreshInventoryUi();
     ENGINE_LOGI("World ready: %zu chunks, %d GPU vertices, seed=%u",
                 world_.ChunkCount(),
@@ -2440,7 +2445,16 @@ void Engine::HandleUiAction(const std::string& action) {
         starterChestOpen_ = false;
         ui_.SetPanelVisible("starter-chest-panel", false);
     } else if (action == "starter-chest-take") {
-        TakeStarterChestContents();
+        TakeContainerContents();
+    } else if (action == "container-put") {
+        DepositSelectedIntoContainer();
+    } else if (action.rfind("container-slot-", 0) == 0) {
+        try {
+            const std::size_t slot = static_cast<std::size_t>(std::stoul(action.substr(15)));
+            TakeContainerSlot(slot);
+        } catch (...) {
+            ui_.SetChatMessage("No se pudo recoger ese espacio del cofre.");
+        }
     } else if (action.rfind("creative-select-", 0) == 0) {
         if (gameMode_ != 1) return;
         try {
@@ -3237,8 +3251,13 @@ void Engine::UpdateMining(float deltaSeconds) {
         if (world_.GetRayTargetBlock(ViewPosition(), ViewDirection(), 6.0f,
                                      &target, &targetType)) {
             const BlockDefinition* definition = GetBlockDefinition(targetType);
+            const bool usableChest = targetType == BlockId::Chest &&
+                protection_.CanUseContainer(playerIdentity_, static_cast<int>(target.x),
+                                             static_cast<int>(target.z));
+            ui_.SetChestButtonVisible(usableChest);
             SetTargetBlock(definition != nullptr ? definition->nameEs : "", 0.0f);
         } else {
+            ui_.SetChestButtonVisible(false);
             SetTargetBlock({}, 0.0f);
         }
         return;
@@ -3249,6 +3268,7 @@ void Engine::UpdateMining(float deltaSeconds) {
     BlockId targetType = BlockId::Air;
     if (!world_.GetRayTargetBlock(player_.CameraPosition(), player_.Forward(), 6.0f,
                                   &target, &targetType)) {
+        ui_.SetChestButtonVisible(false);
         miningPointerId_ = pointerId;
         miningElapsed_ = 0.0f;
         miningRequired_ = 0.0f;
@@ -3259,9 +3279,13 @@ void Engine::UpdateMining(float deltaSeconds) {
 
     const BlockDefinition* definition = GetBlockDefinition(targetType);
     if (definition == nullptr) {
+        ui_.SetChestButtonVisible(false);
         SetTargetBlock({}, 0.0f);
         return;
     }
+    ui_.SetChestButtonVisible(targetType == BlockId::Chest &&
+        protection_.CanUseContainer(playerIdentity_, static_cast<int>(target.x),
+                                     static_cast<int>(target.z)));
 
     const bool changedTarget = miningPointerId_ != pointerId ||
         miningBlockType_ != targetType ||
@@ -3334,9 +3358,38 @@ void Engine::UpdateMining(float deltaSeconds) {
         SetTargetBlock(definition->nameEs, 0.0f);
         return;
     }
+    if (targetType == BlockId::Chest) {
+        const std::array<std::int32_t, 3> key{{
+            static_cast<std::int32_t>(target.x),
+            static_cast<std::int32_t>(target.y),
+            static_cast<std::int32_t>(target.z)
+        }};
+        const auto chest = containers_.find(key);
+        if (chest != containers_.end() &&
+            std::any_of(chest->second.counts.begin(), chest->second.counts.end(),
+                        [](std::uint32_t value) { return value != 0u; })) {
+            ui_.SetChatMessage("Vacía el cofre antes de romperlo.");
+            active->second.mining = false;
+            miningPointerId_ = -1;
+            miningElapsed_ = miningRequired_ = 0.0f;
+            SetTargetBlock(definition->nameEs, 0.0f);
+            return;
+        }
+    }
+
     Vec3 broken{};
     BlockId brokenType = BlockId::Air;
     if (world_.BreakRay(ViewPosition(), ViewDirection(), 6.0f, &broken, &brokenType)) {
+        if (brokenType == BlockId::Chest) {
+            const std::array<std::int32_t, 3> key{{
+                static_cast<std::int32_t>(broken.x),
+                static_cast<std::int32_t>(broken.y),
+                static_cast<std::int32_t>(broken.z)
+            }};
+            containers_.erase(key);
+            if (!SaveContainers())
+                ENGINE_LOGW("Could not persist removal of an empty chest container");
+        }
         firstPersonActionStarted_ = ElapsedSeconds();
         firstPersonActionKind_ = 1; // MINE: a block was actually broken.
         pendingBlockEdits_.insert(pendingBlockEdits_.end(), {
