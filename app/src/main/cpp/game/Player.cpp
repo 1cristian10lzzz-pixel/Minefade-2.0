@@ -290,6 +290,19 @@ void Player::AppendMesh(std::vector<WorldVertex>& output) const {
     MfPlayerPose pose{};
     const MfPlayerState state = ToRustPlayerState(*this);
     minefade_player_compute_pose(&state, animationQuality, animationsEnabled ? 1u : 0u, &pose);
+    const float death = std::clamp(deathProgress, 0.0f, 1.0f);
+    const float action = std::clamp(actionAmount, 0.0f, 1.0f);
+    if (death > 0.0f) {
+        pose.torso_pitch += 0.48f * death;
+        pose.head_pitch += 0.62f * death;
+        pose.left_arm_pitch = -0.95f * death;
+        pose.right_arm_pitch = -0.95f * death;
+        pose.left_leg_pitch *= 1.0f - death;
+        pose.right_leg_pitch *= 1.0f - death;
+    } else if (action > 0.0f && actionKind != 0u) {
+        pose.right_arm_pitch += action * (actionKind == 3u ? -0.95f : -1.35f);
+        if (actionKind == 3u) pose.head_pitch -= 0.22f * action;
+    }
     const float stride = pose.left_leg_pitch * 0.45f;
     // Original Minefade adventurer silhouette: boots, trousers, tunic, arms, hands,
     // face and hair. Every part is transformed by the player's yaw, not world axes.
@@ -756,7 +769,8 @@ bool EntitySystem::SpawnModEntity(const Vec3& nearPosition, int kind, float heal
 
 bool EntitySystem::DamageNearest(const Vec3& origin, const Vec3& direction,
                                  float maxDistance, float damage,
-                                 bool* defeated, int* defeatedKind) {
+                                 bool* defeated, int* defeatedKind,
+                                 Vec3* defeatedPosition) {
     if (defeated != nullptr) *defeated = false;
     if (defeatedKind != nullptr) *defeatedKind = -1;
     if (!std::isfinite(maxDistance) || !std::isfinite(damage) ||
@@ -790,12 +804,20 @@ bool EntitySystem::DamageNearest(const Vec3& origin, const Vec3& direction,
 
     Entity& target = entities_[bestIndex];
     target.health = std::max(0.0f, target.health - damage);
+    const Vec3 impact = target.position;
+    for (int particle = 0; particle < 7; ++particle) {
+        const float angle = static_cast<float>(particle) * 0.8975979f;
+        hitParticles_.push_back({{impact.x, impact.y + 0.62f, impact.z},
+            {std::cos(angle) * 1.35f, 1.0f + static_cast<float>(particle % 3) * 0.18f,
+             std::sin(angle) * 1.35f}, 0.0f});
+    }
     target.visualState = 1u;
     target.behavior = 3;
     target.behaviorTimer = 1.0f;
     if (target.health <= 0.0f) {
         if (defeated != nullptr) *defeated = true;
         if (defeatedKind != nullptr) *defeatedKind = target.kind;
+        if (defeatedPosition != nullptr) *defeatedPosition = target.position;
         entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(bestIndex));
     }
     return true;
@@ -826,6 +848,14 @@ void EntitySystem::SetModOptions(float passiveSpeed, float hostileSpeed, float f
 void EntitySystem::Update(const VoxelWorld& world, const Player& player, float deltaSeconds) {
     const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
     animationTime_ = std::fmod(animationTime_ + dt, 4096.0f);
+    for (HitParticle& particle : hitParticles_) {
+        particle.age += dt; particle.velocity.y -= 2.2f * dt;
+        particle.position.x += particle.velocity.x * dt;
+        particle.position.y += particle.velocity.y * dt;
+        particle.position.z += particle.velocity.z * dt;
+    }
+    hitParticles_.erase(std::remove_if(hitParticles_.begin(), hitParticles_.end(),
+        [](const HitParticle& particle) { return particle.age >= 0.32f; }), hitParticles_.end());
     for (Entity& entity : entities_) {
         const Vec3 previousPosition = entity.position;
         const std::uint8_t previousVisualState = entity.visualState;
@@ -975,6 +1005,13 @@ void EntitySystem::Update(const VoxelWorld& world, const Player& player, float d
 }
 
 void EntitySystem::AppendMesh(std::vector<WorldVertex>& output, const CameraFrustum* frustum) const {
+    for (const HitParticle& particle : hitParticles_) {
+        const float fade = std::clamp(1.0f - particle.age / 0.32f, 0.0f, 1.0f);
+        const std::array<float,3> color{{0.90f,0.20f+0.30f*fade,0.12f}};
+        AppendEntityBoxAnimated(output,particle.position,{0.0f,0.0f,0.0f},
+            {0.035f,0.035f,0.035f},color,{0.0f,0.0f,0.0f},
+            {particle.age*7.0f,particle.age*9.0f,particle.age*5.0f});
+    }
     AppendLegacyMesh(output, frustum, -1);
 }
 

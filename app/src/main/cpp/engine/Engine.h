@@ -119,6 +119,7 @@ private:
     bool HasNearbyAnvil() const;
     bool CraftRecipe(const std::string& recipe);
     void UpdateMining(float deltaSeconds);
+    bool TryEatSelectedFood();
     void SetTargetBlock(const std::string& name, float progress);
     Vec3 ViewPosition() const;
     Vec3 ViewTarget() const;
@@ -214,16 +215,29 @@ private:
     int inventoryCursorSlot_{-1};
     bool craftingVisible_{false};
     bool pauseVisible_{false};
+    int craftingFilter_{0};
+    bool pauseSettingsVisible_{false};
+    bool rainEnabled_{false};
+    float rainClock_{0.0f};
     bool thirdPerson_{false};
     bool thirdPersonFront_{false};
     std::array<bool, 4> fallbackMovementButtons_{{false, false, false, false}};
     bool crouching_{false};
+    bool sprintEnabled_{false};
+    double lastForwardTapAt_{-1.0};
+    bool eatHeld_{false};
+    bool eatHoldConsumed_{false};
+    float eatHoldElapsed_{0.0f};
+    float deathAnimationElapsed_{0.0f};
+    Vec3 spawnPoint_{};
+    bool spawnPointSet_{false};
     int gameMode_{0};
     bool allowCheats_{false};
     float playerHealth_{20.0f};
     float playerHunger_{20.0f};
     // Per-world progression is persisted separately to preserve legacy MFVOX save formats.
     std::uint32_t progressionXp_{0u};
+    std::uint32_t deathXpLoss_{0u};
     std::uint32_t progressionBlocksMined_{0u};
     std::uint32_t progressionBlocksPlaced_{0u};
     std::uint32_t progressionItemsCollected_{0u};

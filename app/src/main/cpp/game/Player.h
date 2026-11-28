@@ -27,6 +27,9 @@ public:
     bool animationsEnabled{true};
     std::array<int, 6> appearance{{0,0,0,0,0,0}};
     bool contactShadows{true};
+    float actionAmount{0.0f};
+    std::uint8_t actionKind{0};
+    float deathProgress{0.0f};
 
     Vec3 Forward() const;
     Vec3 CameraPosition() const;
@@ -142,9 +145,12 @@ public:
                         bool hostile, const VoxelWorld& world);
     // Damages the nearest forward-facing hostile. Returns true on a hit.
     bool DamageNearest(const Vec3& origin, const Vec3& direction, float maxDistance,
-                       float damage, bool* defeated = nullptr, int* defeatedKind = nullptr);
+                       float damage, bool* defeated = nullptr, int* defeatedKind = nullptr,
+                       Vec3* defeatedPosition = nullptr);
 private:
+    struct HitParticle { Vec3 position; Vec3 velocity; float age{0.0f}; };
     std::vector<Entity> entities_;
+    std::vector<HitParticle> hitParticles_;
     bool initialized_{false};
     bool contactShadows_{true};
     std::uint8_t animationQuality_{2};

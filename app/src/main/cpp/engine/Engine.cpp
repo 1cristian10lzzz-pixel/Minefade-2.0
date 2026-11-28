@@ -1081,6 +1081,21 @@ bool Engine::Initialise(float displayDensity, const std::uint8_t* atlasPixels,
     if (!LoadContainers()) {
         ENGINE_LOGW("Container sidecar was invalid; keeping the safe empty-container state");
     }
+    if (!storagePath_.empty()) {
+        std::ifstream input(storagePath_ + ".spawn", std::ios::binary);
+        std::uint32_t magic = 0u, version = 0u;
+        Vec3 point{};
+        if (input && input.read(reinterpret_cast<char*>(&magic), sizeof(magic)) &&
+            input.read(reinterpret_cast<char*>(&version), sizeof(version)) &&
+            input.read(reinterpret_cast<char*>(&point), sizeof(point)) &&
+            input.peek() == std::char_traits<char>::eof() &&
+            magic == 0x4D465350u && version == 1u &&
+            std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z) &&
+            point.y >= 0.0f && point.y < static_cast<float>(VoxelWorld::kWorldHeight - 2)) {
+            spawnPoint_ = point; spawnPointSet_ = true;
+        }
+    }
+    if (spawnPointSet_) player_.position = spawnPoint_;
     if (!player_.ResolveSafeSpawn(world_)) {
         ENGINE_LOGE("Saved spawn is obstructed and no nearby safe position was found");
         world_.GenerateAround(8, 8, 0);
@@ -1570,6 +1585,19 @@ void Engine::Render() {
     frameTimeSamplesMs_[frameTimeSampleCursor_] = std::clamp(delta, 0.0f, 1.0f) * 1000.0f;
     frameTimeSampleCursor_ = (frameTimeSampleCursor_ + 1u) % frameTimeSamplesMs_.size();
     frameTimeSampleCount_ = std::min(frameTimeSampleCount_ + 1u, frameTimeSamplesMs_.size());
+    const float uiDelta = std::clamp(delta, 0.0f, 0.10f);
+    if (eatHeld_ && inventoryVisible_ && !dead_) {
+        eatHoldElapsed_ += uiDelta;
+        if (eatHoldElapsed_ >= 0.85f) {
+            if (TryEatSelectedFood()) { eatHoldConsumed_ = true; eatHoldElapsed_ = 0.0f; }
+            else eatHeld_ = false;
+        }
+    }
+    if (dead_ && player_.deathProgress < 1.0f) {
+        deathAnimationElapsed_ = std::min(0.6f, deathAnimationElapsed_ + uiDelta);
+        player_.deathProgress = std::clamp(deathAnimationElapsed_ / 0.6f, 0.0f, 1.0f);
+        if (thirdPerson_) { RebuildEntityMesh(); UploadEntityMesh(); }
+    }
     if (!paused_) {
         const float safeDelta = std::clamp(delta, 0.0f, 0.05f);
         environment_.Update(safeDelta * modDaySpeed_);
@@ -1602,6 +1630,15 @@ void Engine::Render() {
                     // The previous implementation teleported immediately, so the
                     // player never saw a death state or had a chance to choose.
                     dead_ = true;
+                    deathAnimationElapsed_ = 0.0f;
+                    player_.deathProgress = 0.0f;
+                    deathXpLoss_ = progressionXp_ == 0u ? 0u : std::max(1u, progressionXp_ / 5u);
+                    progressionXp_ -= deathXpLoss_;
+                    const std::uint16_t held = inventory_.SelectedItemId();
+                    if (held != 0u && inventory_.ConsumeSelected(1u)) {
+                        droppedItems_.Spawn(player_.position, held, 1u);
+                        RefreshInventoryUi();
+                    }
                     paused_ = true;
                     player_.SetMovement(0.0f, 0.0f);
                     touches_.clear();
@@ -2098,8 +2135,10 @@ void Engine::UpdateTouchMovement() {
         moveX /= magnitude;
         moveY /= magnitude;
     }
-    player_.SetMovement(std::clamp(moveX, -1.0f, 1.0f),
-                        std::clamp(moveY, -1.0f, 1.0f));
+    const float boundedX = std::clamp(moveX, -1.0f, 1.0f);
+    const float boundedY = std::clamp(moveY, -1.0f, 1.0f);
+    player_.SetMovement(boundedX, boundedY);
+    player_.SetSpeedMultiplier(modPlayerSpeed_ * (sprintEnabled_ && boundedY > 0.12f ? 1.55f : 1.0f));
 }
 
 void Engine::Touch(int action, int pointerId, float x, float y) {
@@ -2130,6 +2169,12 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
         float moveX = 0.0f;
         float moveY = 0.0f;
         if (ui_.MovementVectorAt(x, y, moveX, moveY)) {
+            if (moveY > 0.66f) {
+                const double tapAt = ElapsedSeconds();
+                if (lastForwardTapAt_ >= 0.0 && tapAt - lastForwardTapAt_ <= 0.32)
+                    sprintEnabled_ = !sprintEnabled_;
+                lastForwardTapAt_ = tapAt;
+            }
             TouchState state;
             state.startX = state.lastX = x;
             state.startY = state.lastY = y;
@@ -2198,6 +2243,14 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
     } else if (action == kUp || action == kCancel) {
         if (action == kUp && !state.moved &&
             ElapsedSeconds() - state.startedAt < 0.22) {
+            Vec3 lookedBlock{};
+            BlockId lookedType = BlockId::Air;
+            const bool lookedAtBlock = world_.GetRayTargetBlock(ViewPosition(),ViewDirection(),6.0f,
+                                                                  &lookedBlock,&lookedType);
+            const BlockDefinition* lookedDefinition = lookedAtBlock ? GetBlockDefinition(lookedType) : nullptr;
+            if (lookedDefinition != nullptr && std::string_view(lookedDefinition->key) == "crafting_table") {
+                HandleUiAction("crafting-open");
+            } else {
             const std::uint16_t selected = inventory_.SelectedItemId();
             Vec3 placementTarget{};
             Vec3 placed{};
@@ -2237,6 +2290,7 @@ void Engine::Touch(int action, int pointerId, float x, float y) {
                 UploadWorldMesh();
                 UploadTransparentWorldMesh();
             }
+            }
         }
         if (miningPointerId_ == pointerId) {
             miningPointerId_ = -1;
@@ -2263,10 +2317,38 @@ void Engine::CyclePerspective() {
     UploadEntityMesh();
 }
 
+bool Engine::TryEatSelectedFood() {
+    if (gameMode_ == 1) { ui_.SetChatMessage("En creativo no necesitas comer."); return false; }
+    if (playerHunger_ >= 20.0f) { ui_.SetChatMessage("No tienes hambre."); return false; }
+    const std::uint16_t selected = inventory_.SelectedItemId();
+    const BlockDefinition* food = GetBlockDefinition(static_cast<BlockId>(selected));
+    float restored = 0.0f;
+    if (food != nullptr) {
+        const std::string_view key(food->key);
+        if (key == "carrots") restored = 4.0f;
+        else if (key == "potatoes") restored = 3.0f;
+    }
+    if (restored <= 0.0f) { ui_.SetChatMessage("Selecciona zanahorias o patatas para comer."); return false; }
+    if (!inventory_.ConsumeSelected(1u)) { ui_.SetChatMessage("No quedan unidades de ese alimento."); return false; }
+    firstPersonActionStarted_ = ElapsedSeconds();
+    firstPersonActionKind_ = 3;
+    playerHunger_ = std::min(20.0f, playerHunger_ + restored);
+    hungerExhaustion_ = 0.0f;
+    RefreshInventoryUi();
+    ui_.SetChatMessage(std::string("Has comido ") + food->nameEs + ".");
+    return true;
+}
+
 void Engine::HandleUiAction(const std::string& action) {
     soundEvents_.fetch_or(4u, std::memory_order_release);
-    if (action == "respawn") {
+    if (action == "eat-hold-start") {
+        eatHeld_ = true; eatHoldConsumed_ = false; eatHoldElapsed_ = 0.0f;
+    } else if (action == "eat-hold-end") {
+        if (eatHeld_ && !eatHoldConsumed_) TryEatSelectedFood();
+        eatHeld_ = false; eatHoldElapsed_ = 0.0f;
+    } else if (action == "respawn") {
         if (!dead_) return;
+        if (spawnPointSet_) player_.position = spawnPoint_;
         if (!player_.ResolveSafeSpawn(world_)) {
             const int spawnX = 8;
             const int spawnZ = 8;
@@ -2280,6 +2362,8 @@ void Engine::HandleUiAction(const std::string& action) {
         regenerationTimer_ = 0.0f;
         hostileDamageCooldown_ = 1.0f;
         dead_ = false;
+        deathAnimationElapsed_ = 0.0f;
+        player_.deathProgress = 0.0f;
         ui_.SetPanelVisible("death-panel", false);
         paused_ = pauseVisible_ || inventoryVisible_ || craftingVisible_;
         ui_.SetChatMessage("Has reaparecido. Conservas tu inventario.");
@@ -2329,32 +2413,7 @@ void Engine::HandleUiAction(const std::string& action) {
         RefreshInventoryUi();
         ui_.SetPanelVisible("inventory-panel", true);
     } else if (action == "eat") {
-        if (gameMode_ == 1) {
-            ui_.SetChatMessage("En creativo no necesitas comer.");
-        } else if (playerHunger_ >= 20.0f) {
-            ui_.SetChatMessage("No tienes hambre.");
-        } else {
-            const std::uint16_t selected = inventory_.SelectedItemId();
-            const BlockDefinition* food = GetBlockDefinition(static_cast<BlockId>(selected));
-            float restored = 0.0f;
-            if (food != nullptr) {
-                const std::string_view key(food->key);
-                if (key == "carrots") restored = 4.0f;
-                else if (key == "potatoes") restored = 3.0f;
-            }
-            if (restored <= 0.0f) {
-                ui_.SetChatMessage("Selecciona zanahorias o patatas para comer.");
-            } else if (inventory_.ConsumeSelected(1u)) {
-                firstPersonActionStarted_ = ElapsedSeconds();
-                firstPersonActionKind_ = 3; // EAT: item was actually consumed.
-                playerHunger_ = std::min(20.0f, playerHunger_ + restored);
-                hungerExhaustion_ = 0.0f;
-                RefreshInventoryUi();
-                ui_.SetChatMessage(std::string("Has comido ") + food->nameEs + ".");
-            } else {
-                ui_.SetChatMessage("No quedan unidades de ese alimento.");
-            }
-        }
+        TryEatSelectedFood();
     } else if (action == "attack") {
         if (gameMode_ == 1) {
             ui_.SetChatMessage("El combate no está disponible en este modo.");
@@ -2372,13 +2431,17 @@ void Engine::HandleUiAction(const std::string& action) {
             }
             bool defeated = false;
             int defeatedKind = -1;
+            Vec3 defeatedPosition{};
             if (entities_.DamageNearest(player_.CameraPosition(), player_.Forward(),
-                                        3.25f, damage, &defeated, &defeatedKind)) {
+                                        3.25f, damage, &defeated, &defeatedKind, &defeatedPosition)) {
                 firstPersonActionStarted_ = ElapsedSeconds();
                 firstPersonActionKind_ = 1; // ATTACK: an enemy was actually hit.
                 if (inventory_.DamageSelectedItem(1u)) RefreshInventoryUi();
                 if (defeated) {
                     if (gameMode_ != 1) AddProgressionXp(20u);
+                    const char* loot = defeatedKind == 5 ? "minefade_iron_ingot" : "minefade_stick";
+                    if (const BlockDefinition* drop = FindBlockDefinition(loot))
+                        droppedItems_.Spawn(defeatedPosition, static_cast<std::uint16_t>(drop->id), 1u);
                     ui_.SetChatMessage(defeatedKind == 5
                         ? "Has derrotado a un esqueleto."
                         : "Has derrotado a un zombi.");
@@ -3003,7 +3066,7 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         return "/claim help · /oveja [cantidad] · /vaca [cantidad] · /pollo [cantidad] · /cerdo [cantidad] · "
                "/zombi [cantidad] · /esqueleto [cantidad] · /conejo [cantidad] · "
                "/modo supervivencia|creativo|aventura · /tiempo dia|noche · "
-               "/dar <id> [cantidad] · /tp <x> <y> <z> · /semilla · /inventario · /fabricar <receta>";
+               "/dar <id> [cantidad] · /tp <x> <y> <z> · /setspawn · /semilla · /inventario · /fabricar <receta>";
     }
     if (verb == "claim" || verb == "parcela") {
         std::string action;
@@ -3068,6 +3131,11 @@ std::string Engine::ExecuteCommand(const std::string& rawCommand) {
         if (!any) summary << "Vacío.\n";
         summary << "Espacio seleccionado: " << (inventory_.selectedSlot + 1u) << "/9.";
         return summary.str();
+    }
+    if (verb == "setspawn" || verb == "spawnpoint" || verb == "puntoaparicion") {
+        spawnPoint_ = player_.position; spawnPointSet_ = true;
+        if (!SaveWorld()) return "No se pudo guardar el punto de reaparición.";
+        return "Punto de reaparición guardado.";
     }
     if (verb == "fabricar" || verb == "craft") {
         std::string recipe;
@@ -4030,6 +4098,25 @@ bool Engine::SaveWorld() {
             return false;
         } else {
             ENGINE_LOGI("World saved to private app storage");
+            if (spawnPointSet_) {
+                const std::string path = storagePath_ + ".spawn";
+                const std::string temp = path + ".tmp";
+                const std::uint32_t magic = 0x4D465350u, version = 1u;
+                std::ofstream output(temp, std::ios::binary | std::ios::trunc);
+                if (output) {
+                    output.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+                    output.write(reinterpret_cast<const char*>(&version), sizeof(version));
+                    output.write(reinterpret_cast<const char*>(&spawnPoint_), sizeof(spawnPoint_));
+                    output.flush(); output.close();
+                    std::error_code error;
+                    std::filesystem::rename(temp, path, error);
+                    if (error) {
+                        std::filesystem::remove(path, error); error.clear();
+                        std::filesystem::rename(temp, path, error);
+                    }
+                    if (error) std::filesystem::remove(temp);
+                }
+            }
             {
                 const std::string idsPath = storagePath_ + ".modids";
                 const std::string idsTemp = idsPath + ".tmp";
