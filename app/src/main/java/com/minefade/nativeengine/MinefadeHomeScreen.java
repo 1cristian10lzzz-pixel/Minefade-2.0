@@ -54,6 +54,7 @@ public final class MinefadeHomeScreen extends FrameLayout {
     public interface Listener {
         void onPlay();
         void onPlayWorld(WorldManager.WorldInfo world);
+        void onExportWorld(WorldManager.WorldInfo world);
         void onCreateWorld(WorldManager.WorldInfo world);
         void onHostWorldMultiplayer(WorldManager.WorldInfo world);
         void onImportMod();
@@ -471,7 +472,12 @@ public final class MinefadeHomeScreen extends FrameLayout {
 
     private void showWorldActions(WorldManager.WorldInfo world, View anchor) {
         haptic(anchor);
-        showWorldSettings(world);
+        new AlertDialog.Builder(getContext())
+                .setTitle(world.name)
+                .setItems(new CharSequence[]{"Ajustes del mundo", "Exportar mundo (.zip)"}, (dialog, which) -> {
+                    if (which == 0) showWorldSettings(world);
+                    else if (listener != null) listener.onExportWorld(world);
+                }).setNegativeButton("Cerrar", null).show();
     }
 
     private void showWorldSettings(WorldManager.WorldInfo world) {

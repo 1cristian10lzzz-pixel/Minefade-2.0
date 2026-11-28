@@ -1,17 +1,23 @@
 package com.minefade.nativeengine;
 
 import android.content.Context;
+import android.net.Uri;
 import android.system.Os;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /** Persistent catalog for independent Minefade worlds. */
 public final class WorldManager {
@@ -67,8 +73,10 @@ public final class WorldManager {
     }
 
     private final File worldsDirectory;
+    private final Context context;
 
     public WorldManager(Context context) {
+        this.context = context.getApplicationContext();
         worldsDirectory = new File(context.getFilesDir(), "worlds");
         if (!worldsDirectory.exists()) worldsDirectory.mkdirs();
         migrateLegacyDefaultWorld();
@@ -194,6 +202,51 @@ public final class WorldManager {
                 info.allowCheats, info.starterChest, info.flatWorld, info.difficulty,
                 info.generateStructures, info.multiplayerEnabled, info.createdAt,
                 System.currentTimeMillis(), info.directory));
+    }
+
+    /** Export a complete world folder, including world data and versioned sidecars. */
+    public synchronized boolean exportWorld(WorldInfo info, Uri destination) {
+        if (info == null || destination == null || info.directory == null) return false;
+        try {
+            String allowedRoot = worldsDirectory.getCanonicalPath() + File.separator;
+            String worldRoot = info.directory.getCanonicalPath();
+            if (!worldRoot.startsWith(allowedRoot) || !info.directory.isDirectory()) return false;
+            OutputStream raw = context.getContentResolver().openOutputStream(destination, "w");
+            if (raw == null) return false;
+            try (ZipOutputStream zip = new ZipOutputStream(raw)) {
+                Set<String> visited = new HashSet<>();
+                addWorldFilesToZip(info.directory, info.directory, visited, zip);
+                zip.finish();
+                return true;
+            }
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static void addWorldFilesToZip(File root, File current,
+                                           Set<String> visited, ZipOutputStream zip) throws Exception {
+        String canonicalRoot = root.getCanonicalPath();
+        String canonicalCurrent = current.getCanonicalPath();
+        if (!canonicalCurrent.startsWith(canonicalRoot + File.separator) &&
+                !canonicalCurrent.equals(canonicalRoot)) return;
+        if (!visited.add(canonicalCurrent)) return;
+        if (current.isDirectory()) {
+            File[] children = current.listFiles();
+            if (children == null) return;
+            for (File child : children) addWorldFilesToZip(root, child, visited, zip);
+            return;
+        }
+        if (!current.isFile()) return;
+        String relative = root.toURI().relativize(current.toURI()).getPath();
+        if (relative.isEmpty() || relative.startsWith("/") || relative.contains("../")) return;
+        zip.putNextEntry(new ZipEntry(relative));
+        try (FileInputStream input = new FileInputStream(current)) {
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) zip.write(buffer, 0, read);
+        }
+        zip.closeEntry();
     }
 
     public synchronized boolean deleteWorld(WorldInfo info) {

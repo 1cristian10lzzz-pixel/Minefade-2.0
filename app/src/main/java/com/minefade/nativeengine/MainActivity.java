@@ -102,6 +102,7 @@ public final class MainActivity extends Activity {
     private static final int FALLBACK_TAG_QUICKBAR_BASE = -200;
 
     private WorldManager.WorldInfo requestedWorld;
+    private WorldManager.WorldInfo pendingWorldExport;
     private WorldManager worldManager;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean engineReady;
@@ -226,6 +227,7 @@ public final class MainActivity extends Activity {
                 } else startWorld(worlds.get(0));
             }
             @Override public void onPlayWorld(WorldManager.WorldInfo world) { startWorld(world); }
+            @Override public void onExportWorld(WorldManager.WorldInfo world) { beginWorldExport(world); }
             @Override public void onCreateWorld(WorldManager.WorldInfo world) { startWorld(world); }
             @Override public void onHostWorldMultiplayer(WorldManager.WorldInfo world) { startLanHost(world); }
             @Override public void onImportMod() { pickModFile(); }
@@ -1167,6 +1169,18 @@ public final class MainActivity extends Activity {
         startActivityForResult(intent, 7401);
     }
 
+    private void beginWorldExport(WorldManager.WorldInfo world) {
+        if (world == null) return;
+        pendingWorldExport = world;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        String safeName = world.name.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (safeName.isEmpty()) safeName = "Minefade_World";
+        intent.putExtra(Intent.EXTRA_TITLE, safeName + ".minefade.zip");
+        startActivityForResult(intent, 7403);
+    }
+
     private void pickShaderFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -1178,7 +1192,14 @@ public final class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        if (requestCode == 7401) {
+        if (requestCode == 7403) {
+            WorldManager.WorldInfo exporting = pendingWorldExport;
+            pendingWorldExport = null;
+            boolean exported = exporting != null && worldManager.exportWorld(exporting, data.getData());
+            Toast.makeText(this, exported ? "Mundo exportado correctamente." :
+                    "No se pudo exportar el mundo. Comprueba el espacio y el destino.",
+                    Toast.LENGTH_LONG).show();
+        } else if (requestCode == 7401) {
             ModManager manager = new ModManager(this);
             ModManager.ModInfo imported = manager.importMod(data.getData());
             if (imported == null) {
