@@ -2,16 +2,19 @@
 """Regression tests for the safe MFMod v3 content package format."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from tools.mfmod3 import create_package, validate_package
+from tools.mfmod3 import create_package, main, validate_package
 
 
 class ModPackV3Tests(unittest.TestCase):
@@ -152,6 +155,15 @@ class ModPackV3Tests(unittest.TestCase):
                 target.writestr(name, payload)
         with self.assertRaisesRegex(ValueError, "hash o tamaño no coincide"):
             validate_package(self.package)
+
+    def test_cli_defaults_target_minefade_2_4(self):
+        output = io.StringIO()
+        with patch("sys.argv", ["mfmod3.py", "create", str(self.mod), str(self.package)]):
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(main(), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["engine_min"], "2.4.0")
+        self.assertEqual(result["engine_max"], "2.4.99")
 
     def test_rejects_packages_that_exclude_minefade_2_4(self):
         with self.assertRaisesRegex(ValueError, "fuera del rango"):
