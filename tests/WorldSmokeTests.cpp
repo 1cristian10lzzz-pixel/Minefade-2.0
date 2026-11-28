@@ -60,11 +60,22 @@ int main() {
     modRegistry.Clear();
     {
         std::ofstream malformed(modJsonRoot / "data" / "blocks.json", std::ios::binary);
+        assert(malformed.good());
         malformed << "{ invalid json";
     }
-    assert(!modRegistry.Load(modJsonRoot, baseModAtlas.data(), baseModAtlas.size(),
+    const std::filesystem::path malformedBlocks = modJsonRoot / "data" / "blocks.json";
+    assert(std::filesystem::is_regular_file(malformedBlocks));
+    assert(std::filesystem::file_size(malformedBlocks) > 0u);
+    JsonValue invalidOptionalJson;
+    assert(!ParseJson("{ invalid json", invalidOptionalJson, jsonDiagnostic));
+    const bool corruptedModAccepted = modRegistry.Load(modJsonRoot, baseModAtlas.data(), baseModAtlas.size(),
         static_cast<int>(kBlockAtlasWidth), static_cast<int>(kBlockAtlasHeight),
-        expandedModAtlas, expandedModAtlasWidth, expandedModAtlasHeight, modRuntimeError));
+        expandedModAtlas, expandedModAtlasWidth, expandedModAtlasHeight, modRuntimeError);
+    if (corruptedModAccepted) {
+        std::cerr << "MFMod accepted corrupt data/blocks.json; diagnostic='"
+                  << modRuntimeError << "' path='" << malformedBlocks.string() << "'\n";
+    }
+    assert(!corruptedModAccepted);
     assert(modRuntimeError.find("data/blocks.json") != std::string::npos);
     modRegistry.Clear();
     std::filesystem::remove_all(modJsonRoot);
