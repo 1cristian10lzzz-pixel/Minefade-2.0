@@ -88,6 +88,7 @@ private:
     };
 
     void AttachAction(const char* elementId, const char* action);
+    void AttachHoldAction(const char* elementId, const char* beginAction, const char* endAction);
     void ApplyResponsiveLayout();
 
     RmlUiOpenGLES renderer_;
@@ -97,6 +98,7 @@ private:
     Rml::ElementDocument* document_{nullptr};
     ActionCallback callback_;
     std::vector<std::unique_ptr<ActionListener>> listeners_;
+    std::vector<std::unique_ptr<ActionListener>> holdListeners_;
     std::vector<std::unique_ptr<ActionListener>> inventoryListeners_;
     std::vector<std::unique_ptr<ActionListener>> craftingListeners_;
     std::vector<std::unique_ptr<ActionListener>> containerListeners_;

@@ -191,7 +191,12 @@ button:active { background: #47789b; }
 .recipe-category { width: 100%; color: #d8f0a4; font-size: 11dp; padding: 5dp 2dp 2dp 2dp; border-bottom: 1dp #d8f0a455; }
 #pause-panel { z-index: 10; width: 270dp; margin-left: -135dp; }
 #pause-panel { z-index: 10; width: 270dp; margin-left: -135dp; }
-#pause-panel .actions { justify-content: center; gap: 8dp; }
+#pause-panel .actions { justify-content: center; gap: 6dp; flex-wrap: wrap; }
+#pause-settings-panel { z-index: 12; width: 280dp; margin-left: -140dp; }
+#pause-settings-panel .actions { justify-content: center; margin-top: 6dp; }
+#crafting-filters { flex-wrap: wrap; justify-content: flex-start; gap: 3dp; padding: 3dp 0dp; }
+#crafting-filters button { width: auto; min-width: 44dp; min-height: 30dp; font-size: 7dp; padding: 3dp 5dp; }
+#crafting-recipes { height: 68%; }
 #pause-panel button { min-width: 104dp; }
 .panel h1, .panel p { display: none; }
 #target { position: absolute; z-index: 4; left: 50%; top: 57%; margin-left: -75dp; min-width: 150dp; text-align: center; color: #ffffff; font-size: 11dp; text-shadow: 0dp 1dp 3dp #000000; display: none; pointer-events: none; }
@@ -333,14 +338,27 @@ button:active { background: #47789b; }
     <div class="crafting-note">Elige una receta: se validan materiales, estación y espacio antes de consumir nada.</div>
   </div>
   <div class="recipe-title">RECETAS DISPONIBLES</div>
+  <div id="crafting-filters" class="inventory-actions">
+    <button id="craft-filter-all">Todo</button><button id="craft-filter-basic">Básico</button>
+    <button id="craft-filter-building">Construcción</button><button id="craft-filter-mechanisms">Mecanismos</button>
+    <button id="craft-filter-minerals">Minerales</button><button id="craft-filter-tools">Equipo</button>
+    <button id="craft-filter-mods">Mods</button>
+  </div>
   <div id="crafting-recipes"></div>
   <div class="inventory-actions"><button id="crafting-close">Volver al inventario</button></div>
 </div>
 <div id="pause-panel" class="panel">
   <div class="actions">
     <button id="resume">Continuar</button>
+    <button id="pause-settings">Ajustes</button>
     <button id="save-exit">Guardar y salir</button>
   </div>
+</div>
+<div id="pause-settings-panel" class="panel">
+  <div class="workbench-title">AJUSTES RÁPIDOS</div>
+  <div class="actions"><button id="toggle-water">Ondas de agua</button><button id="toggle-shadows">Sombras</button></div>
+  <div class="actions"><button id="toggle-rain">Lluvia</button><button id="toggle-animations">Animaciones</button></div>
+  <div class="inventory-actions"><button id="pause-settings-close">Volver</button></div>
 </div>
 <div id="starter-chest-panel" class="panel">
   <div class="container-title">COFRE · 27 ESPACIOS</div>
@@ -604,7 +622,7 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("jump", "jump");
     AttachAction("crouch", "crouch");
     AttachAction("attack", "attack");
-    AttachAction("eat", "eat");
+    AttachHoldAction("eat", "eat-hold-start", "eat-hold-end");
     AttachAction("starter-chest-open", "starter-chest-open");
     AttachAction("starter-chest-close", "starter-chest-close");
     AttachAction("starter-chest-take", "starter-chest-take");
@@ -618,6 +636,17 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     AttachAction("resume", "resume");
     AttachAction("save", "save");
     AttachAction("save-exit", "save-exit");
+    AttachAction("pause-settings", "pause-settings");
+    AttachAction("pause-settings-close", "pause-settings-close");
+    AttachAction("toggle-water", "toggle-water");
+    AttachAction("toggle-shadows", "toggle-shadows");
+    AttachAction("toggle-rain", "toggle-rain");
+    AttachAction("toggle-animations", "toggle-animations");
+    for (const char* id : {"craft-filter-all", "craft-filter-basic", "craft-filter-building",
+                           "craft-filter-mechanisms", "craft-filter-minerals", "craft-filter-tools",
+                           "craft-filter-mods"}) {
+        AttachAction(id, id);
+    }
     document_->Show();
     context_->Update();
     ready_ = true;
@@ -626,6 +655,16 @@ button { background-color: rgba(52, 83, 105, 0.88); border: 1dp solid rgba(220, 
     __android_log_print(ANDROID_LOG_INFO, kTag, "RmlUi %s initialised with OpenGL ES backend%s",
                         Rml::GetVersion().c_str(), usingSafeDocument_ ? " (safe document; Android HUD required)" : "");
     return !usingSafeDocument_;
+}
+
+void RmlUiRuntime::AttachHoldAction(const char* elementId, const char* beginAction, const char* endAction) {
+    if (document_ == nullptr) return;
+    Rml::Element* element = document_->GetElementById(elementId);
+    if (element == nullptr) return;
+    holdListeners_.push_back(std::make_unique<ActionListener>(callback_, beginAction));
+    element->AddEventListener("mousedown", holdListeners_.back().get());
+    holdListeners_.push_back(std::make_unique<ActionListener>(callback_, endAction));
+    element->AddEventListener("mouseup", holdListeners_.back().get());
 }
 
 void RmlUiRuntime::AttachAction(const char* elementId, const char* action) {
@@ -646,6 +685,7 @@ void RmlUiRuntime::Shutdown() {
         context_ = nullptr;
     }
     listeners_.clear();
+    holdListeners_.clear();
     inventoryListeners_.clear();
     craftingListeners_.clear();
     containerListeners_.clear();
