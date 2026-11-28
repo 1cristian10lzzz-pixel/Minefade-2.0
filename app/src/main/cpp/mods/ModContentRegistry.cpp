@@ -121,7 +121,7 @@ bool SafeAssetPath(std::string_view path) {
     if (path.size() < 10u || path.size() > 240u ||
         path.substr(0u, 7u) != "assets/" ||
         path.find("..") != std::string_view::npos ||
-        path.find('\\\\') != std::string_view::npos ||
+        path.find('\\') != std::string_view::npos ||
         path.find(':') != std::string_view::npos) return false;
     return true;
 }
