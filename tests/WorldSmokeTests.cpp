@@ -79,6 +79,37 @@ int main() {
     std::filesystem::remove(modBlockSave);
     ClearModBlockDefinitions();
 
+    // Inventory moves preserve quantities and durability. Equal stacks merge up
+    // to the registered stack limit; splitting and dropping cannot create items.
+    Inventory inventoryOps;
+    inventoryOps.counts.fill(0u);
+    inventoryOps.toolDurability.fill(0u);
+    const auto dirtId = static_cast<std::uint16_t>(BlockId::Dirt);
+    inventoryOps.counts[9] = static_cast<std::uint32_t>(dirtId) * 1000u + 20u;
+    inventoryOps.counts[10] = static_cast<std::uint32_t>(dirtId) * 1000u + 60u;
+    assert(inventoryOps.MoveOrMergeSlot(9u, 10u));
+    assert(inventoryOps.counts[10] == static_cast<std::uint32_t>(dirtId) * 1000u + 64u);
+    assert(inventoryOps.counts[9] == static_cast<std::uint32_t>(dirtId) * 1000u + 16u);
+    assert(inventoryOps.SplitStack(9u, 11u));
+    assert(inventoryOps.counts[9] == static_cast<std::uint32_t>(dirtId) * 1000u + 8u);
+    assert(inventoryOps.counts[11] == static_cast<std::uint32_t>(dirtId) * 1000u + 8u);
+    std::uint16_t removedId = 0u;
+    assert(inventoryOps.RemoveFromSlot(11u, 3u, &removedId));
+    assert(removedId == dirtId);
+    assert(inventoryOps.counts[11] == static_cast<std::uint32_t>(dirtId) * 1000u + 5u);
+    // A slot swap must carry the durability sidecar with the tool itself.
+    const auto pickaxeId = static_cast<std::uint16_t>(BlockId::MinefadeIronPickaxe);
+    inventoryOps.counts[12] = static_cast<std::uint32_t>(pickaxeId) * 1000u + 1u;
+    inventoryOps.counts[13] = static_cast<std::uint32_t>(dirtId) * 1000u + 2u;
+    inventoryOps.toolDurability[12] = 17u;
+    assert(inventoryOps.MoveOrMergeSlot(12u, 13u));
+    assert(inventoryOps.counts[12] == static_cast<std::uint32_t>(dirtId) * 1000u + 2u);
+    assert(inventoryOps.counts[13] == static_cast<std::uint32_t>(pickaxeId) * 1000u + 1u);
+    assert(inventoryOps.toolDurability[13] == 17u);
+    assert(!inventoryOps.MoveOrMergeSlot(9u, 10u)); // The destination stack is full.
+    assert(!inventoryOps.SplitStack(13u, 14u));     // Durable tools cannot be split.
+    assert(!inventoryOps.RemoveFromSlot(9u, 100u, nullptr));
+
     VoxelWorld world(123456u);
     // Exercise the exact default game seed and the same one-chunk spawn path
     // used by Engine::Initialise, not only arbitrary test seeds.
