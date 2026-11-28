@@ -2602,6 +2602,7 @@ bool Engine::HasNearbyBlock(const std::string& blockKey) const {
 bool Engine::HasNearbyCraftingTable() const { return HasNearbyBlock("crafting_table"); }
 bool Engine::HasNearbyFurnace() const { return HasNearbyBlock("furnace"); }
 bool Engine::HasNearbyStonecutter() const { return HasNearbyBlock("stonecutter"); }
+bool Engine::HasNearbyAnvil() const { return HasNearbyBlock("anvil"); }
 
 bool Engine::CraftRecipe(const std::string& recipe) {
     struct Ingredient { std::uint16_t id; std::uint16_t amount; };
@@ -2612,6 +2613,7 @@ bool Engine::CraftRecipe(const std::string& recipe) {
     bool needsTable = false;
     bool needsFurnace = false;
     bool needsStonecutter = false;
+    bool needsAnvil = false;
     const auto addIngredient = [&ingredients, &ingredientCount](std::uint16_t id, std::uint16_t amount) {
         if (id == 0u || amount == 0u || ingredientCount >= ingredients.size()) return false;
         ingredients[ingredientCount++] = {id, amount};
@@ -2821,8 +2823,9 @@ bool Engine::CraftRecipe(const std::string& recipe) {
         if (output == BlockId::Air) return false;
         outputId = static_cast<std::uint16_t>(output);
         outputAmount = modRecipe->outputCount;
-        if (modRecipe->station == "crafting_table" || modRecipe->station == "anvil")
+        if (modRecipe->station == "crafting_table")
             needsTable = true;
+        else if (modRecipe->station == "anvil") needsAnvil = true;
         else if (modRecipe->station == "furnace") needsFurnace = true;
         else if (modRecipe->station == "stonecutter") needsStonecutter = true;
     } else {
@@ -2873,6 +2876,10 @@ bool Engine::CraftRecipe(const std::string& recipe) {
     }
     if (needsStonecutter && !HasNearbyStonecutter()) {
         ui_.SetChatMessage("Necesitas un cortapiedras cerca para fabricar esta pieza.");
+        return false;
+    }
+    if (needsAnvil && !HasNearbyAnvil()) {
+        ui_.SetChatMessage("Necesitas un yunque cerca para fabricar esta pieza.");
         return false;
     }
     // Craft against a private inventory copy. Either the ingredients and output
@@ -3887,11 +3894,39 @@ void Engine::RefreshCraftingUi() {
         }
         return escaped;
     };
-    const auto addRecipe = [&markup, &index, &escapeMarkup](
+    const auto findId = [](const std::string& key) -> std::uint16_t {
+        const BlockDefinition* definition = FindBlockDefinition(key);
+        return definition == nullptr ? 0u : static_cast<std::uint16_t>(definition->id);
+    };
+    const auto recipeOutputId = [&findId](const std::string& recipe) -> std::uint16_t {
+        if (recipe == "planks") return findId("planks");
+        if (recipe == "sticks") return findId("minefade_stick");
+        if (recipe == "table") return findId("crafting_table");
+        if (recipe == "diamond_gem") return findId("minefade_diamond");
+        if (recipe == "emerald_gem") return findId("minefade_emerald");
+        if (const ModRecipeDefinition* mod =
+                ModContentRegistry::Instance().FindRecipe(recipe)) {
+            const BlockId id = ResolveModBlockId(mod->outputId);
+            return id == BlockId::Air ? 0u : static_cast<std::uint16_t>(id);
+        }
+        std::uint16_t id = findId(recipe);
+        if (id == 0u) id = findId("minefade_" + recipe);
+        return id;
+    };
+    const auto addRecipe = [&markup, &index, &escapeMarkup, &recipeOutputId](
             const std::string& recipe, const std::string& label) {
-        markup += "<button id='crafting-recipe-" + std::to_string(index++) +
-            "' data-action='craft-" + escapeMarkup(recipe) + "'>" +
-            escapeMarkup(label) + "</button>";
+        const std::uint16_t outputId = recipeOutputId(recipe);
+        markup += "<button class='craft-recipe-card' id='crafting-recipe-" +
+            std::to_string(index++) + "' data-action='craft-" +
+            escapeMarkup(recipe) + "'>";
+        if (outputId > 0u) {
+            const BlockDefinition* output = GetBlockDefinition(static_cast<BlockId>(outputId));
+            if (output != nullptr) {
+                markup += "<img class='craft-recipe-icon' src='minefade://block/" +
+                    std::to_string(outputId) + "'/>";
+            }
+        }
+        markup += "<span>" + escapeMarkup(label) + "</span></button>";
     };
     markup += "<div class='recipe-category'>BÁSICOS</div>";
     addRecipe("planks", "Tronco → 4 tablones");
