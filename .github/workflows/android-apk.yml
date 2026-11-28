@@ -208,6 +208,6 @@ jobs:
 
             **Tipo de paquete:** release de producción, firmado con la clave PKCS#12 persistente del proyecto.
             **ABI incluidas:** arm64-v8a y armeabi-v7a.
-            **Versionado Android:** versionCode 30 / versionName 2.3.1.
+            **Versionado Android:** versionCode 31 / versionName 2.4.0.
 
             Los tags solo se compilan si los cuatro secretos de firma están configurados. Conserva siempre el mismo almacén privado para que las versiones siguientes puedan actualizar esta instalación. Prueba la actualización y los mundos guardados en Android físico antes de declarar estable.
